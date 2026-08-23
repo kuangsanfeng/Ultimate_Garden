@@ -1,0 +1,206 @@
+package com.kuangsanfeng.ultimategarden.client.macro.hint;
+
+import org.lwjgl.glfw.GLFW;
+
+import java.util.HashMap;
+import java.util.Map;
+
+
+// =========================================================
+// Key Name Map
+// =========================================================
+
+public final class KeyNameMap {
+
+    private static final Map<Integer, String> KEY_NAMES =
+            new HashMap<>();
+
+
+    static {
+
+
+        // =====================================================
+        // Letters
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_A, "A");
+        KEY_NAMES.put(GLFW.GLFW_KEY_B, "B");
+        KEY_NAMES.put(GLFW.GLFW_KEY_C, "C");
+        KEY_NAMES.put(GLFW.GLFW_KEY_D, "D");
+        KEY_NAMES.put(GLFW.GLFW_KEY_E, "E");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F, "F");
+        KEY_NAMES.put(GLFW.GLFW_KEY_G, "G");
+        KEY_NAMES.put(GLFW.GLFW_KEY_H, "H");
+        KEY_NAMES.put(GLFW.GLFW_KEY_I, "I");
+        KEY_NAMES.put(GLFW.GLFW_KEY_J, "J");
+        KEY_NAMES.put(GLFW.GLFW_KEY_K, "K");
+        KEY_NAMES.put(GLFW.GLFW_KEY_L, "L");
+        KEY_NAMES.put(GLFW.GLFW_KEY_M, "M");
+        KEY_NAMES.put(GLFW.GLFW_KEY_N, "N");
+        KEY_NAMES.put(GLFW.GLFW_KEY_O, "O");
+        KEY_NAMES.put(GLFW.GLFW_KEY_P, "P");
+        KEY_NAMES.put(GLFW.GLFW_KEY_Q, "Q");
+        KEY_NAMES.put(GLFW.GLFW_KEY_R, "R");
+        KEY_NAMES.put(GLFW.GLFW_KEY_S, "S");
+        KEY_NAMES.put(GLFW.GLFW_KEY_T, "T");
+        KEY_NAMES.put(GLFW.GLFW_KEY_U, "U");
+        KEY_NAMES.put(GLFW.GLFW_KEY_V, "V");
+        KEY_NAMES.put(GLFW.GLFW_KEY_W, "W");
+        KEY_NAMES.put(GLFW.GLFW_KEY_X, "X");
+        KEY_NAMES.put(GLFW.GLFW_KEY_Y, "Y");
+        KEY_NAMES.put(GLFW.GLFW_KEY_Z, "Z");
+
+
+        // =====================================================
+        // Numbers
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_0, "0");
+        KEY_NAMES.put(GLFW.GLFW_KEY_1, "1");
+        KEY_NAMES.put(GLFW.GLFW_KEY_2, "2");
+        KEY_NAMES.put(GLFW.GLFW_KEY_3, "3");
+        KEY_NAMES.put(GLFW.GLFW_KEY_4, "4");
+        KEY_NAMES.put(GLFW.GLFW_KEY_5, "5");
+        KEY_NAMES.put(GLFW.GLFW_KEY_6, "6");
+        KEY_NAMES.put(GLFW.GLFW_KEY_7, "7");
+        KEY_NAMES.put(GLFW.GLFW_KEY_8, "8");
+        KEY_NAMES.put(GLFW.GLFW_KEY_9, "9");
+
+
+        // =====================================================
+        // Function Keys
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_F1, "F1");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F2, "F2");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F3, "F3");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F4, "F4");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F5, "F5");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F6, "F6");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F7, "F7");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F8, "F8");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F9, "F9");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F10, "F10");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F11, "F11");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F12, "F12");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F13, "F13");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F14, "F14");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F15, "F15");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F16, "F16");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F17, "F17");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F18, "F18");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F19, "F19");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F20, "F20");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F21, "F21");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F22, "F22");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F23, "F23");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F24, "F24");
+        KEY_NAMES.put(GLFW.GLFW_KEY_F25, "F25");
+
+
+        // =====================================================
+        // Numpad
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_0, "Num0");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_1, "Num1");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_2, "Num2");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_3, "Num3");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_4, "Num4");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_5, "Num5");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_6, "Num6");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_7, "Num7");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_8, "Num8");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_9, "Num9");
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_ADD, "Num+");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_SUBTRACT, "Num-");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_MULTIPLY, "Num*");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_DIVIDE, "Num/");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_DECIMAL, "Num.");
+        KEY_NAMES.put(GLFW.GLFW_KEY_KP_ENTER, "NumEnter");
+
+
+        // =====================================================
+        // Symbols
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_LEFT_BRACKET, "[");
+        KEY_NAMES.put(GLFW.GLFW_KEY_RIGHT_BRACKET, "]");
+        KEY_NAMES.put(GLFW.GLFW_KEY_SEMICOLON, ";");
+        KEY_NAMES.put(GLFW.GLFW_KEY_APOSTROPHE, "'");
+        KEY_NAMES.put(GLFW.GLFW_KEY_COMMA, ",");
+        KEY_NAMES.put(GLFW.GLFW_KEY_PERIOD, ".");
+        KEY_NAMES.put(GLFW.GLFW_KEY_SLASH, "/");
+        KEY_NAMES.put(GLFW.GLFW_KEY_BACKSLASH, "\\");
+        KEY_NAMES.put(GLFW.GLFW_KEY_MINUS, "-");
+        KEY_NAMES.put(GLFW.GLFW_KEY_EQUAL, "=");
+        KEY_NAMES.put(GLFW.GLFW_KEY_GRAVE_ACCENT, "`");
+
+
+        // =====================================================
+        // Control
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_SPACE, "Space");
+        KEY_NAMES.put(GLFW.GLFW_KEY_ENTER, "Enter");
+        KEY_NAMES.put(GLFW.GLFW_KEY_ESCAPE, "Esc");
+        KEY_NAMES.put(GLFW.GLFW_KEY_TAB, "Tab");
+        KEY_NAMES.put(GLFW.GLFW_KEY_BACKSPACE, "Backspace");
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_LEFT_SHIFT, "LeftShift");
+        KEY_NAMES.put(GLFW.GLFW_KEY_RIGHT_SHIFT, "RightShift");
+        KEY_NAMES.put(GLFW.GLFW_KEY_LEFT_CONTROL, "LeftCtrl");
+        KEY_NAMES.put(GLFW.GLFW_KEY_RIGHT_CONTROL, "RightCtrl");
+        KEY_NAMES.put(GLFW.GLFW_KEY_LEFT_ALT, "LeftAlt");
+        KEY_NAMES.put(GLFW.GLFW_KEY_RIGHT_ALT, "RightAlt");
+
+
+        // =====================================================
+        // Navigation
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_INSERT, "Insert");
+        KEY_NAMES.put(GLFW.GLFW_KEY_DELETE, "Delete");
+        KEY_NAMES.put(GLFW.GLFW_KEY_HOME, "Home");
+        KEY_NAMES.put(GLFW.GLFW_KEY_END, "End");
+        KEY_NAMES.put(GLFW.GLFW_KEY_PAGE_UP, "PageUp");
+        KEY_NAMES.put(GLFW.GLFW_KEY_PAGE_DOWN, "PageDown");
+
+
+        // =====================================================
+        // Arrow
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_UP, "Up");
+        KEY_NAMES.put(GLFW.GLFW_KEY_DOWN, "Down");
+        KEY_NAMES.put(GLFW.GLFW_KEY_LEFT, "Left");
+        KEY_NAMES.put(GLFW.GLFW_KEY_RIGHT, "Right");
+
+
+        // =====================================================
+        // Lock
+        // =====================================================
+
+        KEY_NAMES.put(GLFW.GLFW_KEY_CAPS_LOCK, "CapsLock");
+        KEY_NAMES.put(GLFW.GLFW_KEY_NUM_LOCK, "NumLock");
+        KEY_NAMES.put(GLFW.GLFW_KEY_SCROLL_LOCK, "ScrollLock");
+        KEY_NAMES.put(GLFW.GLFW_KEY_PRINT_SCREEN, "PrintScreen");
+        KEY_NAMES.put(GLFW.GLFW_KEY_PAUSE, "Pause");
+    }
+
+
+    private KeyNameMap() {
+    }
+
+
+    public static String get(
+            int key
+    ) {
+
+        return KEY_NAMES.getOrDefault(
+                key,
+                "Unknown(" + key + ")"
+        );
+    }
+}

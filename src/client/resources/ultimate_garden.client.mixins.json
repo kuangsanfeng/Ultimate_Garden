@@ -1,0 +1,21 @@
+{
+	"required": true,
+	"package": "com.kuangsanfeng.ultimategarden.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ExampleClientMixin",
+		"KeyMappingAccessor",
+		"KeyboardHandlerAccessor",
+		"WindowsInputMixin",
+		"WindowsFocusMixin",
+		"WindowsPauseMixin",
+		"WindowsMouseMixin",
+		"WindowsMissTimeMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
