@@ -625,7 +625,7 @@ public final class MacroController {
                 waitingModeSelect = true;
 
 
-                MacroHint.printHint("CropInfo", crop);
+                //MacroHint.printHint("CropInfo", crop);
 
 
                 MacroHint.printHint("ModeSelect");
@@ -661,6 +661,9 @@ public final class MacroController {
 
                 int value =
                         Integer.parseInt(message);
+
+                CropType crop =
+                        CropType.fromValue(value);
 
 
                 if (value != 0 && value != 1) {
@@ -701,6 +704,7 @@ public final class MacroController {
 
                 MacroHint.printHint("InitializeDone");
 
+                MacroHint.printHint("CropInfo", crop);
 
                 return true;
 
@@ -733,6 +737,8 @@ public final class MacroController {
                     waitingSimulateCropSelect = false;
 
                     MacroHint.printHint("InitializeDone");
+
+                    MacroHint.printHint("CropInfo", crop);
 
                     return true;
 

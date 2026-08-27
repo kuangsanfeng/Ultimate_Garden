@@ -268,14 +268,12 @@ public final class CommandController {
 
         sendCommand("loadout");
 
-        if (Ultimate_GardenClient.getWindowsFocusController() != null) {
-            var focusController = Ultimate_GardenClient.getWindowsFocusController();
-            if (!focusController.isReleased()) {
-                focusController.releaseFocus();
-            }
-            else{
-                focusController.restoreFocus();
-            }
+        boolean currentlyReleased = Ultimate_GardenClient.getWindowsFocusController().isReleased();
+
+        if (currentlyReleased) {
+            Ultimate_GardenClient.getWindowsFocusController().releaseFocus();
+        } else {
+            Ultimate_GardenClient.getWindowsFocusController().restoreFocus();
         }
 
 
@@ -304,36 +302,76 @@ public final class CommandController {
                 () -> sendCommand("loadout")
         );
 
-        if (Ultimate_GardenClient.getWindowsFocusController() != null) {
-            var focusController = Ultimate_GardenClient.getWindowsFocusController();
-            if (!focusController.isReleased()) {
-                focusController.releaseFocus();
-            }
-            else{
-                focusController.restoreFocus();
-            }
+
+        scheduler.schedule(
+                random(50,50),
+                () -> pestLoadoutStep2(0, after)
+        );
+    }
+
+    private void pestLoadoutStep2(int counter, Runnable after) {
+        // 如果检测次数超过 40 次(40 x 50ms == 2000ms)，直接退出，放弃本次动作
+        if (counter >= 40) {
+            return;
         }
 
-
         scheduler.schedule(
-                random(250,150),
-                () -> input.slot(4)
-        );
-
-
-        scheduler.schedule(
-                random(200,100),
+                50, // 每隔 50ms 检查一次
                 () -> {
+                    // 判断当前是否已经打开了界面 (client.screen 不为 null 代表界面已弹出)
                     if (client.screen != null) {
-                        client.setScreen(null);
+                        // 1. 执行 slot 4
+                        scheduler.schedule(
+                                random(150,200),
+                                () -> input.slot(4)
+                        );
+
+                        scheduler.schedule(
+                                random(100,50),
+                                () -> pestLoadoutStep3(0, after)
+                        );
+                    } else {
+                        // 如果还没打开界面，递归自己，继续等 50ms 检查
+                        pestLoadoutStep2(counter + 1, after);
                     }
                 }
         );
+    }
 
+    private void pestLoadoutStep3(int counter, Runnable after){
+        // 如果检测次数超过 20 次(20 x 100ms == 2000ms)，直接退出，放弃本次动作
+        if (counter >= 20) {
+            return;
+        }
 
         scheduler.schedule(
-                500,
-                after
+                100, // 每隔 100ms 检查一次
+                () -> {
+                    // 判断当前是否已经关闭了界面 (client.screen 为 null 代表界面已关闭)
+                    if (client.screen == null) {
+
+                        // 最终回调
+                        scheduler.schedule(
+                                300,
+                                after
+                        );
+                    } else {
+                        // 如果还没打开界面
+                        // 关闭界面逻辑
+                        client.setScreen(null);
+
+                        // 安排对焦状态保持
+                        boolean currentlyReleased = Ultimate_GardenClient.getWindowsFocusController().isReleased();
+                        if (currentlyReleased) {
+                            Ultimate_GardenClient.getWindowsFocusController().releaseFocus();
+                        } else {
+                            Ultimate_GardenClient.getWindowsFocusController().restoreFocus();
+                        }
+
+                        // 递归自己，继续等 100ms 检查
+                        pestLoadoutStep3(counter + 1, after);
+                    }
+                }
         );
     }
 
@@ -362,41 +400,86 @@ public final class CommandController {
                 () -> sendCommand("loadout")
         );
 
-        if (Ultimate_GardenClient.getWindowsFocusController() != null) {
-            var focusController = Ultimate_GardenClient.getWindowsFocusController();
-            if (!focusController.isReleased()) {
-                focusController.releaseFocus();
-            }
-            else{
-                focusController.restoreFocus();
-            }
+
+
+        scheduler.schedule(
+                random(50,50),
+                () -> spawnPestsStep2(0, after)
+        );
+    }
+
+    private void spawnPestsStep2(int counter, Runnable after) {
+        // 如果检测次数超过 40 次(40 x 50ms == 2000ms)，直接退出，放弃本次动作
+        if (counter >= 40) {
+            return;
         }
 
-
         scheduler.schedule(
-                random(250,150),
-                () -> input.slot(5)
-        );
-
-
-        scheduler.schedule(
-                random(200,100),
-                () ->{
+                50, // 每隔 50ms 检查一次
+                () -> {
+                    // 判断当前是否已经打开了界面 (client.screen 不为 null 代表界面已弹出)
                     if (client.screen != null) {
-                        client.setScreen(null);
+                        // 1. 执行 slot 5
+                        scheduler.schedule(
+                                random(150,200),
+                                () -> input.slot(5)
+                        );
+
+                        scheduler.schedule(
+                                random(100,50),
+                                () -> spawnPestsStep3(0, after)
+                        );
+                    } else {
+                        // 如果还没打开界面，递归自己，继续等 50ms 检查
+                        spawnPestsStep2(counter + 1, after);
                     }
                 }
         );
+    }
 
+    private void spawnPestsStep3(int counter, Runnable after) {
+        // 如果检测次数超过 20 次(20 x 100ms == 2000ms)，直接退出，放弃本次动作
+        if (counter >= 20) {
+            return;
+        }
 
         scheduler.schedule(
-                random(150,100),
+                100, // 每隔 100ms 检查一次
+                () -> {
+                    // 判断当前是否已经关闭了界面 (client.screen 为 null 代表界面已关闭)
+                    if (client.screen == null) {
+
+                        spawnPestsStep4(after);
+                    } else {
+                        // 如果还没打开界面
+                        // 关闭界面逻辑
+                        client.setScreen(null);
+
+                        // 安排对焦状态保持
+                        boolean currentlyReleased = Ultimate_GardenClient.getWindowsFocusController().isReleased();
+                        if (currentlyReleased) {
+                            Ultimate_GardenClient.getWindowsFocusController().releaseFocus();
+                        } else {
+                            Ultimate_GardenClient.getWindowsFocusController().restoreFocus();
+                        }
+
+                        // 递归自己，继续等 100ms 检查
+                        spawnPestsStep3(counter + 1, after);
+                    }
+                }
+        );
+    }
+
+    private void spawnPestsStep4(Runnable after) {
+        // 安排按下 E 键
+        scheduler.schedule(
+                random(150, 250),
                 () -> input.keyClick("E")
         );
 
-
+        // 最终回调
         scheduler.schedule(
-                100,
+                300,
                 after
         );
     }
