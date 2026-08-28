@@ -53,8 +53,8 @@ public final class CommandScheduler {
 
 
         // 纯监听服务器发来的聊天/系统消息（不拦截，消息正常显示）
-        ClientReceiveMessageEvents.CHAT.register(
-                (message, signedMessage, sender, params, receptionTimestamp) -> {
+        ClientReceiveMessageEvents.GAME.register(
+                (message, overlay) -> {
                     if (controller != null) {
                         // 将 Text 组件转成 String 并交由MacroController的函数automateTaskByMonitorMessage处理
                         String text = message.getString();

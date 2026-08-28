@@ -388,7 +388,7 @@ public final class MacroController {
                 if (windowsFocusController != null) {
                     windowsFocusController.restoreFocusWithHint();
                 }
-                
+
                 resetMacro();
 
                 return;
@@ -585,25 +585,16 @@ public final class MacroController {
             String message
     ) {
 
-
+        // 1. 选择作物阶段
         if (waitingCropSelect) {
-
-
             try {
-
                 int value =
                         Integer.parseInt(message);
-
-
                 CropType crop =
                         CropType.fromValue(value);
-
-
                 state.setCropType(
                         crop.getValue()
                 );
-
-
                 config.setCropType(
                         crop
                 );
@@ -615,25 +606,15 @@ public final class MacroController {
                 }
 
                 state.resetTick();
-
                 state.setEventCount(0);
-
                 state.setEventSelect(true);
-
                 state.setEventChange(true);
 
-
-
                 waitingCropSelect = false;
-
                 waitingModeSelect = true;
 
-
                 //MacroHint.printHint("CropInfo", crop);
-
-
                 MacroHint.printHint("ModeSelect");
-
 
                 Minecraft.getInstance()
                         .execute(() -> {
@@ -645,52 +626,39 @@ public final class MacroController {
 
                         });
 
-
                 return true;
-
             }
             catch (Exception e) {
-
                 return true;
             }
-
         }
 
 
-
+        // 2. 选择模式阶段（Farm = 0, Pests = 1）
         if (waitingModeSelect) {
-
-
             try {
-
                 int value =
                         Integer.parseInt(message);
-
                 CropType crop =
-                        CropType.fromValue(value);
+                        CropType.fromValue(state.getCropType());
 
-
+                // 模式输入不匹配则不处理
                 if (value != 0 && value != 1) {
 
                     return true;
                 }
 
-
                 state.setModType(
                         value
                 );
-
-
                 config.setModType(
                         value
                 );
-
 
                 waitingModeSelect = false;
 
                 if (isTimeTesterMode) {
                     waitingSimulateCropSelect = true;
-
                     MacroHint.printHint("SimulateCropSelect");
 
                     Minecraft.getInstance()
@@ -705,35 +673,26 @@ public final class MacroController {
                     return true;
                 }
 
-
                 MacroHint.printHint("InitializeDone");
-
                 MacroHint.printHint("CropInfo", crop);
 
                 return true;
-
             }
             catch (Exception e) {
-
                 return true;
             }
-
         }
 
 
 
         if (waitingSimulateCropSelect) {
-
             try {
-
                 int value =
                         Integer.parseInt(message);
-
                 CropType crop =
                         CropType.fromValue(value);
 
                 if (crop.getValue() >= 1 && crop.getValue() <= 7) {
-
                     state.setCropType(
                             crop.getValue()
                     );
@@ -741,22 +700,14 @@ public final class MacroController {
                     waitingSimulateCropSelect = false;
 
                     MacroHint.printHint("InitializeDone");
-
                     MacroHint.printHint("CropInfo", crop);
-
                     return true;
-
                 }
-
                 return true;
-
             }
             catch (Exception e) {
-
                 return true;
-
             }
-
         }
 
         return false;
@@ -866,9 +817,18 @@ public final class MacroController {
     // =========================================================
 
     public boolean automateTaskByMonitorMessage(String message) {
-        if (message != null && message.contains("Pest have spawned in Plot")) {
+        String cleanMessage = message.replaceAll("§[0-9a-fk-or]", "");
+        //System.out.println("[Debug Chat Monitor] " + cleanMessage);
+
+        if (message != null && cleanMessage.contains("Pest have spawned in Plot")) {
             // 检测到害虫生成提示，启动 pestLoadout 计时
-            command.startPestLoadoutTimer();
+            command.getScheduler().schedule(
+                    100,
+                    () -> {
+                        command.startPestLoadoutTimer();
+                    }
+            );
+
             return true;
         }
         return false;

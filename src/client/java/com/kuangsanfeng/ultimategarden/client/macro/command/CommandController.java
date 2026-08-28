@@ -354,6 +354,14 @@ public final class CommandController {
                     // 判断当前是否已经关闭了界面 (client.screen 为 null 代表界面已关闭)
                     if (client.screen == null) {
 
+                        // 安排对焦状态保持
+                        boolean currentlyReleased = Ultimate_GardenClient.getWindowsFocusController().isReleased();
+                        if (currentlyReleased) {
+                            Ultimate_GardenClient.getWindowsFocusController().releaseFocus();
+                        } else {
+                            Ultimate_GardenClient.getWindowsFocusController().restoreFocus();
+                        }
+
                         // 最终回调
                         scheduler.schedule(
                                 300,
@@ -363,14 +371,6 @@ public final class CommandController {
                         // 如果还没打开界面
                         // 关闭界面逻辑
                         client.setScreen(null);
-
-                        // 安排对焦状态保持
-                        boolean currentlyReleased = Ultimate_GardenClient.getWindowsFocusController().isReleased();
-                        if (currentlyReleased) {
-                            Ultimate_GardenClient.getWindowsFocusController().releaseFocus();
-                        } else {
-                            Ultimate_GardenClient.getWindowsFocusController().restoreFocus();
-                        }
 
                         // 递归自己，继续等 100ms 检查
                         pestLoadoutStep3(counter + 1, after);
@@ -452,13 +452,6 @@ public final class CommandController {
                 () -> {
                     // 判断当前是否已经关闭了界面 (client.screen 为 null 代表界面已关闭)
                     if (client.screen == null) {
-
-                        spawnPestsStep4(after);
-                    } else {
-                        // 如果还没打开界面
-                        // 关闭界面逻辑
-                        client.setScreen(null);
-
                         // 安排对焦状态保持
                         boolean currentlyReleased = Ultimate_GardenClient.getWindowsFocusController().isReleased();
                         if (currentlyReleased) {
@@ -466,6 +459,12 @@ public final class CommandController {
                         } else {
                             Ultimate_GardenClient.getWindowsFocusController().restoreFocus();
                         }
+
+                        spawnPestsStep4(after);
+                    } else {
+                        // 如果还没打开界面
+                        // 关闭界面逻辑
+                        client.setScreen(null);
 
                         // 递归自己，继续等 100ms 检查
                         spawnPestsStep3(counter + 1, after);
