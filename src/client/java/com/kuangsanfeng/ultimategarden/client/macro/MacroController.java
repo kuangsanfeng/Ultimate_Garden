@@ -855,6 +855,20 @@ public final class MacroController {
     }
 
 
+    // =========================================================
+    // Monitor Message to Automate Task
+    // =========================================================
+
+    public boolean automateTaskByMonitorMessage(String message) {
+        if (message != null && message.contains("Pest have spawned in Plot")) {
+            // 检测到害虫生成提示，启动 pestLoadout 计时
+            command.startPestLoadoutTimer();
+            return true;
+        }
+        return false;
+    }
+
+
     private void restartAfterCommand(
             boolean wasRunning
     ) {
