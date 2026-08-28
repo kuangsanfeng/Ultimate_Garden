@@ -385,6 +385,10 @@ public final class MacroController {
             //if pestMode
             if (state.isPestsMode()) {
 
+                if (windowsFocusController != null) {
+                    windowsFocusController.restoreFocusWithHint();
+                }
+                
                 resetMacro();
 
                 return;
@@ -764,6 +768,7 @@ public final class MacroController {
     // =========================================================
 
     public void spawnByHotkey(){
+
         spawn();
     }
     public void spawn() {
@@ -837,6 +842,7 @@ public final class MacroController {
 
         stopKeyboardMouse();
 
+        input.slot(1);
 
         command.warpGarden(
                 () -> {

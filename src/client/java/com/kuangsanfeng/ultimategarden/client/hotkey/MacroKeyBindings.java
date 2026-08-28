@@ -438,7 +438,7 @@ public final class MacroKeyBindings {
                             isPressed(PEST_LOADOUT_KEY)
                     )) {
 
-                        if (controller.getState().getCropType() == 0 && !controller.getState().isPestsMode()){
+                        if (controller.getState().getCropType() == 0){
                             return;
                         }
 

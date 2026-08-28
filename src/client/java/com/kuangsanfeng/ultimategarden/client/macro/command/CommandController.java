@@ -112,6 +112,10 @@ public final class CommandController {
 
     public void startPestLoadoutTimer() {
 
+        if (!macroState.isPestsMode()) {
+            return;
+        }
+
         pestLoadoutTimer.start();
 
     }
