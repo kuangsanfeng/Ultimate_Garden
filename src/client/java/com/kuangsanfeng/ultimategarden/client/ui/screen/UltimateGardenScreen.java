@@ -412,6 +412,9 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         heading("ui.ultimategarden.hud");
         var parent = currentSection;
         var hud = configs.getHudConfig();
+        toggle("ui.ultimategarden.hud.show", hud::isShowHud, () -> {
+            hud.setShowHud(!hud.isShowHud()); saved(configs.save(ConfigManager.Module.HUD));
+        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
         button("ui.ultimategarden.hud.adjust", false, () -> {
             adjustingHud=true;
             com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.begin(this);

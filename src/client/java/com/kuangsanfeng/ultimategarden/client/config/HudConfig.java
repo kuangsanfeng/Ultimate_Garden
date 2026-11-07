@@ -16,6 +16,9 @@ public final class HudConfig {
         for (double v : new double[]{x,y,width,height}) if (!Double.isFinite(v) || v < 0 || v > 1) throw new IllegalArgumentException("Invalid HUD bounds");
         this.x=x; this.y=y; this.width=width; this.height=height;
     }
+    private boolean showHud = true;
+    public boolean isShowHud() { return showHud; }
+    public void setShowHud(boolean value) { showHud=value; }
     private Mode mode;
     private final EnumSet<Item> compact = EnumSet.noneOf(Item.class), detail = EnumSet.noneOf(Item.class);
     public HudConfig() { resetToDefault(); }
@@ -33,6 +36,7 @@ public final class HudConfig {
         if (enabled) detail.add(item); else detail.remove(item);
     }
     public void resetToDefault() {
+        showHud=true;
         x=0; y=0; width=0; height=0;
         mode = Mode.COMPACT; compact.clear(); detail.clear();
         compact.addAll(EnumSet.range(Item.MACRO_STATUS, Item.INPUT_INTERCEPTION));
@@ -42,6 +46,11 @@ public final class HudConfig {
     }
     public boolean load(JsonObject source) {
         resetToDefault(); boolean repaired = false;
+        if (source.has("showHud")) {
+            var value=source.get("showHud");
+            if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()) showHud=value.getAsBoolean();
+            else repaired=true;
+        }
         if (source.has("displayMode")) {
             try {
                 if (!source.get("displayMode").isJsonPrimitive() || !source.getAsJsonPrimitive("displayMode").isString()) throw new IllegalArgumentException();
@@ -71,6 +80,7 @@ public final class HudConfig {
     }
     public JsonObject toJson(JsonObject original) {
         JsonObject result = original.deepCopy(); result.addProperty("schemaVersion",1); result.addProperty("displayMode", mode.name());
+        result.addProperty("showHud",showHud);
         JsonObject bounds = result.has("bounds") && result.get("bounds").isJsonObject() ? result.getAsJsonObject("bounds") : new JsonObject();
         bounds.addProperty("x",x); bounds.addProperty("y",y); bounds.addProperty("width",width); bounds.addProperty("height",height); result.add("bounds",bounds);
         for (String group : List.of("compact","detail")) {

@@ -874,3 +874,22 @@ WindowsFocusController 的准确行为：
 - `FarmController.onPlayerScreenOpened` 对来源验证通过的真实背包 / ESC / 聊天界面调用 `WindowsFocusController.useGameFocusForPlayerGui`，替代原 GUI 暂停分支的 `releaseFocusWithHint`。新入口结束 Mod 主动释放标记，并通过现有 `reapplyCursorMode` 保持打开 Screen 所需的原生鼠标释放；不调用农业输入恢复回调。原 GUI 暂停、输入拦截关闭和关闭后不自动恢复的规则不变。
 - `WindowsState.mouseReleased` 明确表示 Mod 的鼠标释放覆盖，不等同于原生 Screen 的自由鼠标。HUD 在 Screen 存在时以白色 `GUI Cursor` / `GUI 自由鼠标` 显示原生自由鼠标；返回无 Screen 游戏后继续显示实际使用的 Mod Released / Captured 模式，保留此前颜色规则。`setScreen(null)` 后原 Focus Mixin 重新应用当前模式，暂停会话继续通过 `restoreGameMouseAfterMenu` 恢复游戏捕获，不启动农业。
 - 自身菜单、虚拟背包输入、Loadout 和 HUD 调整不进入该真实玩家 GUI 入口，继续沿用现有 Focus 规则。Focus 回归增加打开、连续切换和关闭 GUI 时的原生 grab、GLFW mode、mouseReleased、inputIntercepting 及无输入恢复回调检查；原生窗口边界使用桩模拟，游戏内 HUD 与真实 GUI 事件顺序仍需实机验证。
+
+### HUD 显示开关与快捷键（2026-11-14）
+
+- `HudConfig.showHud` 默认 true，保存至现有 `hud.json`；旧 JSON 缺失时默认开启，非法类型按默认值修复。Settings → HUD 新增 Show HUD 开关，实时修改并保存该字段，不改位置、尺寸、模式或内容集合。
+- `MacroKeyBindings` 注册原生 `toggle_hud`（默认 GLFW_KEY_UNKNOWN，即未绑定），Hotkeys 页面通过既有 Binding 列表及 LanguageKeys 显示 Toggle HUD 和 Hint。沿用 KeyEdge 上升沿，消费点击队列防止积压；在游戏及自身菜单非文本输入状态允许切换，其他 Screen 和 HUD 调整模式不切换。该分支与 Macro / Focus 控制分离，直接修改并保存同一 showHud 字段；设置开关通过 getter 实时显示当前值。
+- `MacroStatusHud` 普通渲染在 showHud=false 时返回；调整模式仅绕过可见性检查以供预览，不修改保存值。自身菜单隐藏规则保留。同步增加英文 / 中文原生快捷键名称、UI 名称及 Hint，配置回归覆盖默认值、显示开关保存重载和其他 HUD 设置保留。
+
+### 原生快捷键翻译与 1.0.2 构建命名（2026-11-14）
+
+- `en_us.json` / `zh_cn.json` 补齐 MacroKeyBindings 当前注册的全部 13 项 `key.ultimate_garden.*`，包含 Toggle HUD。原生绑定名称与对应 Hotkeys UI 名称复用相同文案，英文名称统一 Title Case；分类 `key.category.ultimate_garden.key_category` 均为 Ultimate Garden。没有修改绑定注册、默认按键或事件逻辑。Minecraft 原生 LanguageManager 先加载 en_us 再叠加所选语言，其他无翻译语言自然回退到完整英文资源。
+- `gradle.properties` 将 Mod version 更新为 1.0.2，新增 archives_base_name=ultimate_garden，Minecraft 版本仍为 26.1.2。`build.gradle` 通过 base.archivesName 和 AbstractArchiveTask.archiveVersion 设置归档名称，正式输出 `build/libs/ultimate_garden-1.0.2+26.1.2.jar`；processResources 继续使用 project.version 展开 fabric.mod.json，Mod 元数据版本为 1.0.2。
+- 当前项目的 net.fabricmc.fabric-loom 1.17 / Minecraft 26.1.2 构建任务没有 remapJar，使用原有 jar → assemble → build 分发流程；保留插件、依赖和流程，不创建伪 remap 任务或手动重命名产物。归档命名配置也适用于后续存在的归档任务，sources JAR 仍带 sources classifier。
+
+### Bat Pest ESP 与默认开关修复（2026-11-14）
+
+- `PestESP.collect` 的实体类型筛选从仅 SILVERFISH 改为 SILVERFISH 或 BAT，保留 alive / removed 判断、位置插值和 AABB 提取。两者继续生成同一 `ESPConfig.SILVERFISH` 目标，受现有 pestESPEnabled 开关及统一边框 / 填充 / Tracer 样式控制；未修改 ESPManager、渲染器、Shader 或配置结构。
+- `PestConfig` 字段初始值及 `resetToDefault` 的 pestESPEnabled 改为 true；ConfigManager 仍按旧字段读取已有值，显式 false 不会被覆盖。其他 Pest 配置默认值保持不变。
+- 历史核对：可见提交中 `d133872` 首次新增的 PestESP 已仅匹配 SILVERFISH；后续存在 Bat 检测测试残留，但未找到可确认正常支持 Bat 的已提交实现。因此只能确认当前筛选条件会排除 Bat，无法从现有历史确定此前工作版本或具体删除提交。
+- `tests/esp/PestESPRegression` 编译并执行真实 PestESP.collect，实体 / extraction context 使用桩，验证 Bat 与 Silverfish、其他实体排除、存活 / 移除条件、统一开关及插值；ESPRegression 验证新配置默认开启与已保存关闭值保留。测试和游戏内实体高亮实测分开记录。

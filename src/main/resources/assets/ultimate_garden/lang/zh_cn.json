@@ -472,5 +472,21 @@
   "ui.ultimategarden.hud.workflow.LINE_CHANGE": "换行流程",
   "ui.ultimategarden.hud.adjust": "调整 HUD 位置与大小",
   "ui.ultimategarden.hud.adjust.help": "拖动 HUD 或边缘进行调整，按 ESC 保存并返回。",
-  "ui.ultimategarden.hud.adjust.instructions": "拖动移动 | 拖动边缘或四角缩放 | ESC 保存并返回"
+  "ui.ultimategarden.hud.adjust.instructions": "拖动移动 | 拖动边缘或四角缩放 | ESC 保存并返回",
+  "key.ultimate_garden.toggle_hud": "切换 HUD 显示",
+  "ui.ultimategarden.toggle_hud": "切换 HUD 显示",
+  "ui.ultimategarden.toggle_hud.help": "显示或隐藏 HUD。",
+  "ui.ultimategarden.hud.show": "显示 HUD",
+  "ui.ultimategarden.hud.show.help": "显示或隐藏 HUD。",
+  "key.ultimate_garden.macro_toggle": "启动／暂停",
+  "key.ultimate_garden.macro_reset": "重置",
+  "key.ultimate_garden.next_line": "下一行",
+  "key.ultimate_garden.previous_line": "上一行",
+  "key.ultimate_garden.spawn": "设置出生点",
+  "key.ultimate_garden.warp": "传送至花园",
+  "key.ultimate_garden.pest_loadout": "害虫计时",
+  "key.ultimate_garden.pest_timer_cancel": "取消害虫计时",
+  "key.ultimate_garden.loadout": "切换 loadout",
+  "key.ultimate_garden.crop_change": "选择作物",
+  "key.ultimate_garden.window_focus": "鼠标焦点"
 }

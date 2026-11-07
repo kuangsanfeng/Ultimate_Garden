@@ -9,6 +9,17 @@ public final class HudConfigRegression {
     private static void check(boolean value) { checks++; if (!value) throw new AssertionError("HUD check " + checks); }
     public static void main(String[] args) throws Exception {
         var hud = new HudConfig();
+        check(hud.isShowHud());
+        hud.setBounds(.1,.2,.3,.4); hud.setMode(Mode.DETAIL); hud.setDetail(Item.CURRENT_DIRECTION,true);
+        hud.setShowHud(false);
+        var hidden = new HudConfig(); check(!hidden.load(hud.toJson(new JsonObject())));
+        check(!hidden.isShowHud()); check(hidden.getMode()==Mode.DETAIL && hidden.detail(Item.CURRENT_DIRECTION));
+        check(hidden.x()==.1 && hidden.y()==.2 && hidden.width()==.3 && hidden.height()==.4);
+        hidden.setShowHud(true); check(hidden.getMode()==Mode.DETAIL && hidden.detail(Item.CURRENT_DIRECTION));
+        check(!hidden.load(new JsonObject()) && hidden.isShowHud());
+        JsonObject badVisibility=new JsonObject(); badVisibility.addProperty("showHud","false");
+        check(hidden.load(badVisibility) && hidden.isShowHud());
+        hud.resetToDefault();
         check(hud.getMode() == Mode.COMPACT);
         for (Item item : Item.values()) {
             boolean compactDefault = item != Item.TOTAL_TICK && item.ordinal() <= Item.INPUT_INTERCEPTION.ordinal();

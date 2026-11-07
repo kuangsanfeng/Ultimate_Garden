@@ -14,7 +14,7 @@ public final class PestESP {
         if (!config.isPestESPEnabled()) return;
         float delta = context.deltaTracker().getGameTimeDeltaPartialTick(false);
         for (var entity : context.level().entitiesForRendering()) {
-            if (entity.getType() != EntityType.SILVERFISH || !entity.isAlive() || entity.isRemoved()) continue;
+            if ((entity.getType() != EntityType.SILVERFISH && entity.getType() != EntityType.BAT) || !entity.isAlive() || entity.isRemoved()) continue;
             var offset = entity.getPosition(delta).subtract(entity.position());
             targets.accept(new ESPTarget(com.kuangsanfeng.ultimategarden.client.config.ESPConfig.SILVERFISH, entity.getBoundingBox().move(offset)));
         }

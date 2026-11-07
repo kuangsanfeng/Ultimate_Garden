@@ -10,6 +10,7 @@ public final class HudAdjustmentRegression {
  public static void main(String[] args)throws Exception{
   Path root=Files.createTempDirectory("ug-hud-adjust-");
   var configs=new ConfigManager(root); Ultimate_GardenClient.configs=configs;
+  configs.getHudConfig().setShowHud(false);
   var c=Minecraft.getInstance();
   // Four sides, four corners, interior move; execute production controller code.
   for(int[] point:new int[][]{{100,200},{400,200},{250,100},{250,300},{100,100},{400,100},{100,300},{400,300},{250,200}}){
@@ -23,6 +24,7 @@ public final class HudAdjustmentRegression {
    HudAdjustmentController.finish(true);check(!HudAdjustmentController.isActive());check(c.screen==menu&&menu.returned&&menu.saved);
    var loaded=new ConfigManager(root).getHudConfig();check(loaded.x()==h.x()&&loaded.y()==h.y()&&loaded.width()==h.width()&&loaded.height()==h.height());
    check(org.lwjgl.glfw.GLFW.live==0);
+   check(!h.isShowHud() && !loaded.isShowHud());
   }
   var menu=new UltimateGardenScreen(); c.screen=menu; HudAdjustmentController.begin(menu);
   HudAdjustmentController.layout(100,100,300,200,150,100);

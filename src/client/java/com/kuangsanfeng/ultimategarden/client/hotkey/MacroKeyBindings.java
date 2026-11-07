@@ -32,6 +32,7 @@ public final class MacroKeyBindings {
             new Binding("Cancel pest timer", "Cancel the current pest loadout timer.", PEST_TIMER_CANCEL_KEY),
             new Binding("Loadout", "Execute /loadout", LOADOUT_KEY),
             new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
+            new Binding("Toggle HUD", "Show or hide the HUD.", HUD_TOGGLE_KEY),
             new Binding("Mouse focus", "Toggle cursor release.", WINDOW_FOCUS_KEY),
             new Binding("Open Ultimate Garden Menu", "Open menu; " + getMenuKeyName() + " closes it outside text input.", OPEN_MENU_KEY));
     }
@@ -59,6 +60,8 @@ public final class MacroKeyBindings {
     // Key Mapping
     // =========================================================
 
+    private static final KeyMapping HUD_TOGGLE_KEY = register("toggle_hud", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyEdge HUD_TOGGLE_EDGE = new KeyEdge();
     private static final KeyMapping OPEN_MENU_KEY = register("open_menu", GLFW.GLFW_KEY_M);
 
     private static final KeyMapping MACRO_TOGGLE_KEY =
@@ -343,6 +346,17 @@ public final class MacroKeyBindings {
                 client -> {
 
 
+                    boolean hudToggle = HUD_TOGGLE_EDGE.rising(isPressed(HUD_TOGGLE_KEY));
+                    while (HUD_TOGGLE_KEY.consumeClick()) { }
+                    boolean hudInputAllowed = client.screen == null || client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen
+                            && !(client.screen.getFocused() instanceof net.minecraft.client.gui.components.EditBox);
+                    if (hudToggle && hudInputAllowed && !com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) {
+                        var configs=Ultimate_GardenClient.getConfigManager();
+                        if (!configs.isPendingRestart(com.kuangsanfeng.ultimategarden.client.config.ConfigManager.Module.HUD)) {
+                            var hud=configs.getHudConfig(); hud.setShowHud(!hud.isShowHud());
+                            configs.save(com.kuangsanfeng.ultimategarden.client.config.ConfigManager.Module.HUD);
+                        }
+                    }
                     // =====================================================
                     // Num+
                     // =====================================================

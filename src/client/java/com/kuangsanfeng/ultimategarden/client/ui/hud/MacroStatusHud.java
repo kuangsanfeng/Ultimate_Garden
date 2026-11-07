@@ -29,6 +29,7 @@ public final class MacroStatusHud {
         boolean editing = HudAdjustmentController.isActive();
         if (client.player == null || client.level == null || (!editing && client.options.hideGui) || client.screen instanceof UltimateGardenScreen) return;
         var state = farm.getState(); var hud = configs.getHudConfig();
+        if (!editing && !hud.isShowHud()) return;
         var crop = state.getCropType() == 0 ? null : configs.getCropConfig().get(state.getCropType());
         String status = text(state.isRunning() ? "running" : "paused");
         int enabledColor = ThemePalette.from(configs.getUIConfig()).accent();

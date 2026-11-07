@@ -20,15 +20,15 @@ public final class ESPRegression {
         Path dir = Files.createTempDirectory("ultimate-garden-esp-");
         ConfigManager manager = new ConfigManager(dir);
         check(Files.exists(dir.resolve("esp.json")));
-        check(!manager.getPestConfig().isPestESPEnabled());
+        check(manager.getPestConfig().isPestESPEnabled());
         check(manager.getPestConfig().isAutoPestLoadout() && manager.getPestConfig().getPestLoadoutDelayTicks() == 2500);
         var esp = manager.getESPConfig();
         check(esp.isThroughWalls() && esp.getTarget(ESPConfig.SILVERFISH).getFill().getColorMode() == ESPColorMode.RAINBOW);
         check(esp.getTarget(ESPConfig.SILVERFISH).getBox().getLineWidth() == 2 && esp.getTarget(ESPConfig.SILVERFISH).getTracer().getLineWidth() == 1.5f);
-        manager.getPestConfig().setPestESPEnabled(true); manager.save(ConfigManager.Module.PEST);
+        manager.getPestConfig().setPestESPEnabled(false); manager.save(ConfigManager.Module.PEST);
         esp.getTarget(ESPConfig.SILVERFISH).getBox().setLineWidth(7); esp.getTarget(ESPConfig.SILVERFISH).getFill().setAlpha(0.4f); esp.setCycleDurationMs(7250); manager.save(ConfigManager.Module.ESP);
         manager = new ConfigManager(dir);
-        check(manager.getPestConfig().isPestESPEnabled());
+        check(!manager.getPestConfig().isPestESPEnabled());
         check(manager.getPestConfig().isAutoPestLoadout() && manager.getPestConfig().getPestLoadoutDelayTicks() == 2500);
         check(manager.getESPConfig().getTarget(ESPConfig.SILVERFISH).getBox().getLineWidth() == 7 && manager.getESPConfig().getTarget(ESPConfig.SILVERFISH).getFill().getAlpha() == 0.4f);
         check(manager.getESPConfig().getCycleDurationMs() == 7250);
