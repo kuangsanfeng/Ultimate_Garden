@@ -29,6 +29,8 @@ public class Ultimate_GardenClient implements ClientModInitializer {
     private static ConfigManager configManager;
 
     private static MacroManager macroManager;
+    private static net.minecraft.client.User observedUser;
+    private static com.kuangsanfeng.ultimategarden.client.macro.esp.ESPManager espManager;
 
 
 	// Compatibility: this pre-existing mouse-click queue has no tick driver.
@@ -48,7 +50,12 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 
-        configManager = new ConfigManager();
+        observedUser = Minecraft.getInstance().getUser();
+        configManager = new ConfigManager(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("ultimategarden"), accountIdentity(observedUser));
+        espManager = new com.kuangsanfeng.ultimategarden.client.macro.esp.ESPManager(configManager);
+        var pestESP = new com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestESP(configManager.getPestConfig());
+        espManager.register(com.kuangsanfeng.ultimategarden.client.config.ESPConfig.SILVERFISH, pestESP::collect);
+        espManager.initialize();
 
 
 		Minecraft client =
@@ -143,6 +150,18 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// =====================================================
 
         macroManager = new MacroManager(farmController);
+        configManager.setCurrentAccountCopyGuard(farmController::canEditRouteConfiguration);
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> {
+            var session = game.getUser();
+            if (session == observedUser) return;
+            observedUser = session;
+            var identity = accountIdentity(session);
+            if (configManager.matchesAccount(identity)) return;
+            farmController.abortForWorldChange(); legacyMouseClickScheduler.clear(); espManager.invalidateFrames();
+            if (game.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen) game.setScreen(null);
+            configManager.activateAccount(identity);
+            farmController.abortForWorldChange();
+        });
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, game) -> farmController.abortForWorldChange());
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(game -> farmController.abortForWorldChange());
 
@@ -165,6 +184,11 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
 
 	public static ConfigManager getConfigManager() { return configManager; }
+    private static com.kuangsanfeng.ultimategarden.client.config.AccountIdentity accountIdentity(net.minecraft.client.User user) {
+        if (user == null) return null;
+        try { return new com.kuangsanfeng.ultimategarden.client.config.AccountIdentity(user.getProfileId(), user.getName()); }
+        catch (IllegalArgumentException error) { return null; }
+    }
 
     public static MacroManager getMacroManager() {
         return macroManager;

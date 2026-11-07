@@ -1,5 +1,40 @@
 # Ultimate Garden 项目代码结构与行为总结
 
+## ESP 与 Silverfish 可视化（当前实现）
+
+```text
+client/config/ESPConfig.java
+client/macro/esp/
+├── ESPManager.java
+├── ESPRenderer.java
+├── ESPTarget.java
+├── render/
+│   ├── ESPBoxRenderer.java
+│   ├── ESPFillRenderer.java
+│   └── ESPTracerRenderer.java
+└── style/
+    ├── ESPStyle.java
+    ├── ESPColorMode.java
+    └── ESPColorProvider.java
+client/macro/farm/pest/PestESP.java
+tests/esp/ESPRegression.java
+tests/esp/run.ps1
+```
+
+`Ultimate_GardenClient` 创建唯一 ESPManager，注册 `PestESP::collect` 后注册一次 Fabric `LevelRenderEvents.END_EXTRACTION` 与 `END_MAIN`。新增 ESP 模块只需注册目标提取回调，不复制绘制代码。ESP 不依赖农业宏 running、菜单暂停或害虫装备计时器。
+
+PestESP 只在 `pestESPEnabled` 为 true 时遍历当前 ClientLevel 的 `entitiesForRendering()`；26.1.2 该接口返回客户端实体集合，不做摄像机视锥筛选。严格使用 `EntityType.SILVERFISH`，排除死亡/移除实体；使用 `getPosition(partialTick)` 平移实际 AABB 获得插值边界框。没有实体名称匹配、额外区块请求、追踪范围修改、网络消息、输入或实体写操作。
+
+提取阶段在 LevelRenderState 的 Fabric RenderStateDataKey 中保存当前帧不可变目标、颜色配置与连续时间快照；绘制阶段不读取实体或配置。没有跨世界实体引用缓存，每次提取完整替换快照，断线令旧代快照失效，退出释放自有 ByteBufferBuilder。GPU 上传和资源由原生 RenderType 管理，不增加 LevelRenderer Mixin。
+
+ESPRenderer 使用隔离的 RenderPipeline/RenderSetup。Box 的 12 条边与 Tracer 使用当前原生 LINES 管线及逐顶点 LineWidth，合法宽度为 0.5..16 帧缓冲像素；颜色片元着色器不应用雾衰减。Fill 使用排序的 QUADS、双面六面填充及透明混合。所有深度模式均不写深度；throughWalls=true 关闭深度测试，否则遵守场景深度。彩虹由同一 ESPColorProvider 计算，基于单调连续时间和世界坐标逐顶点变色。
+
+Tracer 使用当前相机投影矩阵和实际绘制 ModelView 矩阵，把目标中心投影至 NDC，再反投影到安全的相机平面上绘制原生粗线；起点为视口中心。该辅助线始终置顶，不宣称墙体遮挡。后方/无效投影跳过，屏幕外端点截到视口边缘，中心重合不产生退化线。平面深度 0.5 兼容 OpenGL 与 zero-to-one 深度范围。
+
+ConfigManager 新增 `Module.ESP` / `getESPConfig()`，沿用 FabricLoader 实例配置目录与 ConfigIO 原子保存。`esp.json` 保存 schemaVersion、throughWalls、box/fill/tracer 各自的 enabled/colorMode/color/alpha、box/tracer 的 lineWidth，以及 rainbow.cycleDurationMs。非法字段逐项回退、备份原文，保留其他合法字段和未知字段，高版本文件禁止覆盖。PestConfig 仅新增 `pestESPEnabled=false`，autoPestLoadout 与 2500 tick 默认计时逻辑不变。
+
+GUI 的 Pests 页提供独立 Pest ESP 开关；Settings 提供共享 Box/Fill/Tracer 设置。合法输入即时应用并保存，非法草稿保留最后合法值；RAINBOW 模式禁用单色输入。界面不自行读写 JSON。`tests/esp/run.ps1` 使用已有 runtimeClasspath 检查持久化、颜色、几何生成与投影；GPU 外观、实体识别及不同图形设备表现仍需游戏内测试。
+
 ## 原生 GUI 与菜单生命周期（当前实现，以本节为准）
 
 ### 入口与界面
