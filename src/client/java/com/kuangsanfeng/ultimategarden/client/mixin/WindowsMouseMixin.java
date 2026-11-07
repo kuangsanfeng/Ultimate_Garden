@@ -2,7 +2,7 @@ package com.kuangsanfeng.ultimategarden.client.mixin;
 
 
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
-import com.kuangsanfeng.ultimategarden.client.interaction.windows.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
 import net.minecraft.client.MouseHandler;
 import net.minecraft.client.input.MouseButtonInfo;
 import org.spongepowered.asm.mixin.Mixin;

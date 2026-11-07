@@ -18,6 +18,31 @@ public class VirtualInput {
     private final VirtualKeyboard keyboard;
 
     private final VirtualMouse mouse;
+    private boolean suspended;
+    private final java.util.Set<String> actionKeys = new java.util.HashSet<>();
+    private boolean actionAttack;
+    public record HeldActions(java.util.Set<String> keys, boolean attack) { }
+
+    public HeldActions suspendForMenu() {
+        HeldActions held = new HeldActions(java.util.Set.copyOf(actionKeys), actionAttack && mouse.isLeftDown());
+        suspended = true;
+        releaseAll();
+        return held;
+    }
+    public void resumeAfterMenu(HeldActions held, boolean restoreActions) {
+        suspended = false;
+        if (restoreActions && held != null) {
+            for (String key : held.keys()) actionKeyDown(key);
+            if (held.attack()) actionMouseDown();
+        }
+    }
+    public void actionKeyDown(String key) {
+        if (!suspended) { actionKeys.add(key); keyDown(key); }
+    }
+    public void actionKeyUp(String key) { actionKeys.remove(key); keyUp(key); }
+    public void actionMouseDown() { if (!suspended) { actionAttack = true; mouseDown(); } }
+    public void actionMouseUp() { actionAttack = false; mouseUp(); }
+
 
 
 
@@ -29,6 +54,7 @@ public class VirtualInput {
         this.keyboard = keyboard;
 
         this.mouse = mouse;
+        keyboard.setInputAllowed(() -> !suspended);
 
     }
 
@@ -44,7 +70,7 @@ public class VirtualInput {
             String key
     ) {
 
-        keyboard.keyDown(key);
+        if (!suspended) keyboard.keyDown(key);
 
     }
 
@@ -55,6 +81,7 @@ public class VirtualInput {
             String key
     ) {
 
+        actionKeys.remove(key);
         keyboard.keyUp(key);
 
     }
@@ -66,14 +93,14 @@ public class VirtualInput {
             String key
     ) {
 
-        keyboard.keyClick(key);
+        if (!suspended) keyboard.keyClick(key);
 
     }
 
     //SlotClick
     public void slot(int slot) {
 
-        keyboard.slot(slot);
+        if (!suspended) keyboard.slot(slot);
 
     }
 
@@ -84,7 +111,7 @@ public class VirtualInput {
             char character
     ) {
 
-        keyboard.typeCharacter(character);
+        if (!suspended) keyboard.typeCharacter(character);
 
     }
 
@@ -98,7 +125,7 @@ public class VirtualInput {
     //MouseDown()
     public void mouseDown() {
 
-        mouse.mouseDown();
+        if (!suspended) mouse.mouseDown();
 
     }
 
@@ -107,6 +134,7 @@ public class VirtualInput {
     //MouseUp()
     public void mouseUp() {
 
+        actionAttack = false;
         mouse.mouseUp();
 
     }
@@ -115,7 +143,7 @@ public class VirtualInput {
 
     public void mouseClick() {
 
-        mouse.mouseClick();
+        if (!suspended) mouse.mouseClick();
 
     }
 
@@ -152,6 +180,8 @@ public class VirtualInput {
     //KeyStop() && KeyMouseStop()
     public void releaseAll() {
 
+        actionKeys.clear();
+        actionAttack = false;
         keyboard.releaseAll();
 
         mouse.releaseAll();

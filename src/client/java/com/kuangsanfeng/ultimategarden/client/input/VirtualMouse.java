@@ -1,5 +1,6 @@
 package com.kuangsanfeng.ultimategarden.client.input;
 
+import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
 
@@ -13,7 +14,7 @@ public final class VirtualMouse {
 
     private final Minecraft minecraft;
 
-    private final com.kuangsanfeng.ultimategarden.client.macro.command.CommandScheduler scheduler;
+    private final ActionScheduler scheduler;
 
     private boolean leftDown;
 
@@ -21,7 +22,7 @@ public final class VirtualMouse {
 
     public VirtualMouse(
             Minecraft minecraft,
-            com.kuangsanfeng.ultimategarden.client.macro.command.CommandScheduler scheduler
+            ActionScheduler scheduler
     ) {
 
         this.minecraft = minecraft;

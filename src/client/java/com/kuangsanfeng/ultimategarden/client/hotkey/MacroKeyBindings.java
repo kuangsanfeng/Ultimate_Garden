@@ -3,7 +3,8 @@ package com.kuangsanfeng.ultimategarden.client.hotkey;
 
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import com.kuangsanfeng.ultimategarden.Ultimate_Garden;
-import com.kuangsanfeng.ultimategarden.client.macro.MacroController;
+import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmController;
+import com.kuangsanfeng.ultimategarden.client.macro.MacroManager;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -18,6 +19,33 @@ import org.lwjgl.glfw.GLFW;
 // =========================================================
 
 public final class MacroKeyBindings {
+    public record Binding(String title, String description, KeyMapping mapping) { }
+    public static java.util.List<Binding> getBindings() {
+        return java.util.List.of(
+            new Binding("Start / Pause", "Toggle farming using the existing hotkey lifecycle.", MACRO_TOGGLE_KEY),
+            new Binding("Reset", "Reset the current farm route.", MACRO_RESET_KEY),
+            new Binding("Next line", "Advance one line while stopped.", NEXT_LINE_KEY),
+            new Binding("Previous line", "Move back one line while stopped.", PREVIOUS_LINE_KEY),
+            new Binding("Set spawn", "Run the existing spawn-location sequence.", SPAWN_KEY),
+            new Binding("Warp Garden", "Run the existing garden warp.", WARP_KEY),
+            new Binding("Pest timer", "Manually start the pest loadout timer in Pests mode.", PEST_LOADOUT_KEY),
+            new Binding("Cancel pest timer", "Cancel the current pest loadout timer.", PEST_TIMER_CANCEL_KEY),
+            new Binding("Loadout", "Open the existing loadout sequence.", LOADOUT_KEY),
+            new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
+            new Binding("Mouse focus", "Toggle cursor release.", WINDOW_FOCUS_KEY),
+            new Binding("Open Ultimate Garden Menu", "Open menu; M closes it outside text input.", OPEN_MENU_KEY));
+    }
+    public static boolean matchesMenuKey(net.minecraft.client.input.KeyEvent event) { return OPEN_MENU_KEY.matches(event); }
+    public static void clearMenuClicks() { while (OPEN_MENU_KEY.consumeClick()) { } }
+    public static boolean isMenuKeyPhysicallyDown() {
+        var key = ((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)OPEN_MENU_KEY).getKey();
+        if (key.getValue() < 0) return false;
+        long handle = net.minecraft.client.Minecraft.getInstance().getWindow().handle();
+        return key.getType() == InputConstants.Type.MOUSE
+            ? GLFW.glfwGetMouseButton(handle, key.getValue()) == GLFW.GLFW_PRESS
+            : GLFW.glfwGetKey(handle, key.getValue()) == GLFW.GLFW_PRESS;
+    }
+
 
 
     private static final KeyMapping.Category CATEGORY =
@@ -29,6 +57,8 @@ public final class MacroKeyBindings {
     // =========================================================
     // Key Mapping
     // =========================================================
+
+    private static final KeyMapping OPEN_MENU_KEY = register("open_menu", GLFW.GLFW_KEY_M);
 
     private static final KeyMapping MACRO_TOGGLE_KEY =
             register(
@@ -296,9 +326,11 @@ public final class MacroKeyBindings {
 
 
     public static void register(
-            MacroController controller
+            MacroManager manager
     ) {
 
+
+        FarmController controller = manager.getFarmController();
 
         Ultimate_Garden.LOGGER.info(
                 "Registering Ultimate Garden key bindings."
@@ -310,7 +342,11 @@ public final class MacroKeyBindings {
                 client -> {
 
 
-                    controller.tick();
+                    manager.tick();
+                    boolean menuClick = false;
+                    while (OPEN_MENU_KEY.consumeClick()) menuClick = true;
+                    if (menuClick && client.screen == null) com.kuangsanfeng.ultimategarden.client.ui.MenuController.open();
+                    if (controller.isMenuSessionActive()) return;
 
 
 
@@ -328,12 +364,12 @@ public final class MacroKeyBindings {
 
                         if (controller.getState().isRunning()) {
 
-                            controller.pauseMacroByHotkey();
+                            manager.pauseByHotkey(MacroManager.FARM);
 
                         }
                         else {
 
-                            controller.startMacroByHotkey();
+                            manager.startByHotkey(MacroManager.FARM);
 
                         }
                     }
@@ -352,7 +388,7 @@ public final class MacroKeyBindings {
                             return;
                         }
 
-                        controller.resetMacroByHotkey();
+                        manager.resetByHotkey(MacroManager.FARM);
 
                     }
 

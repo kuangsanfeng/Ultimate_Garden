@@ -22,6 +22,8 @@ import org.lwjgl.glfw.GLFW;
 public class VirtualKeyboard {
 
     private final Minecraft minecraft;
+    private java.util.function.BooleanSupplier inputAllowed = () -> true;
+    public void setInputAllowed(java.util.function.BooleanSupplier value) { inputAllowed = value; }
 
     private final java.util.Set<KeyMapping> pressedKeys =
             java.util.Collections.newSetFromMap(
@@ -84,6 +86,7 @@ public class VirtualKeyboard {
 
 
         minecraft.execute(() -> {
+            if (!inputAllowed.getAsBoolean()) return;
 
 
             if(minecraft.screen == null) {
@@ -122,6 +125,7 @@ public class VirtualKeyboard {
 
 
         minecraft.execute(() -> {
+            if (!inputAllowed.getAsBoolean()) return;
 
 
             if(minecraft.screen == null) {

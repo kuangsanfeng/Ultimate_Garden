@@ -3,7 +3,7 @@ package com.kuangsanfeng.ultimategarden.client.mixin;
 
 import com.kuangsanfeng.ultimategarden.Ultimate_Garden;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
-import com.kuangsanfeng.ultimategarden.client.interaction.windows.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
 import net.minecraft.client.KeyboardHandler;
 import net.minecraft.client.input.KeyEvent;
 import org.spongepowered.asm.mixin.Mixin;

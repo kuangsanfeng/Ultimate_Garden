@@ -4,13 +4,16 @@ import com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings;
 import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
 import com.kuangsanfeng.ultimategarden.client.input.VirtualKeyboard;
 import com.kuangsanfeng.ultimategarden.client.input.VirtualMouse;
-import com.kuangsanfeng.ultimategarden.client.interaction.command.CommandScheduler;
-import com.kuangsanfeng.ultimategarden.client.interaction.command.CommandTree;
-import com.kuangsanfeng.ultimategarden.client.interaction.windows.WindowsFocusController;
-import com.kuangsanfeng.ultimategarden.client.interaction.windows.WindowsInputInterceptor;
-import com.kuangsanfeng.ultimategarden.client.interaction.windows.WindowsState;
-import com.kuangsanfeng.ultimategarden.client.macro.MacroController;
+import com.kuangsanfeng.ultimategarden.client.command.CommandListener;
+import com.kuangsanfeng.ultimategarden.client.command.CommandTree;
+import com.kuangsanfeng.ultimategarden.client.window.WindowsFocusController;
+import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.window.WindowsState;
+import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmController;
+import com.kuangsanfeng.ultimategarden.client.macro.MacroManager;
+import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
 import net.fabricmc.api.ClientModInitializer;
+import com.kuangsanfeng.ultimategarden.client.config.ConfigManager;
 import net.minecraft.client.Minecraft;
 
 
@@ -21,10 +24,17 @@ import net.minecraft.client.Minecraft;
 public class Ultimate_GardenClient implements ClientModInitializer {
 
 
-	private static MacroController macroController;
+	private static FarmController farmController;
+
+    private static ConfigManager configManager;
+
+    private static MacroManager macroManager;
 
 
-	private static com.kuangsanfeng.ultimategarden.client.macro.command.CommandScheduler macroScheduler;
+	// Compatibility: this pre-existing mouse-click queue has no tick driver.
+    // Do not merge it with farm actions or start ticking it in a structural refactor.
+    // No current farm flow calls VirtualMouse.mouseClick(). See Code_Structure.md.
+    private static ActionScheduler legacyMouseClickScheduler;
 
 
 	private static WindowsState windowsState;
@@ -37,6 +47,8 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+
+        configManager = new ConfigManager();
 
 
 		Minecraft client =
@@ -57,8 +69,8 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// Macro Scheduler
 		// =====================================================
 
-		macroScheduler =
-				new com.kuangsanfeng.ultimategarden.client.macro.command.CommandScheduler();
+		legacyMouseClickScheduler =
+				new ActionScheduler();
 
 
 
@@ -75,7 +87,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		VirtualMouse mouse =
 				new VirtualMouse(
 						client,
-						macroScheduler
+						legacyMouseClickScheduler
 				);
 
 
@@ -87,7 +99,12 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		windowsFocusController =
 				new WindowsFocusController(
 						client,
-						windowsState
+						windowsState,
+                        () -> {
+                            if (macroManager != null) {
+                                macroManager.restoreInputState();
+                            }
+                        }
 				);
 
 
@@ -110,12 +127,13 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// Macro
 		// =====================================================
 
-		macroController =
-				new MacroController(
+		farmController =
+				new FarmController(
 						client,
 						input,
 						windowsInputInterceptor,
-						windowsFocusController
+						windowsFocusController,
+                        configManager
 				);
 
 
@@ -124,27 +142,37 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// Register
 		// =====================================================
 
+        macroManager = new MacroManager(farmController);
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, game) -> farmController.abortForWorldChange());
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(game -> farmController.abortForWorldChange());
+
 		MacroKeyBindings.register(
-				macroController
+				macroManager
 		);
 
 
 		CommandTree.register(
-				macroController
+				farmController
 		);
 
 
-		CommandScheduler.register(
-				macroController
+		CommandListener.register(
+				macroManager
 		);
 
 	}
 
 
 
-	public static MacroController getMacroController() {
+	public static ConfigManager getConfigManager() { return configManager; }
 
-		return macroController;
+    public static MacroManager getMacroManager() {
+        return macroManager;
+    }
+
+    public static FarmController getFarmController() {
+
+		return farmController;
 
 	}
 
