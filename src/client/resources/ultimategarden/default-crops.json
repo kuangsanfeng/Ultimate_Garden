@@ -20,7 +20,16 @@
       "pitchB": -3.0,
       "alternateSlot": false,
       "hintPitchA": -3.0,
-      "hintPitchB": -3.0
+      "hintPitchB": -3.0,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "FLOWER": {
       "name": "Flower",
@@ -39,7 +48,16 @@
       "pitchA": -3.0,
       "yawB": 90.0,
       "pitchB": -3.0,
-      "alternateSlot": false
+      "alternateSlot": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "COCOA": {
       "name": "Cocoa",
@@ -58,7 +76,16 @@
       "pitchA": -45.0,
       "yawB": 0.0,
       "pitchB": -45.0,
-      "alternateSlot": false
+      "alternateSlot": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "MELON": {
       "name": "Melon",
@@ -77,7 +104,16 @@
       "pitchA": -61.0,
       "yawB": 90.0,
       "pitchB": -61.0,
-      "alternateSlot": false
+      "alternateSlot": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "PUMPKIN": {
       "name": "Pumpkin",
@@ -96,7 +132,16 @@
       "pitchA": -61.0,
       "yawB": 90.0,
       "pitchB": -61.0,
-      "alternateSlot": false
+      "alternateSlot": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "SUGARCANE": {
       "name": "Sugarcane",
@@ -113,7 +158,16 @@
       "pitchA": -3.0,
       "yawB": 135.0,
       "pitchB": -3.0,
-      "alternateSlot": true
+      "alternateSlot": true,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": true,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "MUSHROOM": {
       "name": "Mushroom",
@@ -130,7 +184,16 @@
       "pitchA": -3.0,
       "yawB": -115.0,
       "pitchB": -3.0,
-      "alternateSlot": true
+      "alternateSlot": true,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": true,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "CACTUS": {
       "name": "Cactus",
@@ -147,7 +210,16 @@
       "pitchA": 0.0,
       "yawB": -90.0,
       "pitchB": 0.0,
-      "alternateSlot": false
+      "alternateSlot": false,
+      "lineChangeMovement": {
+        "enabled": true,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "CARROT": {
       "name": "Carrot",
@@ -168,7 +240,16 @@
       "pitchB": -3.0,
       "alternateSlot": false,
       "hintPitchA": 3.0,
-      "hintPitchB": 3.0
+      "hintPitchB": 3.0,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "POTATO": {
       "name": "Potato",
@@ -189,7 +270,16 @@
       "pitchB": -3.0,
       "alternateSlot": false,
       "hintPitchA": 3.0,
-      "hintPitchB": 3.0
+      "hintPitchB": 3.0,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "NETHER_WART": {
       "name": "Nether Wart",
@@ -210,7 +300,16 @@
       "pitchB": -3.0,
       "alternateSlot": false,
       "hintPitchA": -3.0,
-      "hintPitchB": -3.0
+      "hintPitchB": -3.0,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "TIMETESTER": {
       "name": "TimeTester",
@@ -229,19 +328,55 @@
       "pitchA": 66.66,
       "yawB": 66.66,
       "pitchB": 66.66,
-      "alternateSlot": false
+      "alternateSlot": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "CUSTOM1": {
       "name": "Custom1",
-      "enabled": false
+      "enabled": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "CUSTOM2": {
       "name": "Custom2",
-      "enabled": false
+      "enabled": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     },
     "CUSTOM3": {
       "name": "Custom3",
-      "enabled": false
+      "enabled": false,
+      "lineChangeMovement": {
+        "enabled": false,
+        "durationTicks": 10
+      },
+      "lineChangeYawPitch": {
+        "enabled": false,
+        "slot1": 3,
+        "slot2": 4
+      }
     }
   }
 }

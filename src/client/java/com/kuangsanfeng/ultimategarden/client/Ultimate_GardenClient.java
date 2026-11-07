@@ -122,6 +122,8 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
 
 
+        windowsInputInterceptor.setUiInputAllowed(() -> client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen);
+
 		VirtualInput input =
 				new VirtualInput(
 						keyboard,
@@ -150,6 +152,12 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// =====================================================
 
         macroManager = new MacroManager(farmController);
+        var macroHud = new com.kuangsanfeng.ultimategarden.client.ui.hud.MacroStatusHud(configManager, farmController, windowsState);
+        net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
+                com.kuangsanfeng.ultimategarden.Ultimate_Garden.id("macro_status"), (graphics, delta) -> macroHud.render(graphics));
+        net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(
+                (game, screen, width, height) -> farmController.onPlayerScreenOpened(screen));
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.tick());
         configManager.setCurrentAccountCopyGuard(farmController::canEditRouteConfiguration);
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> {
             var session = game.getUser();
@@ -157,13 +165,14 @@ public class Ultimate_GardenClient implements ClientModInitializer {
             observedUser = session;
             var identity = accountIdentity(session);
             if (configManager.matchesAccount(identity)) return;
+            com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(false);
             farmController.abortForWorldChange(); legacyMouseClickScheduler.clear(); espManager.invalidateFrames();
             if (game.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen) game.setScreen(null);
             configManager.activateAccount(identity);
             farmController.abortForWorldChange();
         });
-        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, game) -> farmController.abortForWorldChange());
-        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(game -> farmController.abortForWorldChange());
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, game) -> { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(false); farmController.abortForWorldChange(); });
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(game -> { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(false); farmController.abortForWorldChange(); });
 
 		MacroKeyBindings.register(
 				macroManager

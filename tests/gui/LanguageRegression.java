@@ -76,8 +76,15 @@ public final class LanguageRegression {
         }
         Path screen=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java");
         Matcher refs=Pattern.compile("\"(ui\\.ultimategarden\\.[^\"]+)\"").matcher(Files.readString(screen));
-        Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.");
+        Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.");
         while(refs.find())if(!prefixes.contains(refs.group(1)))check(english.has(refs.group(1)));
+        for (var item : HudConfig.Item.values()) check(english.has("ui.ultimategarden.hud.item." + item.name()));
+        for (var workflow : com.kuangsanfeng.ultimategarden.client.macro.farm.action.FarmCommandController.Workflow.values())
+            check(english.has("ui.ultimategarden.hud.workflow." + workflow.name()));
+        for (var phase : com.kuangsanfeng.ultimategarden.client.macro.farm.FarmState.LineChangePhase.values())
+            check(english.has("ui.ultimategarden.hud.phase." + phase.name()));
+        for (var key : RandomDelayConfig.Key.values()) check(english.has("ui.ultimategarden.random_delay." + key.name()));
+        for (var module : ConfigManager.Module.values()) check(english.has("ui.ultimategarden.account.file." + module.name()));
         System.out.println("PASS: "+checks+" GUI language checks: dictionary parity, placeholders, persistence, invalid values, module isolation, flags and UI references.");
     }
 }

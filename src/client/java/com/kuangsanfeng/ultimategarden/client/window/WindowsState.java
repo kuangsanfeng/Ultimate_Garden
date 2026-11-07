@@ -7,6 +7,7 @@ package com.kuangsanfeng.ultimategarden.client.window;
 public final class WindowsState {
 
 
+    // Mod cursor override; native GUI cursor release is independent.
     private boolean mouseReleased;
 
     private boolean inputIntercepting;

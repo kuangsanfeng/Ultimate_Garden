@@ -10,6 +10,8 @@ public final class WindowsInputInterceptor {
 
 
     private final WindowsState state;
+    private java.util.function.BooleanSupplier uiInputAllowed = () -> false;
+    public void setUiInputAllowed(java.util.function.BooleanSupplier allowed) { uiInputAllowed = java.util.Objects.requireNonNull(allowed); }
 
 
 
@@ -44,7 +46,7 @@ public final class WindowsInputInterceptor {
 
     public boolean shouldBlockInput() {
 
-        return state.isInputIntercepting();
+        return state.isInputIntercepting() && !uiInputAllowed.getAsBoolean();
 
     }
 

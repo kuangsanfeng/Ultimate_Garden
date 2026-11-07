@@ -22,6 +22,11 @@ public class WindowsMouseMixin {
 
 
 
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "grabMouse", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;setAll()V"))
+    private void keepPhysicalKeysReleased(com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        if (!com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) original.call();
+    }
+
     // =========================================================
     // Mouse Button
     // =========================================================
@@ -38,6 +43,8 @@ public class WindowsMouseMixin {
             CallbackInfo ci
     ) {
 
+
+        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.button(buttonInfo.button(), action); ci.cancel(); return; }
 
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient
@@ -78,6 +85,8 @@ public class WindowsMouseMixin {
     ) {
 
 
+        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
+
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient
                         .getWindowsInputInterceptor();
@@ -117,6 +126,8 @@ public class WindowsMouseMixin {
     ) {
 
 
+        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.move(xpos, ypos); ci.cancel(); return; }
+
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient
                         .getWindowsInputInterceptor();
@@ -150,6 +161,8 @@ public class WindowsMouseMixin {
     private void interceptHandleAccumulatedMovement(
             CallbackInfo ci
     ) {
+
+        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
 
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient

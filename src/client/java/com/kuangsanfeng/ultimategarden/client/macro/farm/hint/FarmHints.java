@@ -272,7 +272,8 @@ public final class FarmHints {
         var crop = configs.getCrop(cropType);
         HintManager.print("Program:" + crop.getName() + " [" + cropType.name() + "] macro");
         if (!crop.isExecutable()) { HintManager.print("Not implemented / Coming soon or disabled"); return; }
-        HintManager.print(crop.useAlternateSlot() ? "Inventory:1-Hoe 3-MousematI 4-MousematII" : "Inventory:1-Hoe 3-Mousemat");
+        var view = crop.lineChangeYawPitch();
+        HintManager.print(view.enabled() ? "Inventory:1-Hoe " + view.slot1() + "-MousematI " + view.slot2() + "-MousematII" : "Inventory:1-Hoe");
         for (boolean a : new boolean[]{true, false}) {
             HintManager.print(String.format(Locale.ROOT, "%s: Yaw:%.2f Pitch:%.2f",
                 a ? "A" : "B", crop.getHintYaw(a), crop.getHintPitch(a)));

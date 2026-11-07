@@ -90,6 +90,18 @@ public final class ActionScheduler {
     }
 
 
+    /** Tick countdown with the same execution-tick semantics as schedule(ms). */
+    public void scheduleDelayTicks(long ticks, Runnable action) {
+        if (ticks < 0) throw new IllegalArgumentException("Ticks must be nonnegative");
+        queue.add(new ScheduledAction(ticks, action));
+    }
+
+    /** Exact interval between queued callbacks; legacy millisecond scheduling is unchanged. */
+    public void scheduleAfterTicks(long ticks, Runnable action) {
+        if (ticks < 1) throw new IllegalArgumentException("Ticks must be positive");
+        queue.add(new ScheduledAction(ticks - 1, action));
+    }
+
     public void clear() {
 
         queue.clear();

@@ -26,6 +26,7 @@ public final class FarmController implements MacroManager.Module {
     public enum MenuAction { PREVIOUS_LINE, NEXT_LINE, SET_SPAWN, WARP_GARDEN, LOADOUT }
     private final java.util.Deque<MenuAction> menuActions = new java.util.ArrayDeque<>();
     private VirtualInput.HeldActions heldActions;
+    private net.minecraft.client.gui.screens.Screen playerGuiScreen;
     private Object menuWorld;
     private Object lastWorld;
     private boolean actionsRestored;
@@ -86,6 +87,8 @@ public final class FarmController implements MacroManager.Module {
                         windowsFocusController, configManager.getPestConfig()
                 );
 
+        command.setRandomDelays(configManager.getRandomDelayConfig());
+
         this.route = new RouteController(
                 state, input, command, windowsFocusController, this::resetMacro, configManager.getCropConfig()
         );
@@ -122,6 +125,13 @@ public final class FarmController implements MacroManager.Module {
     // =========================================================
 
     public void startMacroByHotkey(){
+        if (menuPause.isActive()) {
+            if (state.getCropType() != 0 && configManager.getCropConfig().get(state.getCropType()).isExecutable()) {
+                command.clearActionFailure();
+                menuPause.start();
+            }
+            return;
+        }
 
         if (windowsFocusController != null) {
             windowsFocusController.releaseFocusWithHint();
@@ -159,8 +169,15 @@ public final class FarmController implements MacroManager.Module {
         pauseMacro();
     }
     public void pauseMacro() {
-        if (menuPause.isActive()) { menuPause.pause(false); heldActions = null; menuActions.clear(); }
-        stopReason = "User paused";
+        pauseMacro(true);
+    }
+    private void pauseMacro(boolean userInitiated) {
+        if (userInitiated) {
+            if (menuPause.isActive()) menuPause.pause(false);
+            heldActions = null;
+            menuActions.clear();
+        }
+        stopReason = userInitiated ? "User paused" : "GUI Pause";
 
         state.setRunning(false);
 
@@ -168,7 +185,7 @@ public final class FarmController implements MacroManager.Module {
 
         stopKeyboardMouse();
 
-        command.cancel();
+        if (userInitiated) command.cancel();
 
 
         FarmHints.printHint("ProgramPause");
@@ -188,7 +205,9 @@ public final class FarmController implements MacroManager.Module {
         resetMacro();
     }
     public void resetMacro() {
-        if (menuPause.isActive()) { menuPause.pause(true); heldActions = null; menuActions.clear(); }
+        if (menuPause.isActive()) menuPause.pause(true);
+        heldActions = null;
+        menuActions.clear();
         stopReason = "Reset";
 
         state.reset();
@@ -224,7 +243,7 @@ public final class FarmController implements MacroManager.Module {
     // =========================================================
 
     public void restoreInputState() {
-        if (menuPause.isActive()) return;
+        if (menuPause.isActive() || state.isCommandRunning()) return;
 
         if (!state.isRunning()) {
             return;
@@ -247,17 +266,65 @@ public final class FarmController implements MacroManager.Module {
             if (menuPause.isActive() || state.isRunning() || command.hasPendingWork()) abortForWorldChange();
             return;
         }
+        if (playerGuiScreen != null && client.screen != playerGuiScreen) {
+            playerGuiScreen = null;
+            if (!(client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen)
+                    || !configManager.getGeneralConfig().isAutoPauseFarmWhenOpeningMenu()) endMenuPause();
+        }
+        com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.clearTransient();
         if (menuPause.isActive()) {
             tickMenuSession();
             return;
         }
+        if (!(client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen)
+                && !menuActions.isEmpty() && !command.hasPendingWork()) executeMenuAction();
         command.tick();
         route.tick(isTimeTesterMode);
     }
 
-    public void beginMenuPause() {
+    public void onPlayerScreenOpened(net.minecraft.client.gui.screens.Screen screen) {
+        if (screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen menu && menu.keepsFarmingInput()) reapplyMenuInput();
+        var kind = screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen
+                ? com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.INVENTORY
+                : screen instanceof ChatScreen
+                ? com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.CHAT
+                : screen instanceof net.minecraft.client.gui.screens.PauseScreen
+                ? com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.MENU : null;
+        boolean physical = com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.consume(kind);
+        if (client.player != null && client.level != null && kind != null && physical) {
+            windowsFocusController.useGameFocusForPlayerGui();
+            if (!state.isRunning() && !menuPause.isActive()) return;
+            playerGuiScreen = screen;
+            if (!menuPause.isOpen()) {
+                boolean wasRunning = state.isRunning();
+                beginMenuPause(com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Source.PLAYER_GUI);
+                if (wasRunning) {
+                    // Preserve queued work and the GUI resume snapshot.
+                    pauseMacro(false);
+                }
+            }
+        }
+    }
+
+    public void reapplyMenuInput() {
+        if (state.isRunning() && !menuPause.isActive() && client.player != null && client.level != null) input.reapplyHeldState();
+    }
+    public boolean beginUltimateGardenMenu() {
+        if (!configManager.getGeneralConfig().isAutoPauseFarmWhenOpeningMenu()) return false;
+        beginMenuPause(com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Source.ULTIMATE_GARDEN_MENU);
+        return true;
+    }
+    public void endUltimateGardenMenu() {
+        if (menuPause.isActive()) menuPause.close(configManager.getGeneralConfig().isAutoPauseFarmWhenOpeningMenu()
+                && configManager.getGeneralConfig().isAutoResumeFarmAfterGuiClose());
+    }
+    private boolean isOwnMenuVisible() {
+        return client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen;
+    }
+    private void beginMenuPause(com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Source source) {
         boolean reopening = menuPause.isActive();
-        menuPause.open(state.isRunning() || command.isBusinessResumePending());
+        menuPause.open(state.isRunning() || command.isBusinessResumePending(), source);
+        stopReason = "GUI Pause";
         menuWorld = client.level;
         state.setRunning(false);
         windowsInputInterceptor.disable();
@@ -267,9 +334,10 @@ public final class FarmController implements MacroManager.Module {
         if (!reopening) command.clearActionFailure();
     }
     public void endMenuPause() {
-        if (menuPause.isActive()) menuPause.close(configManager.getGeneralConfig().isAutoResumeFarmAfterGuiClose());
+        if (menuPause.isActive()) menuPause.close(false);
     }
     public boolean isMenuSessionActive() { return menuPause.isActive(); }
+    public boolean shouldPauseByHotkey() { return menuPause.shouldPauseOnToggle(state.isRunning()); }
     public boolean isMenuOpen() { return menuPause.isOpen(); }
     public String getRunStatus() {
         if (menuPause.isActive()) {
@@ -281,17 +349,38 @@ public final class FarmController implements MacroManager.Module {
         }
         return state.isRunning() ? "Running" : command.isBusinessResumePending() ? "Paused for business action" : stopReason;
     }
+    public String getHudStopReason() {
+        if (state.isRunning()) return "NONE";
+        if (menuPause.isActive()) {
+            return switch (menuPause.getIntent()) {
+                case PAUSE -> "MANUAL";
+                case RESET -> "RESET";
+                case START -> "START_REQUESTED";
+                case NONE -> menuPause.hasFailed() || command.hasActionFailed() ? "ACTION_FAILED" : "GUI";
+            };
+        }
+        if (command.hasPendingWork() || command.isBusinessResumePending()) return "WORKFLOW";
+        return switch (stopReason) {
+            case "User paused" -> "MANUAL";
+            case "GUI Pause", "Paused after menu" -> "GUI";
+            case "Reset" -> "RESET";
+            case "Paused: action failed" -> "ACTION_FAILED";
+            case "Stopped: game context changed" -> "WORLD_CHANGED";
+            default -> command.hasActionFailed() ? "ACTION_FAILED" : "STOPPED";
+        };
+    }
     public boolean canEditRouteConfiguration() {
-        return menuPause.canChangeRoute() && !command.hasPendingWork() && !command.isPestLoadoutTimerRunning() && menuActions.isEmpty();
+        return (menuPause.canChangeRoute() || (!menuPause.isActive() && isOwnMenuVisible() && !state.isRunning())) && !command.hasPendingWork() && !command.isPestLoadoutTimerRunning() && menuActions.isEmpty();
     }
     public void requestMenuStart() {
-        if (!menuPause.isOpen()) throw new IllegalStateException("Open the menu before requesting a deferred start.");
+        if (!isOwnMenuVisible()) throw new IllegalStateException("Open the menu before requesting a start.");
         if (state.getCropType() == 0 || !configManager.getCropConfig().get(state.getCropType()).isExecutable()) throw new IllegalStateException("Select an implemented, enabled crop first.");
         command.clearActionFailure();
-        menuPause.start();
+        if (menuPause.isActive()) menuPause.start();
+        else startMacro();
     }
     public void queueMenuAction(MenuAction action) {
-        if (!menuPause.isOpen() || state.getCropType() == 0 || !menuActions.isEmpty()) throw new IllegalStateException("Select a crop; only one menu action can be queued at a time.");
+        if (!isOwnMenuVisible() || state.getCropType() == 0 || !menuActions.isEmpty()) throw new IllegalStateException("Select a crop; only one menu action can be queued at a time.");
         menuActions.add(action);
     }
     public int getQueuedMenuActions() { return menuActions.size(); }
@@ -334,13 +423,7 @@ public final class FarmController implements MacroManager.Module {
         }
         if (held || command.hasPendingWork()) return;
         if (!menuActions.isEmpty()) {
-            switch (menuActions.remove()) {
-                case PREVIOUS_LINE -> previousLine();
-                case NEXT_LINE -> nextLine();
-                case SET_SPAWN -> spawn();
-                case WARP_GARDEN -> warpGarden();
-                case LOADOUT -> loadout();
-            }
+            executeMenuAction();
             return;
         }
         if (client.screen != null) return;
@@ -353,7 +436,18 @@ public final class FarmController implements MacroManager.Module {
         if (resume) startMacro();
         else windowsInputInterceptor.disable();
     }
+    private void executeMenuAction() {
+            switch (menuActions.remove()) {
+                case PREVIOUS_LINE -> previousLine();
+                case NEXT_LINE -> nextLine();
+                case SET_SPAWN -> spawn();
+                case WARP_GARDEN -> warpGarden();
+                case LOADOUT -> loadout();
+            }
+    }
     public void abortForWorldChange() {
+        playerGuiScreen = null;
+        com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.clear();
         input.resumeAfterMenu(null, false); input.releaseAll();
         command.abortWorld(); menuActions.clear(); heldActions = null;
         menuPause.abort(); state.reset(); windowsInputInterceptor.disable();
@@ -561,6 +655,7 @@ public final class FarmController implements MacroManager.Module {
 
 
         // 使用 command 的调度器延迟 200ms 后再执行后续 spawn 动作
+        command.markSpawnScheduled();
         command.getScheduler().schedule(
                 200,
                 () -> {

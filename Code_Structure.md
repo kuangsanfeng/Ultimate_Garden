@@ -714,3 +714,163 @@ WindowsFocusController 的准确行为：
 | `mixin/WindowsMouseMixin.java` | mixin/WindowsMouseMixin.java | 保留（仅按需更新依赖） |
 | `mixin/WindowsPauseMixin.java` | mixin/WindowsPauseMixin.java | 保留（仅按需更新依赖） |
 | 无 | `macro/MacroManager.java` | 新增最小模块生命周期管理器 |
+
+## GUI 自动暂停范围调整（2026-11-13）
+
+- 新增 `input/PlayerGuiInput`：仅记录一个 tick 内的真实键盘 GUI 意图；`VirtualKeyboard` 注入键盘事件时使用嵌套安全的来源标记，异常时也会恢复。无界面时的虚拟 `KeyMapping.click` 不经过真实输入记录。
+- `WindowsInputMixin` 在真实 PRESS 且当前没有 Screen 时，按当前 `keyInventory`、`keyChat`、`keyCommand` 映射及 ESC 记录意图；这些打开界面的按键允许通过农业输入拦截，包括重绑定后的背包键。
+- `Ultimate_GardenClient` 注册 `ScreenEvents.AFTER_INIT`，由 `FarmController.onPlayerScreenOpened` 同时核对输入意图和实际 InventoryScreen、ChatScreen、PauseScreen。只有农业正在运行或已有暂停会话时才复用 `GuiPauseState`；未打开相应界面的意图在农业 tick 清除。虚拟背包、箱子及服务器菜单不会创建新增暂停会话。
+- `FarmController` 跟踪玩家打开的 Screen 实例，关闭或替换后结束该 GUI 原因；切换自身 UI 时保留其生命周期管理。恢复继续遵循 `autoResumeFarmAfterGuiClose`、原运行快照及用户 PAUSE/RESET 意图。世界变化清理 Screen 跟踪和未消费输入意图。
+- Num+、Num- 在暂停会话内仍可执行暂停和重置，其他业务热键维持原有会话限制。自身 UI 的 added/removed、Spawn、普通 Loadout 的入口暂停、Pest 独立计时与装备队列、Warp 均保留当前原有业务实现；没有通用 Screen 暂停检测，也没有将服务器 Loadout GUI 纳入新增暂停范围。
+- 验证：离线 Java 25 构建；GUI 回归增加真实/虚拟来源、单次消费、意图过期、嵌套与异常恢复，以及农业运行/停止两种状态下 Pest 到期任务独立排入未冻结队列的检查。真实按键重绑定、服务器装备切换与传送仍需游戏内验证。
+
+### GUI 暂停状态与 Num+ 意图同步修复
+
+- `FarmController.pauseMacro(boolean)` 提取公共暂停处理：GUI 与手动暂停均设置 `running=false`、停止键鼠、禁用农业输入拦截并输出 `Program pause`（TimeTester 计数提示也复用）。手动入口仍取消命令并记录 PAUSE；玩家 GUI 入口先建立恢复快照，再调用非用户暂停分支，保留冻结队列和恢复配置。
+- 玩家背包、聊天、ESC 暂停入口调用 `releaseFocusWithHint()`，同步 Focus Released 状态与提示。通过 `playerGuiSession` 记录该会话，在关闭后的鼠标抓取处理完成时重新应用释放光标状态；自身 UI 和工作流原有焦点入口不变。
+- `GuiPauseState.shouldPauseOnToggle` 仅将实际运行或明确的待启动 START 意图视为可暂停。`MacroKeyBindings` 在农业 tick 自动恢复前处理 Num+、Num-；暂停会话内 Num+ 调用 `startMacroByHotkey` 记录 START，第二次 Num+ 或 Num- 可以取消。Screen 仍打开时不启动农业，关闭后由既有会话完成检查执行启动，自动恢复配置不会覆盖明确用户意图。
+- `tests/gui/GuiLifecycleRegression` 增加两种自动恢复配置下的 GUI 暂停后 Num+、重复切换及重置覆盖启动意图检查；原有真实/虚拟输入来源和 Pest 独立计时检查保留。Spawn、PestLoadout、Warp 业务函数及输入来源检测未修改。
+
+### 背包输入来源与 KeyMapping 消费顺序（2026-11-13）
+
+- 实际检查本地 Minecraft 26.1.2 sources：`KeyboardHandler.keyPress` 调用 `KeyMapping.click` 排入点击；`Minecraft.tick` 中 `handleKeybinds` 消费 `keyInventory.consumeClick()`，普通分支同步创建 InventoryScreen。`setScreen` 先赋值 Screen，再 `KeyMapping.releaseAll`，最后初始化界面。Fabric END_CLIENT_TICK 位于 tick RETURN；标准同步路径不能证明 FarmController 的 tick 清除总是在背包初始化之前。
+- 新增 `InventoryInputMixin`，在当前绑定对应的 `KeyMapping.click` 记录真实/虚拟来源队列，在背包 `consumeClick` 成功时建立一次性的打开来源。`release` 清除未消费点击，但保留正在初始化界面的来源；consumeClick 返回 false 清除未打开界面的来源。检测不依赖 Tick 数或固定延迟。
+- `PlayerGuiInput` 将背包来源与 ESC/聊天瞬时标记分开；`FarmController.tick` 仅清理瞬时标记，世界清理仍完整重置。`WindowsInputMixin` 在 keyPress 返回时清理未形成点击的背包请求，避免取消的真实事件污染后续虚拟打开。ESC/聊天检测与公共暂停、Focus、提示流程保持原样。
+- `VirtualKeyboard` 无 Screen 的 KeyMapping.click 也包裹 virtualDispatch，背包与其他键共享绑定时仍可区分来源。来源队列按实际点击 FIFO 消费，不使用 InventoryScreen 类型单独推断玩家输入。
+- 验证覆盖实际源码事件顺序及背包点击跨 tick、真实/虚拟混排、重复消费、releaseAll 清理、未打开 Screen 的消费及取消请求后虚拟输入。未进行实机键盘测试，不将独立状态测试视作游戏内功能已通过。
+
+### GUI 关闭后的鼠标捕获同步（2026-11-13）
+
+- 实际检查 Minecraft 26.1.2：`setScreen(null)` 调用 `MouseHandler.grabMouse()`；grabMouse 先设置 mouseGrabbed=true，再嵌套调用 setScreen(null)。原有仅写 GLFW Cursor Mode 的 Focus 方法未同步原生 mouseGrabbed，且相同 Focus 状态提前返回，无法修正 GUI 关闭后的原生覆盖。
+- `WindowsFocusController.releaseFocus/restoreFocus/reapplyCursorMode` 现在统一按现有 WindowsState.mouseReleased 决定 GLFW 模式；有 Screen 或无游戏上下文时不捕获鼠标。restoreFocus 仅在释放状态发生转换时调用原有输入恢复回调；重复调用仅同步鼠标，不重复恢复农业输入。restoreGameMouseAfterMenu 明确切换到捕获状态，但不调用农业恢复回调。
+- `WindowsFocusMixin` 在 setScreen RETURN 且实际已返回有效游戏时重新应用记录的 Focus。自动 Loadout 保持 mouseReleased=true 时，即使原版先执行 grabMouse，也会同步回 GLFW 自由光标；未改变输入阻断标记或业务启停条件。Minecraft.handleKeybinds 的 continueAttack 条件依赖内部 mouseGrabbed，故释放 Focus 时保留原有逻辑抓取语义，仅释放实际 OS 光标，避免破坏农业持续挖掘；内部标记不能单独代表实际 GLFW 捕获模式。
+- `FarmController` 删除玩家 GUI 会话完成时再次 releaseFocus 的覆盖及仅用于该覆盖的 playerGuiSession 字段。玩家 ESC、背包、聊天关闭后的既有 restoreGameMouseAfterMenu 捕获结果得以保留；农业恢复仍由原有会话意图和配置决定。
+- 新增 `tests/focus/run.ps1`：编译真实 FocusController/WindowsState，使用模拟原版 setScreen/grabMouse 递归和 GLFW 的边界桩验证玩家 GUI、自动容器、重复开关、Focus toggle、同状态同步和输入阻断独立性。测试不创建原生窗口；实机鼠标、Hypixel Loadout 仍需验证。输入来源检测、WindowsPauseMixin、VirtualInput/VirtualKeyboard 及工作流业务函数未修改。
+
+### Cactus 换行期间冻结行 Tick（2026-11-13）
+
+- `RouteController.tick` 原有 `FarmState.commandRunning` 守卫现在由 `FarmCommandController.cactusLineChange` 接通：接受换行任务后置 true，末尾 100ms 等待完成、调用 continueLine 之前置 false。包括起始等待、按 W 移动及末尾等待的整个换行阶段不累计行 Tick；原有行结束 resetTick、移动时长、方向和按键未改。
+- `cancel`、`discardDeferredActions`、`abortWorld` 清除该标记，避免暂停取消或世界清理后无法继续行计时。GUI 冻结队列时标记保留，完成换行后在原有 command.tick → route.tick 顺序中恢复累计。未用 eventChange 作为计时条件，因为手动换行和作物初始化也设置该字段。
+- 未修改 Wheat 等普通作物、Spawn、Loadout、Warp 或 Pest 倒计时算法。新增 `tests/route/run.ps1` 执行真实 RouteController、FarmCommandController、FarmState 和 ActionScheduler，输入、配置及窗口采用边界桩；覆盖五次连续换行、保留非零行计数、GUI hold、手动取消恢复、世界清理、Wheat 和独立 Pest 倒计时。游戏内实际移动未验证。
+
+### 作物换行功能配置化（2026-11-13）
+
+- 每个作物 JSON 新增 `lineChangeMovement: {enabled, durationTicks}` 与 `lineChangeYawPitch: {enabled, slot1, slot2}`。默认仅 Cactus 开启移动，Sugarcane/Mushroom 开启视角切换；所有节点（含 Custom）默认参数为 10 Tick、槽位 3/4。按用户确认，移动改为精确按住 W 10 Tick，取消旧随机时长，保留前后 100ms 等待。
+- `CropDefinition` 提供两组不可变配置；`CropConfig` 逐字段补齐和校验（正整数时长，1～9 槽位，布尔开关），修复新增字段时保留其他作物参数及未知字段。旧 alternateSlot 仅在新视角 enabled 缺失时参与迁移，新字段优先；旧访问器转发到新开关，schemaVersion 保持 1。编辑候选整体校验后提交，非法输入不写入。
+- `RouteController` 不再按 Cactus 类型判断换行：行结束重置计数、停止移动、切换方向后，按配置执行额外移动 → 检查路线终点 → Mousemat → 下一行。保持原先路线终点前的额外移动、终点不新增 Mousemat 的顺序。两功能独立开关，已有队列任务不导致换行被直接拒绝。
+- `FarmCommandController.lineChangeMovement(durationTicks, after)` 泛化原 Cactus 序列；`ActionScheduler.scheduleAfterTicks` 提供精确回调间隔，不改变原毫秒接口。`SetLineYP.setAlternate(eventCount, slot1, slot2, after)` 保留奇数 slot2、偶数 slot1 和原攻击/松开/回槽位 1/攻击的等待，仅在最后动作完成后回调。
+- 两个异步阶段复用 commandRunning 冻结行 Tick；全部完成才恢复移动。`RouteController.runCurrentMovement` 和 `FarmController.restoreInputState` 在换行阶段阻止焦点恢复提前启动农业输入。现有取消/重置/世界清理仍清队列及标记，GUI 暂停仍保留剩余等待；独立 Pest 计时及 Spawn/Loadout/Warp 业务不变。
+- 高级作物编辑 UI 显示两组开关和参数，替换旧 alternateSlot 编辑项；中英文标签、帮助及装备栏提示同步配置槽位。Custom 只允许编辑这五项功能参数，保留路线无法执行的限制。
+- 验证新增配置迁移、局部修复、非法参数原子拒绝、Custom 保存与重载；路线测试使用真实配置、路线、命令和调度器，覆盖两项开关组合、1/10/25 Tick 实际按键间隔、交替槽位、顺序、队列已有任务、连续换行及取消。输入/窗口使用边界桩，不代表实机 Mousemat、移动或服务器工作流已通过。
+
+### 全局随机延迟与 Settings 管理（2026-11-13）
+
+- 新增 `RandomDelayConfig` 与 `ConfigManager.Module.RANDOM_DELAY`，按现有账号目录保存到 `random_delay.json`（schemaVersion 1）。每个下表字段为 `{minTicks,maxTicks}`，全作物共用；支持缺失字段补齐、非法范围恢复该项默认、原文件备份、未知字段保留、未来 schema 写保护、账号复制验证和即时加载。UI 同时校验两个整数后提交，要求 0 ≤ minTicks ≤ maxTicks，相等表示固定延迟。
+- `FarmController` 向命令控制器注入 ConfigManager 持有的配置对象；RouteController 行抖动和 SetLineYP 的四步动作均读取同一个全局对象。账号切换时该对象原地重载。已排队动作保留采样值，新配置用于后续采样；保留行抖动原先每个正常农业 tick 重新采样的方式。
+- 所有原本随机毫秒等待改用 `ActionScheduler.scheduleDelayTicks`，采样后不再乘除 50。此接口保持旧 schedule(ms) 的倒计时与执行 tick 语义（倒计时 N 加一次执行 tick）；未替换精确时长使用的 scheduleAfterTicks，也未修改固定等待、轮询超时及独立 Pest 计时。默认采样保留旧均匀毫秒值向上取整到 Tick 后的完整概率分布；其他范围按闭区间整数 Tick 均匀取样。
+- Settings 页面新增 Anti-Check（二级）→ Random Delay（三级）→ 15 个实际操作参数（四级），每项提供 Min Ticks、Max Ticks 和保存按钮。复用父子 CollapsibleSection、输入草稿、校验提示、配置保存及账号复制后的草稿刷新；没有空的“其他”分类。中英文词典与账号文件选择项已补齐。
+
+| 配置字段 | 原随机范围（含端点） | 默认 Tick 范围 |
+| --- | --- | --- |
+| FARM_ROW_JITTER | 0～9 Tick | 0～9 |
+| VIEW_ATTACK | 100～249ms | 2～5 |
+| VIEW_RELEASE | 100～249ms | 2～5 |
+| VIEW_TOOL_SLOT | 100～249ms | 2～5 |
+| VIEW_RESUME_ATTACK | 100～249ms | 2～5 |
+| WARP | 800～1599ms | 16～32 |
+| SPAWN_POINT | 300～449ms | 6～9 |
+| SPAWN_MUSHROOM | 150～299ms | 3～6 |
+| PEST_OPEN_WAIT | 50～99ms | 1～2 |
+| PEST_SELECT | 150～349ms | 3～7 |
+| PEST_SETTLE | 100～149ms | 2～3 |
+| SPAWN_LOADOUT_OPEN_WAIT | 50～99ms | 1～2 |
+| SPAWN_LOADOUT_SELECT | 150～349ms | 3～7 |
+| SPAWN_LOADOUT_SETTLE | 100～149ms | 2～3 |
+| SPAWN_INVENTORY_KEY | 150～399ms | 3～8 |
+
+- 本次未新增 Cactus 移动随机项：该动作已为每作物精确 durationTicks 配置。普通 Loadout 的 400ms、GUI 检查间隔与次数、动作固定等待均不属于随机延迟。源码随机生成只保留在 RandomDelayConfig。
+- 验证新增旧分布逐票穷举、Tick 队列与旧接口等价、范围及零延迟、JSON 重载/局部缺失/写保护；运行真实 SetLineYP、行抖动和蘑菇移动调用点验证配置生效及后续动作即时更新；新增三级折叠祖先组合检查，账号复制测试改为按 Module 数量核对。原有配置、路线、GUI、Pest 和 Focus 回归继续验证；原生 UI 交互及服务器工作流仍需实机验证。
+
+### UI 文本与中文翻译修正（2026-11-14）
+
+- `en_us.json`、`zh_cn.json` 同步修正 Pest loadout、手动计时、Farm configuration、Farm mode 和 Hotkeys 的说明。Existing farm operations 显示为 Farm macro command，Advanced crop definition 显示为 Crop route definition；保留原资源 Key。按本次要求保留英文原文中的 `yourd`，不据 UI 文案修改实际服务器命令。
+- 删除 Home 概览标题、Farm macro command 标题、Apply and save crop definition 按钮的 help Key；现有 optional/helpText 返回空串，HelpTooltip 不注册或绘制空帮助图标。Farm 的 Set spawn 使用完整坐标说明，Hotkeys 通过新增 `set_spawn.hotkey.help` 使用简短指令说明。
+- `UltimateGardenScreen.cropDefinitionSaveButton` 保留原权限检查、更新、保存、清草稿及重建回调，仅将按钮创建位置移至 tickLimit 输入之前；没有 tickLimit 的 Custom 功能编辑仍显示一个保存按钮。
+- `MacroKeyBindings.getMenuKeyName` 每次从当前 OPEN_MENU_KEY 映射读取显示名称，`UltimateGardenScreen.helpText` 将该名称填入中英文 `%s` 菜单关闭说明；getBindings 中的菜单描述也去除硬编码 M。未修改按键匹配或处理逻辑。
+- ESP 的 Silverfish 显示标签改为 Pest，帮助改为 pest(silverfish & bat)，中文为害虫（蠹虫与蝙蝠）。随机延迟视角项改用 Squeaky Mousemat 和本次指定的 use/slot/left click 文案，PestLoadout 与 SpawnLoadout 标签改用 loadout。中文保留 loadout、Squeaky Mousemat 原名；ESP 内部标识、JSON 字段、随机参数和调度逻辑均不变。
+- 验证包括离线构建、语言 Key 一致性/重复项/格式占位符/JSON 语法、移除帮助的资源与图标绘制守卫、按钮创建顺序及原保存回调，以及既有配置和 GUI 回归；实际原生窗口显示和重绑定后的悬浮提示仍需游戏内验证。
+
+### 自身菜单自动暂停开关（2026-11-14）
+
+- `GeneralConfig.autoPauseFarmWhenOpeningMenu` 默认 true，保存至现有账号 `general.json`；ConfigManager 的读取、默认值、保存和账号复制校验复用现有字段机制。缺失字段保持旧版默认暂停行为，不覆盖 autoResumeFarmAfterGuiClose。
+- Settings → Preferences 中新增 Auto-pause 开关，Auto-resume 使用同一 ToggleSwitch 组件并缩进一个层级。子开关 active 取决于 Auto-pause，禁用时使用灰色样式但保留开关位置和值；重新启用后可继续编辑。新增中英文标签及帮助。
+- `UltimateGardenScreen.added` 调用菜单专用 beginUltimateGardenMenu，根据配置决定是否建立原暂停会话；记录 menuPauseOwned，removed 仅结束本次创建/接管的暂停原因。配置改动在下次打开时决定是否暂停；本次原已暂停、随后关闭 Auto-pause 时，不自动恢复，明确 START 意图仍保留。玩家背包、ESC、聊天继续走原 beginMenuPause/endMenuPause，不受新开关控制。
+- Auto-pause 为 No 且没有继承的暂停会话时，不改变农业 running、暂停意图、动作队列暂停或 Focus 标记；Screen 初始化后只补回原版 releaseAll 清除的农业按键，不调用启动或焦点方法。命令队列及行计时继续由原 tick 驱动。
+- `WindowsInputInterceptor` 新增由客户端注入的自身 UI 放行谓词。菜单显示时实际输入拦截判定返回 false，原 WindowsState.inputIntercepting 和 mouseReleased 不变；返回游戏后恢复原判定，不影响其他 Screen。
+- 无自动暂停会话时，菜单启动按钮显示 Start farming 并调用原 startMacro；有会话时仍请求关闭后启动。编辑权限增加“自身 UI 可见且农业已停止”的分支，保留队列/计时器限制；菜单操作仍排队至关闭后执行。主动暂停和重置均清理菜单待执行操作，避免无暂停会话时遗留队列。Spawn/PestLoadout/Warp 执行函数和 Num+、Num- 分支未修改。
+- 验证增加默认值、旧 JSON、保存重载、Auto-resume 值保留、关闭时恢复与明确 START/PAUSE/RESET 意图检查；真实输入拦截器边界测试覆盖菜单放行及返回游戏恢复拦截，确认不改 Focus 或拦截标记。既有配置、语言、GUI、路线和 Focus 回归继续运行；原生菜单操作与游戏内农业效果尚需实机验证。
+
+### 子卡片 Disabled 样式与非暂停菜单实际输入（2026-11-14）
+
+- `UltimateGardenScreen.Card` 增加相对缩进和 enabled 谓词；依赖开关的卡片整体左移边界改为向右缩进，宽度同量减少、右边界不变。嵌套 section 原有深度缩进与子项 inset 叠加；顶层卡片默认 inset=0，保留原布局。Label 复用同一 enabled 谓词，背景、文字、帮助图标和 ToggleSwitch 统一使用 40% 禁用透明度；禁用帮助图标不注册交互区域，配置值仍保留。
+- 两项开关 Hint 按本次指定英文原文更新，中文对应“打开菜单时是否暂停农业 Macro；开启暂停、关闭不暂停”和“打开前正在运行则关闭后恢复”。未改变两个布尔字段及现有启停条件。
+- 实际检查 Minecraft 26.1.2 sources：setScreen 打开时 KeyMapping.releaseAll 清除底层输入；Screen 存在时 tick 将 missTime 置 10000 并跳过 handleKeybinds，所以单次重按 keyAttack 不等于继续挖掘。关闭时 MouseHandler.grabMouse 在非 macOS（含 Windows）调用 KeyMapping.setAll，以物理键覆盖虚拟移动；本次在完整生命周期之后重新应用持有输入。
+- 新增并注册 `MenuFarmInputMixin`：仅 UltimateGardenScreen.keepsFarmingInput 为真（本次无自动暂停会话、无其他暂停会话、农业 running=true）时，原版 Screen.tick 后执行已有 handleKeybinds，清除该菜单造成的 missTime；只在这次按键处理中放行 Screen 和逻辑鼠标捕获条件，不更改实际 Focus 或 GLFW 捕获。其他 Screen 不进入该路径，底层服务器交互仍走原版方法。
+- setScreen 包装器在自身非暂停菜单打开/关闭的原版处理完成后调用 FarmController.reapplyMenuInput。VirtualInput/VirtualKeyboard/VirtualMouse 重新应用当前已跟踪的 KeyMapping 持有和 leftDown，而非重新选槽、运行路线或强制攻击；主动松键、暂停、未运行、动作队列阶段均保留。删除原先 AFTER_INIT 里强制 mouseDown/runCurrentMovement 的补偿，避免覆盖换行状态。
+- VirtualKeyboard 在该菜单保持农业时把虚拟点击与槽位输入送入游戏 KeyMapping 队列，不注入到菜单文本框；真实输入隔离标记仍沿用原实现。没有修改 RouteController 行计时、任务时长、Spawn/PestLoadout/Warp 的条件或暂停会话算法。
+- 新增 `tests/menu-input/run.ps1` 编译真实 VirtualInput/VirtualMouse 与原 ActionScheduler，模拟 native releaseAll/setAll 边界，验证 20 次开关后的 WASD/左键持有、主动松键、悬挂与停止后不重放；68 项通过。原配置/语言/GUI/路线回归继续通过。边界桩和源码检查不等同实机测试，尚未验证原生窗口显示、Mixin 运行时注入和真实服务器挖掘。
+
+### 英文 Hint 拼写修正（2026-11-14）
+
+- 仅修正 `en_us.json` 的 `farm_configuration.help`（mod → mode）和 `advanced_crop_definition.help`（yourd → your）。对应中文翻译仍准确，保持原样；语言 Key、其他文案及功能逻辑未修改。
+
+### Crop Route 控件顺序与 Macro Status HUD（2026-11-14）
+
+- `UltimateGardenScreen.cropLineChangeFields` 将五项换行控件按原顺序移至 Apply And Save Crop Definition 之后、tickLimit 之前；Custom 同样先显示保存按钮再显示五项参数。保留草稿绑定、保存回调和编辑条件。
+- 新增账号模块 `HUD` / `hud.json`（schemaVersion 1）：`displayMode` 为 COMPACT/DETAIL，`compact`、`detail` 为以 HudConfig.Item 枚举名为键的布尔对象。Compact 默认开启 Macro Status、Farm Mode、Crop、Line、Total Tick、Line Tick、PestLoadout、Focus State、Input Interception 九项；Detail 默认再开启 Route Line Change Info、Squeaky Mousemat Usage。
+- `HudConfig.setCompact` 实际同步写入 Detail 对应值；Compact 为 true 时 Detail 不允许关闭，Compact 取消时 Detail 同步 false，之后可独立选择 Detail。加载也保证 Compact 开启的项在 Detail 中实际为 true。支持缺失字段默认值、非法字段恢复、未知字段保留、账号复制校验、保存重载及未来版本写保护。
+- Settings → HUD 下复用嵌套折叠组件创建 Display Mode、Compact Mode Content、Detail Mode Additional Content 三个三级组。Detail 强制项复用整卡片 Disabled 样式；ToggleSwitch 现在始终按真实值选择 accent/border 颜色和开关位置，仅在禁用时降低透明度，不再把 ON 改画成灰色。Auto-resume 使用相同修正。
+- 新增 `ui/hud/MacroStatusHud`，使用 Fabric HudElementRegistry 注册，只读农业、Pest、Focus 和输入拦截数据。在有效世界、非 F1 隐藏、未打开自身菜单时于左上角显示。Running 使用主题 accent，Paused 使用红色 UG、状态、进度条与状态行；PestLoadout 显示 tick/秒，Detail 显示配置的移动 tick、Mousemat1/2 槽位或 Disable。无作物或未实现 Custom 路线不读取不存在的行数/进度参数。
+- `FarmState.totalTicks` 随原 incrementTick 增加，统计自上次 reset 的正常农业作业 Tick；行重置、路线循环和暂停不清零，完整 reset/世界清理清零。原暂停及换行阶段不调用 incrementTick，计数自然冻结。HUD 渲染不推进计时、不写 running、不操作输入或动作队列。
+- 中英文 HUD 标题、信息项和短 Hint 同步加入；HudConfigRegression 验证 112 项默认、联动、持久化和计数重置，既有配置/账号复制/语言/路线/GUI/Focus 回归通过。游戏内 HUD 视觉、尺寸和菜单隐藏切换尚需实机验证。
+
+### HUD 模式刷新、浅色卡片与菜单恢复范围（2026-11-14）
+
+- `UltimateGardenScreen.hudSettings` 在模式选择回调中先写入 `HudConfig.mode`、保存 `HUD` 模块，再立即重建页面，消除下拉选择先关闭并重建页面导致的旧模式标签。HUD 每帧读取同一配置对象，不缓存 Compact/Detail 模式。
+- `MacroStatusHud` 改为浅色圆角卡片：Macro Status 标题、绿色 Running / 红色 Paused、左右对齐的信息行、分隔线及进度条；不显示 Compact/Detail 标签。Farm Mode 可显示在状态行右侧；较长信息分成两行，小窗口按可用尺寸缩放，打开自身 Menu 时继续隐藏。
+- `HudConfig.Item` 新增 `CURRENT_DIRECTION`、`LINE_CHANGE_STATUS`、`STOP_REASON`、`CURRENT_WORKFLOW`，复用 Compact/Detail 配置及强制同步规则；四项默认均关闭，原九项 Compact 与两项 Detail 默认内容保持不变，旧 JSON 缺失新字段时使用关闭默认值。
+- 状态来源：方向沿用 `FarmState.eventSelect` 对应 movementA/B；`FarmState.LineChangePhase` 仅记录移动 / Yaw-Pitch 阶段，`RouteController` 和 `FarmCommandController` 在原流程边界更新，取消、重置或换行完成时清除；不参与农业计时或执行决策。`FarmCommandController.Workflow` 记录 Spawn、Warp、Loadout、PestLoadout、Spawn/Loadout，完成回调先清除标记再执行原回调，失败 / 取消 / 世界清理时清除；换行与其他队列任务按现有运行状态显示。`FarmController.getHudStopReason` 从暂停会话意图、既有停止原因和工作流状态读取原因，不改变业务启停。
+- `GuiPauseState.Source` 区分 `ULTIMATE_GARDEN_MENU` 与 `PLAYER_GUI`；自动恢复资格按当前打开的界面及其打开前运行状态记录，不能继承此前其他 GUI 的资格。`FarmController.endMenuPause`（背包 / ESC / 聊天框关闭）固定关闭自动恢复，仅自身 Menu 的结束入口读取原 Auto-resume 配置。显式 START 仍可请求关闭后启动，PAUSE / RESET、失败及世界变化继续阻止自动恢复。
+- 中英文语言资源增加四项设置名称、Hint、阶段、暂停原因与工作流名称。回归覆盖模式单次写入即时可见及保存重载、扩展项默认值、普通 GUI / 自身 Menu 交叉切换、显式启动 / 暂停 / 重置、工作流清理及换行阶段；原生游戏内点击、HUD 视觉及服务器工作流仍需实机验证。
+
+### HUD Tick 单位与背景恢复（2026-11-14）
+
+- `MacroStatusHud` 的 Total Tick 和 Line Tick（含无作物 / Custom 分支）统一使用完整 `tick`；PestLoadout 和换行移动信息原已使用 `tick`，Compact / Detail 共用同一格式化入口。
+- 背景恢复为原 `0xdf142420` 深色半透明填充、8 像素圆角，移除浅色卡片阴影；边框恢复 Running 主题 accent（默认青绿色）/ Paused `0xffed6669`。保留当前标题、状态位置、双列布局、字体与文字颜色规则、行距、分隔线、进度条和模式显示逻辑。
+
+- `HudConfig.resetToDefault` 将 Compact / Detail 的 `TOTAL_TICK` 默认设为关闭；新配置、重置及缺失该字段时采用此默认值，已保存的用户选择继续保留。
+
+### HUD 文字与分割线配色（2026-11-14）
+
+- `MacroStatusHud` 的标题、Farm Mode、字段名称及普通数值统一为白色 `0xffffffff`，分割线使用原字段文字的灰绿色 `0xff626b66`。Running 状态与进度条使用主题 accent（默认青绿色），Paused 保留原红色及状态文字强调规则；Compact / Detail 共用配色，背景、边框、字体与布局不变。
+
+- HUD 数值颜色改按字段的实际状态判断：Captured / 输入拦截 ON 使用主题蓝绿色，Released / OFF 使用红色，独立于农业 running 状态。换行配置关闭时的 Disable 为红色，启用时显示的移动 tick 和 Mousemat slot 编号仍为白色；行数、所有 Tick / 秒数、普通标题与字段同样保持白色。换行阶段活动时按农业是否暂停显示主题色 / 红色，工作流活动时按队列是否挂起显示主题色 / 红色；Idle、无停止原因和等待启动使用白色，实际停止原因使用红色。上述规则仅影响 Compact / Detail 共用渲染颜色，不修改状态、计时、背景、边框、分割线或进度条结构。
+
+- HUD Focus State: `Released` uses the green/teal theme color to indicate the intended working focus state; `Captured` uses red. This supersedes the earlier Focus color mapping and changes rendering only.
+
+### HUD 位置 / 尺寸调整与 Crop Route 回车保存（2026-11-14）
+
+- `HudConfig` 在 `hud.json` 增加 `bounds: {x,y,width,height}`，均为屏幕比例；宽高为 0 时沿用自动尺寸。加载校验有限值及 0–1 范围，旧 JSON 缺失时保留原自动布局；HUD 渲染按当前窗口 / GUI Scale 夹取可见边界并保证最小内容比例，文字和进度条适配尺寸而非裁切。
+- Settings → HUD 新增 `Adjust HUD Position & Size` 按钮及中英文提示。`HudAdjustmentController` 只持有临时编辑会话、拖拽几何与 GLFW 光标资源，不创建 Screen，不写 Macro、Focus 或输入拦截持久状态。`MacroStatusHud` 在游戏画面上绘制暗色半透明蒙版、拖拽轮廓、四角手柄和操作提示；支持内部移动、四边 / 四角缩放与系统调整光标。
+- `WindowsInputMixin` 在 GUI 输入来源检测前消费调整模式的真实键盘事件；ESC 保存并返回原菜单实例，虚拟输入继续沿用 `PlayerGuiInput` 来源隔离。`WindowsMouseMixin` 转交鼠标移动 / 按钮并阻断游戏滚轮与视角处理，调整期间跳过原生 grabMouse 的物理 KeyMapping.setAll，防止重新激活真实按键。`WindowsFocusController` 仅临时应用自由鼠标，不改 WindowsState；`WindowsPauseMixin` 避免无 Screen 的编辑状态触发原生失焦暂停。
+- `UltimateGardenScreen` 临时离开菜单时保留本次菜单暂停会话，返回时不重复 beginMenuPause，继续遵守进入菜单时的 Auto-pause 设置与原恢复规则。`Ultimate_GardenClient` 注册调整模式 Tick，世界变化、失去玩家或出现其他 Screen 时取消编辑并保存；退出清理 GLFW 光标并重新应用当前 Focus 规则，不恢复过期的 Macro 状态快照。
+- Crop Route 输入框记录在 `routeInputs`，只有相关输入框活动且聚焦时 Enter / 小键盘 Enter 才保存。`applyCropDefinition` 是按钮与 Enter 的唯一实现入口，沿用校验、保存反馈与异常处理；按键释放前消费重复 Enter，其他输入框不触发路线保存。
+- `tests/hud-adjust` 执行真实调整控制器，覆盖拖动、边缘 / 四角缩放、边界限制、保存重载、光标清理与世界变化；配置回归增加 bounds 默认 / 校验 / 重载检查。原生窗口与输入由桩模拟，游戏内拖拽、GLFW 光标兼容性及路线输入框 Enter 操作仍需实机验证。
+
+- 断线、客户端退出及账号切换前也结束并保存调整会话；返回菜单保留原暂停会话，如果本次菜单原先未暂停、但用户已开启 Auto-pause，则按当前设置建立菜单暂停。
+
+### 玩家 GUI 暂停的 Focus 同步（2026-11-14）
+
+- `FarmController.onPlayerScreenOpened` 对来源验证通过的真实背包 / ESC / 聊天界面调用 `WindowsFocusController.useGameFocusForPlayerGui`，替代原 GUI 暂停分支的 `releaseFocusWithHint`。新入口结束 Mod 主动释放标记，并通过现有 `reapplyCursorMode` 保持打开 Screen 所需的原生鼠标释放；不调用农业输入恢复回调。原 GUI 暂停、输入拦截关闭和关闭后不自动恢复的规则不变。
+- `WindowsState.mouseReleased` 明确表示 Mod 的鼠标释放覆盖，不等同于原生 Screen 的自由鼠标。HUD 在 Screen 存在时以白色 `GUI Cursor` / `GUI 自由鼠标` 显示原生自由鼠标；返回无 Screen 游戏后继续显示实际使用的 Mod Released / Captured 模式，保留此前颜色规则。`setScreen(null)` 后原 Focus Mixin 重新应用当前模式，暂停会话继续通过 `restoreGameMouseAfterMenu` 恢复游戏捕获，不启动农业。
+- 自身菜单、虚拟背包输入、Loadout 和 HUD 调整不进入该真实玩家 GUI 入口，继续沿用现有 Focus 规则。Focus 回归增加打开、连续切换和关闭 GUI 时的原生 grab、GLFW mode、mouseReleased、inputIntercepting 及无输入恢复回调检查；原生窗口边界使用桩模拟，游戏内 HUD 与真实 GUI 事件顺序仍需实机验证。

@@ -7,6 +7,8 @@
 		"KeyMappingAccessor",
 		"KeyboardHandlerAccessor",
 		"WindowsInputMixin",
+		"InventoryInputMixin",
+		"MenuFarmInputMixin",
 		"WindowsFocusMixin",
 		"WindowsPauseMixin",
 		"WindowsMouseMixin",

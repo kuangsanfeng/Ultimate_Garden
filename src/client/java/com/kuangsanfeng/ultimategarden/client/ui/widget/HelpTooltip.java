@@ -51,6 +51,10 @@ public final class HelpTooltip {
     public boolean isIconAt(double x, double y) { return anchors.stream().anyMatch(anchor -> anchor.contains(x, y)); }
     public void iconAfterText(GuiGraphicsExtractor g, Font font, Object owner, Component title, int x, int y,
                               int textWidth, String description, ThemePalette palette) {
+        iconAfterText(g, font, owner, title, x, y, textWidth, description, palette, 1f);
+    }
+    public void iconAfterText(GuiGraphicsExtractor g, Font font, Object owner, Component title, int x, int y,
+                              int textWidth, String description, ThemePalette palette, float opacity) {
         if (description == null || description.isBlank()) return;
         var lines = font.split(title, Math.max(1, textWidth));
         if (lines.isEmpty()) return;
@@ -58,12 +62,12 @@ public final class HelpTooltip {
         int iconY = y + (lines.size() - 1) * 9 - 2;
         Anchor anchor = new Anchor(owner, description, iconX, iconY, clipTop, clipBottom);
         if (iconY + SIZE <= clipTop || iconY >= clipBottom) return;
-        anchors.add(anchor);
-        boolean hovered = anchor.contains(pointerX, pointerY);
+        if (opacity >= 1f) anchors.add(anchor);
+        boolean hovered = opacity >= 1f && anchor.contains(pointerX, pointerY);
         int background = ThemePalette.blend(palette.surface(), palette.muted(), hovered ? .25f : .12f);
-        RoundedRect.fill(g, iconX, iconY, SIZE, SIZE, SIZE / 2, palette.fg(background));
+        RoundedRect.fill(g, iconX, iconY, SIZE, SIZE, SIZE / 2, palette.fg(background, opacity));
         g.text(font, "?", iconX + (SIZE - font.width("?")) / 2, iconY + 2,
-                palette.fg(hovered ? palette.text() : ThemePalette.blend(palette.surface(), palette.muted(), .65f)), false);
+                palette.fg(hovered ? palette.text() : ThemePalette.blend(palette.surface(), palette.muted(), .65f), opacity), false);
     }
     public void renderOverlay(GuiGraphicsExtractor g, Font font, ThemePalette palette, int width, int height) {
         Anchor hovered = null;

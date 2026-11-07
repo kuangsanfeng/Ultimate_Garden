@@ -23,6 +23,13 @@ public class VirtualInput {
     private boolean actionAttack;
     public record HeldActions(java.util.Set<String> keys, boolean attack) { }
 
+    /** Reapply only current virtual holds; do not select slots or restart a route. */
+    public void reapplyHeldState() {
+        if (suspended) return;
+        keyboard.reapplyHeldState();
+        mouse.reapplyHeldState();
+    }
+
     public HeldActions suspendForMenu() {
         HeldActions held = new HeldActions(java.util.Set.copyOf(actionKeys), actionAttack && mouse.isLeftDown());
         suspended = true;

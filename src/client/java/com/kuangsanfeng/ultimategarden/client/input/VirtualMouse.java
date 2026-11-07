@@ -149,6 +149,8 @@ public final class VirtualMouse {
     }
 
 
+    public void reapplyHeldState() { minecraft.options.keyAttack.setDown(leftDown); }
+
     public boolean isLeftDown() {
 
         return leftDown;

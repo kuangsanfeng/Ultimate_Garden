@@ -34,6 +34,11 @@ public class VirtualKeyboard {
         this.minecraft = minecraft;
     }
 
+    public void reapplyHeldState() { for (KeyMapping mapping : pressedKeys) mapping.setDown(true); }
+    private boolean routesToGame() {
+        return minecraft.screen == null || minecraft.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen menu && menu.keepsFarmingInput();
+    }
+
     // =========================================================
     // KeyDown
     // =========================================================
@@ -89,9 +94,9 @@ public class VirtualKeyboard {
             if (!inputAllowed.getAsBoolean()) return;
 
 
-            if(minecraft.screen == null) {
+            if(routesToGame()) {
 
-                KeyMapping.click(inputKey);
+                PlayerGuiInput.virtualDispatch(() -> KeyMapping.click(inputKey));
 
 
             } else {
@@ -128,9 +133,9 @@ public class VirtualKeyboard {
             if (!inputAllowed.getAsBoolean()) return;
 
 
-            if(minecraft.screen == null) {
+            if(routesToGame()) {
 
-                KeyMapping.click(inputKey);
+                PlayerGuiInput.virtualDispatch(() -> KeyMapping.click(inputKey));
 
 
             } else {
@@ -157,6 +162,7 @@ public class VirtualKeyboard {
                 );
 
 
+        PlayerGuiInput.virtualDispatch(() -> {
         accessor.invokeKeyPress(
                 minecraft.getWindow().handle(),
                 GLFW.GLFW_PRESS,
@@ -169,6 +175,7 @@ public class VirtualKeyboard {
                 GLFW.GLFW_RELEASE,
                 event
         );
+        });
     }
 
     // =========================================================

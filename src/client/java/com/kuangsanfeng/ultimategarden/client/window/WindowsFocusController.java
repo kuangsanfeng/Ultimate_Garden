@@ -52,18 +52,8 @@ public final class WindowsFocusController {
     public void releaseFocus() {
 
 
-        if (state.isMouseReleased()) {
-
-            return;
-
-        }
-
-
-        //client.mouseHandler.releaseMouse();
-        long windowHandle = client.getWindow().handle();
-        GLFW.glfwSetInputMode(windowHandle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
-
         state.setMouseReleased(true);
+        reapplyCursorMode();
 
     }
 
@@ -83,20 +73,11 @@ public final class WindowsFocusController {
     public void restoreFocus() {
 
 
-        if (!state.isMouseReleased()) {
-
-            return;
-
-        }
-
-
-        //client.mouseHandler.grabMouse();
-        long windowHandle = client.getWindow().handle();
-        GLFW.glfwSetInputMode(windowHandle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
-
+        boolean wasReleased = state.isMouseReleased();
         state.setMouseReleased(false);
+        reapplyCursorMode();
+        if (wasReleased) restoreInputState.run();
 
-        restoreInputState.run();
     }
 
 
@@ -123,22 +104,41 @@ public final class WindowsFocusController {
 
 
 
+    /** End the mod override; an open GUI still owns the free cursor. */
+    public void useGameFocusForPlayerGui() {
+        if (client.screen == null) return;
+        state.setMouseReleased(false);
+        reapplyCursorMode();
+    }
+
     /** Restore native mouse capture without restoring macro input. */
     public boolean restoreGameMouseAfterMenu() {
         if (client.screen != null || client.player == null || client.level == null) {
             return false;
         }
         state.setMouseReleased(false);
-        // A native grab alone may return early after a direct GLFW cursor release.
-        client.mouseHandler.releaseMouse();
-        client.mouseHandler.grabMouse();
+        reapplyCursorMode();
         return client.mouseHandler.isMouseGrabbed();
     }
 
     /** Reapply the recorded cursor mode after a vanilla screen transition. */
     public void reapplyCursorMode() {
-        GLFW.glfwSetInputMode(client.getWindow().handle(), GLFW.GLFW_CURSOR,
-                state.isMouseReleased() ? GLFW.GLFW_CURSOR_NORMAL : GLFW.GLFW_CURSOR_DISABLED);
+        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) {
+            com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.freeCursor(); return;
+        }
+        if (client.screen != null || client.player == null || client.level == null) {
+            client.mouseHandler.releaseMouse();
+            GLFW.glfwSetInputMode(client.getWindow().handle(), GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+        } else if (state.isMouseReleased()) {
+            // Vanilla continueAttack needs the logical grab; only release the OS cursor.
+            GLFW.glfwSetInputMode(client.getWindow().handle(), GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
+        } else {
+            // grabMouse sets its native flag before its nested setScreen(null).
+            if (!client.mouseHandler.isMouseGrabbed()) client.mouseHandler.grabMouse();
+            if (client.mouseHandler.isMouseGrabbed()) {
+                GLFW.glfwSetInputMode(client.getWindow().handle(), GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+            }
+        }
     }
 
     public boolean isReleased() {

@@ -25,9 +25,11 @@ public final class PestMenuRegression {
         command.tick(false, true);
         check(actions.equals(List.of("existing")));
         check(command.isPestLoadoutPending());
+        check(command.getWorkflow() == FarmCommandController.Workflow.PEST_LOADOUT);
         check(command.getScheduler().isRunning()); // Loadout is queued after the existing action.
         command.abortWorld();
         check(!command.hasPendingWork());
+        check(command.getWorkflow() == FarmCommandController.Workflow.IDLE);
         check(!command.isPestLoadoutTimerRunning());
 
         command.startPestLoadoutTimer();
@@ -35,6 +37,21 @@ public final class PestMenuRegression {
         command.cancelPestLoadoutTimer();
         check(!command.isPestLoadoutPending());
         check(command.hasActionFailed()); // Cancelling deferred work blocks automatic route recovery.
+        for (boolean running : new boolean[] {false, true}) {
+            state.setRunning(running);
+            int[] pauses = {0};
+            var independent = new FarmCommandController(null, null, state,
+                    () -> { pauses[0]++; state.setRunning(false); }, null, null, config);
+            independent.startPestLoadoutTimer();
+            for (int i = 0; i < 3; i++) independent.tick();
+            check(!independent.isPestLoadoutTimerRunning());
+            check(independent.getScheduler().isRunning());
+            check(independent.getWorkflow() == FarmCommandController.Workflow.PEST_LOADOUT);
+            check(!independent.getScheduler().isPaused());
+            check(independent.isBusinessResumePending() == running);
+            check(pauses[0] == (running ? 1 : 0));
+            independent.abortWorld(); // Stop before dispatching game operations.
+        }
         System.out.println("PASS: " + checks + " real command/timer boundary checks: GUI expiry, frozen queue, deferred dispatch, manual timer, cancellation and world cleanup.");
     }
 }

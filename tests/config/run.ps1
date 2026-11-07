@@ -13,10 +13,18 @@ try {
     }
     $classpath = 'build/classes/java/client;build/classes/java/main;build/resources/client;build/resources/main;' + ($dependencies -join ';')
     New-Item -ItemType Directory -Force build/config-audit/classes | Out-Null
-    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/config-audit/classes tests/config/ConfigRegression.java tests/config/AccountRegression.java tests/gui/LanguageRegression.java tests/gui/TransparencyRegression.java
+    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/config-audit/classes tests/config/ConfigRegression.java tests/config/AccountRegression.java tests/config/LineChangeConfigRegression.java tests/config/RandomDelayRegression.java tests/config/MenuPauseConfigRegression.java tests/config/HudConfigRegression.java tests/gui/LanguageRegression.java tests/gui/TransparencyRegression.java
     if ($LASTEXITCODE -ne 0) { throw 'Regression test compilation failed.' }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) ConfigRegression
     if ($LASTEXITCODE -ne 0) { throw 'Configuration regression checks failed.' }
+    & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) RandomDelayRegression
+    if ($LASTEXITCODE -ne 0) { throw 'Random delay regression failed.' }
+    & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) MenuPauseConfigRegression
+    if ($LASTEXITCODE -ne 0) { throw 'Menu auto-pause regression failed.' }
+    & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) HudConfigRegression
+    if ($LASTEXITCODE -ne 0) { throw 'HUD regression failed.' }
+    & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) LineChangeConfigRegression
+    if ($LASTEXITCODE -ne 0) { throw 'Line-change configuration checks failed.' }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) AccountRegression
     if ($LASTEXITCODE -ne 0) { throw 'Account regression checks failed.' }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/config-audit/classes;' + $classpath) LanguageRegression

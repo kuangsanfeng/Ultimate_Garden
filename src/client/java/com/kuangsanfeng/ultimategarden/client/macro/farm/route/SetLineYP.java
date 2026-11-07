@@ -2,19 +2,23 @@ package com.kuangsanfeng.ultimategarden.client.macro.farm.route;
 
 import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
 import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
+import com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig;
+import static com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig.Key.*;
 
 public final class SetLineYP {
 
+    private final java.util.function.Supplier<RandomDelayConfig> randomDelays;
     private final VirtualInput input;
     private final ActionScheduler scheduler;
 
 
     public SetLineYP(
             VirtualInput input,
-            ActionScheduler scheduler
+            ActionScheduler scheduler, java.util.function.Supplier<RandomDelayConfig> randomDelays
     ) {
 
         this.input = input;
+        this.randomDelays = randomDelays;
 
         this.scheduler = scheduler;
     }
@@ -27,10 +31,7 @@ public final class SetLineYP {
 
     public void setNormal(boolean running) {
 
-        setView(
-                "3",
-                running
-        );
+        setView(3, null);
     }
 
 
@@ -41,80 +42,47 @@ public final class SetLineYP {
     //key 4
     // =========================================================
 
-    public void setAlternate(
-            int eventCount,
-            boolean running
-    ) {
-
-        String key =
-                (eventCount % 2 == 0)
-                        ? "3"
-                        : "4";
-
-
-        setView(
-                key,
-                running
-        );
+    public void setAlternate(int eventCount, int slot1, int slot2, Runnable after) {
+        setView((eventCount % 2 == 0) ? slot1 : slot2, after);
     }
-
 
     // =========================================================
     // YawPitch
     // =========================================================
 
-    private void setView(
-            String key,
-            boolean running
-    ) {
-
-        int slotNum = Integer.parseInt(key);
+    private void setView(int slotNum, Runnable after) {
         input.slot(slotNum);
 
-        scheduler.schedule(
-                random(100,150),
+        scheduler.scheduleDelayTicks(
+                randomDelays.get().sample(VIEW_ATTACK),
                 () -> {
                     input.actionMouseDown();
                 }
         );
 
-        scheduler.schedule(
-                random(100,150),
+        scheduler.scheduleDelayTicks(
+                randomDelays.get().sample(VIEW_RELEASE),
                 () -> {
                     input.actionMouseUp();
                 }
         );
 
-        scheduler.schedule(
-                random(100,150),
+        scheduler.scheduleDelayTicks(
+                randomDelays.get().sample(VIEW_TOOL_SLOT),
                 () -> {
                     input.slot(1);
                 }
         );
 
-        scheduler.schedule(
-                random(100,150),
+        scheduler.scheduleDelayTicks(
+                randomDelays.get().sample(VIEW_RESUME_ATTACK),
                 () -> {
                     input.actionMouseDown();
+                    if (after != null) after.run();
                 }
         );
     }
 
 
 
-    private int random(
-            int base,
-            int range
-    ) {
-
-        if (range <= 0) {
-
-            return base;
-
-        }
-
-
-        return base +
-                (int)(Math.random() * range);
-    }
 }

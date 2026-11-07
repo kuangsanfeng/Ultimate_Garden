@@ -10,12 +10,18 @@ public final class FarmState {
     private boolean eventChange;
     private boolean eventSelect = true;
 
+    public enum LineChangePhase { IDLE, MOVEMENT, YAW_PITCH }
+    private LineChangePhase lineChangePhase = LineChangePhase.IDLE;
+    public LineChangePhase getLineChangePhase() { return lineChangePhase; }
+    public void setLineChangePhase(LineChangePhase phase) { lineChangePhase = phase; }
     private boolean commandRunning;
 
     private int cropType;
     private int modType;
 
     private int tick;
+    private long totalTicks;
+    public long getTotalTicks() { return totalTicks; }
     private int eventCount;
 
     // =========================================================
@@ -60,6 +66,7 @@ public final class FarmState {
 
     public void setCommandRunning(boolean commandRunning) {
         this.commandRunning = commandRunning;
+        if (!commandRunning) lineChangePhase = LineChangePhase.IDLE;
     }
 
     // =========================================================
@@ -108,6 +115,7 @@ public final class FarmState {
 
     public void incrementTick() {
         tick++;
+        totalTicks++;
     }
 
     public void resetTick() {
@@ -142,6 +150,7 @@ public final class FarmState {
      * Reset after /warp garden.
      */
     public void resetRoute() {
+        lineChangePhase = LineChangePhase.IDLE;
         tick = 0;
         eventCount = 0;
         eventSelect = true;
@@ -153,7 +162,9 @@ public final class FarmState {
     // =========================================================
 
     public void reset() {
+        lineChangePhase = LineChangePhase.IDLE;
         running = false;
+        totalTicks = 0;
 
         eventChange = false;
         eventSelect = true;

@@ -124,13 +124,13 @@ public final class AccountRegression {
         for(Module file:Module.values()) allOriginals.put(file,contents(allRoot,a.name(),file.name().toLowerCase(Locale.ROOT)));
         all.setCurrentAccountCopyGuard(()->true);
         var allReport=all.copyConfiguration(new ConfigManager.CopyPlan(allSource,allTarget,EnumSet.allOf(Module.class),all.accountRevision()));
-        check(allReport.success() && allReport.copied().size()==6);
+        check(allReport.success() && allReport.copied().size()==Module.values().length);
         for(Module file:Module.values()) {
             String name=file.name().toLowerCase(Locale.ROOT);
             check(contents(allRoot,a.name(),name).equals(allOriginals.get(file)));
             check(json(contents(allRoot,b.name(),name)).equals(json(allOriginals.get(file))));
         }
-        try(var files=Files.list(allRoot.resolve(b.name()))) { check(files.filter(p->p.getFileName().toString().contains(".overwrite-")).count()==6); }
+        try(var files=Files.list(allRoot.resolve(b.name()))) { check(files.filter(p->p.getFileName().toString().contains(".overwrite-")).count()==Module.values().length); }
         // Links cannot redirect account or module access outside the root.
         Path linkRoot=Files.createTempDirectory("ug-account-links-"); ConfigManager links=new ConfigManager(linkRoot,a);
         Path external=Files.createTempFile("ug-private-",".json"); Files.writeString(external,"{}");

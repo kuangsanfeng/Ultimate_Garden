@@ -8,7 +8,8 @@ import com.kuangsanfeng.ultimategarden.client.macro.farm.hint.FarmHints;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestLoadoutTimer;
 import net.minecraft.client.Minecraft;
 
-import java.util.concurrent.ThreadLocalRandom;
+import com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig;
+import static com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig.Key.*;
 
 
 // =========================================================
@@ -16,7 +17,27 @@ import java.util.concurrent.ThreadLocalRandom;
 // =========================================================
 
 public final class FarmCommandController {
+    public enum Workflow { IDLE, SPAWN, WARP, LOADOUT, PEST_LOADOUT, SPAWN_LOADOUT, LINE_CHANGE, OTHER }
+    private Workflow workflow = Workflow.IDLE;
+    public Workflow getWorkflow() {
+        if (workflow != Workflow.IDLE) return workflow;
+        if (macroState.getLineChangePhase() != FarmState.LineChangePhase.IDLE) return Workflow.LINE_CHANGE;
+        if (pendingPestLoadout || deferredPestInFlight) return Workflow.PEST_LOADOUT;
+        return hasPendingWork() ? Workflow.OTHER : Workflow.IDLE;
+    }
+    public void markSpawnScheduled() { if (!hasPendingWork()) workflow = Workflow.SPAWN; }
+    private Runnable trackWorkflow(Workflow value, Runnable after) {
+        workflow = value;
+        return () -> {
+            if (workflow == value) workflow = Workflow.IDLE;
+            if (after != null) after.run();
+        };
+    }
 
+
+    private RandomDelayConfig randomDelays = new RandomDelayConfig();
+    public RandomDelayConfig getRandomDelays() { return randomDelays; }
+    public void setRandomDelays(RandomDelayConfig config) { randomDelays = java.util.Objects.requireNonNull(config); }
     private final Minecraft client;
 
     private final WindowsFocusController windowsFocusController;
@@ -40,13 +61,15 @@ public final class FarmCommandController {
     public boolean isExpectingLoadoutScreen() { return expectingLoadoutScreen; }
     public boolean isBusinessResumePending() { return businessResumePending; }
     public boolean isPestLoadoutPending() { return pendingPestLoadout || deferredPestInFlight; }
-    public void discardDeferredActions() { pendingPestLoadout = false; deferredPestInFlight = false; businessResumePending = false; scheduler.clear(); }
+    public void discardDeferredActions() { workflow = Workflow.IDLE; pendingPestLoadout = false; deferredPestInFlight = false; businessResumePending = false; macroState.setCommandRunning(false); scheduler.clear(); }
     public int getPestLoadoutRemainingTicks() { return pestLoadoutTimer.getRemainingTicks(); }
     public boolean hasPendingWork() { return scheduler.isRunning() || pendingPestLoadout || deferredPestInFlight; }
     public boolean hasActionFailed() { return actionFailed; }
     public void clearActionFailure() { actionFailed = false; }
-    private void failAction() { actionFailed = true; deferredPestInFlight = false; businessResumePending = false; }
+    private void failAction() { workflow = Workflow.IDLE; actionFailed = true; deferredPestInFlight = false; businessResumePending = false; }
     public void abortWorld() {
+        workflow = Workflow.IDLE;
+        macroState.setCommandRunning(false);
         scheduler.clear(); scheduler.setPaused(false);
         pestLoadoutTimer.cancel(); pendingPestLoadout = false; deferredPestInFlight = false; expectingLoadoutScreen = false; businessResumePending = false;
     }
@@ -150,10 +173,13 @@ public final class FarmCommandController {
             });
         }
         if (!scheduler.isRunning() && !deferredPestInFlight) expectingLoadoutScreen = false;
+        if (!hasPendingWork()) workflow = Workflow.IDLE;
     }
 
 
     public void cancel() {
+        workflow = Workflow.IDLE;
+        macroState.setCommandRunning(false);
         businessResumePending = false;
         if (deferredPestInFlight) failAction();
 
@@ -208,13 +234,15 @@ public final class FarmCommandController {
             return;
         }
 
+        Runnable completed = trackWorkflow(Workflow.WARP, after);
+
 
         sendCommand("warp garden");
 
 
-        scheduler.schedule(
-                random(800, 800),
-                after
+        scheduler.scheduleDelayTicks(
+                randomDelays.sample(WARP),
+                completed
         );
     }
 
@@ -231,13 +259,15 @@ public final class FarmCommandController {
             return;
         }
 
+        Runnable completed = trackWorkflow(Workflow.SPAWN, after);
+
 
         sendCommand("spawnlocation");
 
 
-        scheduler.schedule(
-                random(300,150),
-                after
+        scheduler.scheduleDelayTicks(
+                randomDelays.sample(SPAWN_POINT),
+                completed
         );
     }
 
@@ -251,6 +281,8 @@ public final class FarmCommandController {
             return;
         }
 
+        Runnable completed = trackWorkflow(Workflow.SPAWN, after);
+
 
         String direction =
                 moveRight ? "D" : "A";
@@ -261,8 +293,8 @@ public final class FarmCommandController {
         input.actionKeyDown("S");
 
 
-        scheduler.schedule(
-                random(150,150),
+        scheduler.scheduleDelayTicks(
+                randomDelays.sample(SPAWN_MUSHROOM),
                 () -> {
 
                     input.actionKeyUp(direction);
@@ -270,9 +302,7 @@ public final class FarmCommandController {
                     input.actionKeyUp("S");
 
 
-                    if (after != null) {
-                        after.run();
-                    }
+                    completed.run();
                 }
         );
     }
@@ -282,14 +312,13 @@ public final class FarmCommandController {
     // Cactus
     // =========================================================
 
-    public void cactusLineChange(
-            Runnable after
-    ) {
+    public void lineChangeMovement(int durationTicks, Runnable after) {
 
-        if (isRunning()) {
-            return;
-        }
+        if (durationTicks < 1) throw new IllegalArgumentException("Invalid movement duration");
 
+        // Freeze row time until the movement and its completion wait finish.
+        macroState.setCommandRunning(true);
+        macroState.setLineChangePhase(FarmState.LineChangePhase.MOVEMENT);
 
         scheduler.schedule(
                 100,
@@ -297,15 +326,18 @@ public final class FarmCommandController {
         );
 
 
-        scheduler.schedule(
-                random(500,150),
+        scheduler.scheduleAfterTicks(
+                durationTicks,
                 () -> input.actionKeyUp("W")
         );
 
 
         scheduler.schedule(
                 100,
-                after
+                () -> {
+                    macroState.setCommandRunning(false);
+                    if (after != null) after.run();
+                }
         );
     }
 
@@ -322,6 +354,8 @@ public final class FarmCommandController {
             return;
         }
 
+        Runnable completed = trackWorkflow(Workflow.LOADOUT, after);
+
 
         sendCommand("loadout");
 
@@ -336,7 +370,7 @@ public final class FarmCommandController {
 
         scheduler.schedule(
                 400,
-                after
+                completed
         );
     }
 
@@ -353,6 +387,8 @@ public final class FarmCommandController {
             return;
         }
 
+        Runnable completed = trackWorkflow(Workflow.PEST_LOADOUT, after);
+
 
         scheduler.schedule(
                 0,
@@ -360,9 +396,9 @@ public final class FarmCommandController {
         );
 
 
-        scheduler.schedule(
-                random(50,50),
-                () -> pestLoadoutStep2(0, after)
+        scheduler.scheduleDelayTicks(
+                randomDelays.sample(PEST_OPEN_WAIT),
+                () -> pestLoadoutStep2(0, completed)
         );
     }
 
@@ -379,13 +415,13 @@ public final class FarmCommandController {
                     // 判断当前是否已经打开了界面 (client.screen 不为 null 代表界面已弹出)
                     if (client.screen != null) {
                         // 1. 执行 slot 4
-                        scheduler.schedule(
-                                random(150,200),
+                        scheduler.scheduleDelayTicks(
+                                randomDelays.sample(PEST_SELECT),
                                 () -> input.slot(4)
                         );
 
-                        scheduler.schedule(
-                                random(100,50),
+                        scheduler.scheduleDelayTicks(
+                                randomDelays.sample(PEST_SETTLE),
                                 () -> pestLoadoutStep3(0, after)
                         );
                     } else {
@@ -447,6 +483,8 @@ public final class FarmCommandController {
             return;
         }
 
+        Runnable completed = trackWorkflow(Workflow.SPAWN_LOADOUT, after);
+
 
         scheduler.schedule(
                 100,
@@ -461,9 +499,9 @@ public final class FarmCommandController {
 
 
 
-        scheduler.schedule(
-                random(50,50),
-                () -> spawnPestsStep2(0, after)
+        scheduler.scheduleDelayTicks(
+                randomDelays.sample(SPAWN_LOADOUT_OPEN_WAIT),
+                () -> spawnPestsStep2(0, completed)
         );
     }
 
@@ -480,13 +518,13 @@ public final class FarmCommandController {
                     // 判断当前是否已经打开了界面 (client.screen 不为 null 代表界面已弹出)
                     if (client.screen != null) {
                         // 1. 执行 slot 5
-                        scheduler.schedule(
-                                random(150,200),
+                        scheduler.scheduleDelayTicks(
+                                randomDelays.sample(SPAWN_LOADOUT_SELECT),
                                 () -> input.slot(5)
                         );
 
-                        scheduler.schedule(
-                                random(100,50),
+                        scheduler.scheduleDelayTicks(
+                                randomDelays.sample(SPAWN_LOADOUT_SETTLE),
                                 () -> spawnPestsStep3(0, after)
                         );
                     } else {
@@ -532,8 +570,8 @@ public final class FarmCommandController {
 
     private void spawnPestsStep4(Runnable after) {
         // 安排按下 E 键
-        scheduler.schedule(
-                random(150, 250),
+        scheduler.scheduleDelayTicks(
+                randomDelays.sample(SPAWN_INVENTORY_KEY),
                 () -> input.keyClick("E")
         );
 
@@ -574,19 +612,4 @@ public final class FarmCommandController {
     // Random Delay
     // =========================================================
 
-    private int random(
-            int base,
-            int range
-    ) {
-
-        if (range <= 0) {
-            return base;
-        }
-
-
-        return base +
-                ThreadLocalRandom
-                        .current()
-                        .nextInt(range);
-    }
 }

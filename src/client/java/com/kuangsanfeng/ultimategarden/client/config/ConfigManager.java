@@ -11,7 +11,7 @@ import java.util.*;
 
 /** One instance is loaded before controllers are constructed. */
 public final class ConfigManager {
-    public enum Module { GENERAL, FARM, UI, CROPS, PEST, ESP }
+    public enum Module { GENERAL, FARM, UI, CROPS, PEST, ESP, RANDOM_DELAY, HUD }
     private Path directory;
     private AccountDirectories accounts;
     private AccountDirectories.Profile profile;
@@ -25,6 +25,8 @@ public final class ConfigManager {
     private final UIConfig ui = new UIConfig();
     private final PestConfig pest = new PestConfig();
     private final ESPConfig esp = new ESPConfig();
+    private final HudConfig hud = new HudConfig();
+    private final RandomDelayConfig randomDelays = new RandomDelayConfig();
     private boolean repairedField;
     private final CropConfig crops = new CropConfig();
     private final Map<Module, JsonObject> documents = new EnumMap<>(Module.class);
@@ -76,6 +78,8 @@ public final class ConfigManager {
             if (!accounts.file(profile,module).equals(file(module))) throw new IOException("Account directory changed");
         }
     }
+    public HudConfig getHudConfig() { return hud; }
+    public RandomDelayConfig getRandomDelayConfig() { return randomDelays; }
     public PestConfig getPestConfig() { return pest; }
     public ESPConfig getESPConfig() { return esp; }
     public GeneralConfig getGeneralConfig() { return general; }
@@ -130,8 +134,10 @@ public final class ConfigManager {
     }
     private void defaults(Module module) {
         if (module == Module.GENERAL) general.resetToDefault();
+        if (module == Module.HUD) hud.resetToDefault();
         if (module == Module.PEST) pest.resetToDefault();
         if (module == Module.ESP) esp.resetToDefault();
+        if (module == Module.RANDOM_DELAY) randomDelays.resetToDefault();
         if (module == Module.FARM) farm.resetToDefault();
         if (module == Module.UI) ui.resetToDefault();
         if (module == Module.CROPS) crops.resetToDefault();
@@ -151,6 +157,10 @@ public final class ConfigManager {
                 if (module == Module.CROPS) {
                     crops.load(document);
                     if (crops.wasRepaired() && !io.backup(file(module))) protectedFiles.add(module);
+                } else if (module == Module.HUD) {
+                    if (hud.load(document) && !io.backup(file(module))) protectedFiles.add(module);
+                } else if (module == Module.RANDOM_DELAY) {
+                    if (randomDelays.load(document) && !io.backup(file(module))) protectedFiles.add(module);
                 } else if (module == Module.ESP) {
                     boolean migration = esp.requiresMigration(document);
                     if (migration && !io.backupForMigration(file(module))) protectedFiles.add(module);
@@ -193,6 +203,7 @@ public final class ConfigManager {
                         field(document, "accentColor", null, value -> ui.setAccentColor(textValue(value)), null);
                     } else if (module == Module.GENERAL) {
                         field(document, "showModChatHints", null, value -> general.setShowModChatHints(boolValue(value)), null);
+                        field(document, "autoPauseFarmWhenOpeningMenu", null, value -> general.setAutoPauseFarmWhenOpeningMenu(boolValue(value)), null);
                         field(document, "autoResumeFarmAfterGuiClose", null, value -> general.setAutoResumeFarmAfterGuiClose(boolValue(value)), null);
                     } else if (module == Module.PEST) {
                         field(document, "pestESPEnabled", null, value -> pest.setPestESPEnabled(boolValue(value)), null);
@@ -217,8 +228,11 @@ public final class ConfigManager {
         switch (module) {
             case CROPS -> document = crops.toJson();
             case ESP -> document = esp.toJson(document);
+            case RANDOM_DELAY -> document = randomDelays.toJson(document);
+            case HUD -> document = hud.toJson(document);
             case GENERAL -> {
                 document.addProperty("showModChatHints", general.isShowModChatHints());
+                document.addProperty("autoPauseFarmWhenOpeningMenu", general.isAutoPauseFarmWhenOpeningMenu());
                 document.addProperty("autoResumeFarmAfterGuiClose", general.isAutoResumeFarmAfterGuiClose());
             }
             case PEST -> {
@@ -270,6 +284,10 @@ public final class ConfigManager {
         if (module == Module.CROPS) {
             CropConfig candidate = new CropConfig(); candidate.load(document);
             if(candidate.wasRepaired()) throw new IOException("Source crop configuration requires repair");
+        } else if (module == Module.HUD) {
+            if (new HudConfig().load(document)) throw new IOException("Invalid HUD configuration");
+        } else if (module == Module.RANDOM_DELAY) {
+            if (new RandomDelayConfig().load(document)) throw new IOException("Invalid source random delay configuration");
         } else if (module == Module.ESP) {
             if(new ESPConfig().load(document)) throw new IOException("Invalid source ESP configuration");
         } else {

@@ -16,7 +16,7 @@ public final class ToggleSwitch extends StyledButton {
     @Override protected void extractContents(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         var p = palette.get();
         boolean on = value.getAsBoolean();
-        RoundedRect.fill(g, getX(), getY() + 2, 42, 20, 10, p.fg(!active ? p.border() : on ? p.accent() : p.border()));
-        RoundedRect.fill(g, getX() + (on ? 23 : 3), getY() + 5, 14, 14, 7, p.fg(on ? p.onAccent() : p.muted()));
+        RoundedRect.fill(g, getX(), getY() + 2, 42, 20, 10, p.fg(on ? p.accent() : p.border(), active ? 1f : .4f));
+        RoundedRect.fill(g, getX() + (on ? 23 : 3), getY() + 5, 14, 14, 7, p.fg(on ? p.onAccent() : p.muted(), active ? 1f : .4f));
     }
 }

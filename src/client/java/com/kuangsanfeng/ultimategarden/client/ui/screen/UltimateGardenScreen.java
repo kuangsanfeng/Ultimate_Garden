@@ -23,8 +23,12 @@ import java.util.function.*;
 public final class UltimateGardenScreen extends net.minecraft.client.gui.screens.Screen {
     private enum Page { Home, Farm, Pests, ESP, Hotkeys, Settings }
     private record Placement(AbstractWidget widget, int y, BooleanSupplier enabled, CollapsibleSection section) { }
-    private record Card(int y, int height, CollapsibleSection section) { }
-    private record Label(int y, Supplier<String> text, boolean heading, CollapsibleSection section, String help) { }
+    private record Card(int y, int height, CollapsibleSection section, int inset, BooleanSupplier enabled) {
+        Card(int y, int height, CollapsibleSection section) { this(y, height, section, 0, () -> true); }
+    }
+    private record Label(int y, Supplier<String> text, boolean heading, CollapsibleSection section, String help, int inset, BooleanSupplier enabled) {
+        Label(int y, Supplier<String> text, boolean heading, CollapsibleSection section, String help) { this(y, text, heading, section, help, 0, () -> true); }
+    }
     private record Choice(String value, String label, boolean enabled) { }
     private final ConfigManager configs;
     private final FarmController farm;
@@ -39,6 +43,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     private final List<Placement> content = new ArrayList<>();
     private final List<Card> cards = new ArrayList<>();
     private final List<Label> labels = new ArrayList<>();
+    private final Map<RandomDelayConfig.Key, String[]> randomDelayDrafts = new EnumMap<>(RandomDelayConfig.Key.class);
     private final List<CollapsibleSection> sections = new ArrayList<>();
     private final Map<Page, Map<String, CollapsibleSection.State>> sectionStates = new EnumMap<>(Page.class);
     private final Map<String, Integer> headingCounts = new HashMap<>();
@@ -48,6 +53,15 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     private String message = "ui.ultimategarden.choose_a_section_to_view_its_settings";
     private boolean error;
     private boolean closeHandled;
+    private boolean adjustingHud, returningFromHud, enterHeld;
+    private final Set<EditBox> routeInputs = Collections.newSetFromMap(new IdentityHashMap<>());
+    public void finishHudAdjustment(boolean returning, boolean savedBounds) {
+        adjustingHud=false; returningFromHud=returning;
+        if (!returning && !closeHandled) { closeHandled=true; if (menuPauseOwned) farm.endUltimateGardenMenu(); }
+        page=Page.Settings; choices=null;
+        saved(savedBounds);
+    }
+    private boolean menuPauseOwned;
     private boolean menuKeyHeld;
     private List<Choice> choices;
     private Consumer<String> choose;
@@ -71,16 +85,21 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         pestDelayDraft = Integer.toString(configs.getPestConfig().getPestLoadoutDelayTicks());
     }
     private ThemePalette palette() { return ThemePalette.from(configs.getUIConfig()); }
+    public boolean keepsFarmingInput() { return !menuPauseOwned && !farm.isMenuSessionActive() && farm.getState().isRunning(); }
     @Override public boolean isPauseScreen() { return false; }
     @Override public void added() {
         closeHandled = false;
         menuKeyHeld = MacroKeyBindings.isMenuKeyPhysicallyDown();
-        farm.beginMenuPause();
+        if (returningFromHud) {
+            returningFromHud=false;
+            if (!menuPauseOwned && configs.getGeneralConfig().isAutoPauseFarmWhenOpeningMenu()) menuPauseOwned=farm.beginUltimateGardenMenu();
+        }
+        else menuPauseOwned = farm.beginUltimateGardenMenu();
     }
     @Override public void removed() {
         copyConfirmation = null; copyInProgress = null;
         help.clear();
-        if (!closeHandled) { closeHandled = true; farm.endMenuPause(); }
+        if (!adjustingHud && !closeHandled) { closeHandled = true; if (menuPauseOwned) farm.endUltimateGardenMenu(); }
     }
     @Override public void onClose() {
         if (languageSelector != null && languageSelector.isOpen()) { languageSelector.dismiss(); return; }
@@ -100,6 +119,14 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         positionContent();
     }
     @Override public boolean keyPressed(KeyEvent event) {
+        if (event.key()==org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || event.key()==org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
+            if (enterHeld) return true;
+            if (getFocused() instanceof EditBox edit && routeInputs.contains(edit) && edit.active && edit.visible) {
+                enterHeld=true;
+                act(() -> applyCropDefinition(drafts.get(editingCrop)));
+                return true;
+            }
+        }
         if (MacroKeyBindings.matchesMenuKey(event) && !(getFocused() instanceof EditBox)) {
             if (!menuKeyHeld) { menuKeyHeld = true; closeMenu(); }
             return true;
@@ -107,6 +134,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         return super.keyPressed(event);
     }
     @Override public boolean keyReleased(KeyEvent event) {
+        if (event.key()==org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || event.key()==org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) enterHeld=false;
         if (MacroKeyBindings.matchesMenuKey(event)) { menuKeyHeld = false; return true; }
         return super.keyReleased(event);
     }
@@ -119,7 +147,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         build();
     }
     private void build() {
-        help.clear();
+        help.clear(); routeInputs.clear();
         clearFocus(); clearWidgets(); fixed.clear(); content.clear(); cards.clear(); labels.clear(); cursor = 0;
         sections.clear(); headingCounts.clear(); currentSection = null; progressSection = null;
         var close = new StyledButton(left + windowWidth - 31, top + 12, 22, 22, "×", false, this::palette, this::closeMenu);
@@ -220,9 +248,12 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         cursor += 34;
     }
     private void toggle(String label, BooleanSupplier value, Runnable action, BooleanSupplier enabled) {
-        int h = Math.max(42, font.split(Component.literal(language.text(label)), Math.max(40, sectionWidth(currentSection) - 75
+        toggle(label, value, action, enabled, 0);
+    }
+    private void toggle(String label, BooleanSupplier value, Runnable action, BooleanSupplier enabled, int inset) {
+        int h = Math.max(42, font.split(Component.literal(language.text(label)), Math.max(40, sectionWidth(currentSection) - 75 - inset
                 - (helpText(label).isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP))).size() * 11 + 18);
-        cards.add(new Card(cursor, h, currentSection)); labels.add(new Label(cursor + 10, () -> language.text(label), false, currentSection, helpText(label)));
+        cards.add(new Card(cursor, h, currentSection, inset, enabled)); labels.add(new Label(cursor + 10, () -> language.text(label), false, currentSection, helpText(label), inset, enabled));
         place(new ToggleSwitch(contentX + contentWidth - 54, contentTop + cursor + (h - 24) / 2, language.text(label), this::palette, value, () -> act(action)), cursor + (h - 24) / 2, enabled);
         cursor += h + 8;
     }
@@ -275,7 +306,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         progressSection = currentSection;
         info(() -> language.text("ui.ultimategarden.state.pest_timer", timerText()));
         info(() -> language.text("ui.ultimategarden.state.pending", language.text(farm.getCommand().hasPendingWork() ? "ui.ultimategarden.yes" : "ui.ultimategarden.no"), farm.getQueuedMenuActions()));
-        button("ui.ultimategarden.start_after_closing_menu", true, () -> { farm.requestMenuStart(); message = "ui.ultimategarden.status.start"; error = false; }, () -> farm.getState().getCropType() != 0);
+        button(farm.isMenuSessionActive() ? "ui.ultimategarden.start_after_closing_menu" : "ui.ultimategarden.start_farming", true, () -> { farm.requestMenuStart(); message = farm.isMenuSessionActive() ? "ui.ultimategarden.status.start" : "ui.ultimategarden.status.start_now"; error = false; }, () -> farm.getState().getCropType() != 0);
         button("ui.ultimategarden.pause", false, () -> { farm.pauseMacro(); message = "ui.ultimategarden.status.pause"; error = false; }, () -> true);
         button("ui.ultimategarden.reset", false, () -> { farm.resetMacro(); message = "ui.ultimategarden.status.reset"; error = false; }, () -> true);
     }
@@ -300,17 +331,29 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         }, () -> farm.getState().getCropType() != 0 && farm.getQueuedMenuActions() == 0);
         heading("ui.ultimategarden.advanced_crop_definition");
         dropdown("ui.ultimategarden.crop_to_inspect_edit", editingCrop.name(), cropChoices(false, true), value -> { editingCrop = CropType.valueOf(value); build(); }, () -> true);
-        if (editingCrop.isCustom()) { note("ui.ultimategarden.coming_soon_custom_routes_cannot_be_edited_or_started_yet"); return; }
+        if (editingCrop.isCustom()) note("ui.ultimategarden.coming_soon_custom_routes_cannot_be_edited_or_started_yet");
         Map<String, String> fields = drafts.computeIfAbsent(editingCrop, type -> new LinkedHashMap<>(configs.getCropConfig().editableValues(type)));
+        if (!fields.containsKey("tickLimit")) { cropDefinitionSaveButton(fields); cropLineChangeFields(fields); }
         for (String key : fields.keySet()) {
-            if (key.equals("enabled") || key.equals("alternateSlot")) toggle(fieldLabel(key), () -> Boolean.parseBoolean(fields.get(key)), () -> fields.put(key, Boolean.toString(!Boolean.parseBoolean(fields.get(key)))), this::canEditFarmConfiguration);
-            else input(fieldLabel(key), fields.get(key), value -> fields.put(key, value), this::canEditFarmConfiguration);
+            if (key.startsWith("lineChange")) continue;
+            if (key.equals("tickLimit")) { cropDefinitionSaveButton(fields); cropLineChangeFields(fields); }
+            if (key.equals("enabled") || key.endsWith(".enabled")) toggle(fieldLabel(key), () -> Boolean.parseBoolean(fields.get(key)), () -> fields.put(key, Boolean.toString(!Boolean.parseBoolean(fields.get(key)))), this::canEditFarmConfiguration);
+            else routeInputs.add(input(fieldLabel(key), fields.get(key), value -> fields.put(key, value), this::canEditFarmConfiguration));
         }
-        button("ui.ultimategarden.apply_and_save_crop_definition", true, () -> {
-            if (!farm.canEditRouteConfiguration()) throw new IllegalStateException("ui.ultimategarden.error.pause_or_reset_first_pending_actions_block_route_edits");
-            configs.getCropConfig().updateCrop(editingCrop, fields); saved(configs.save(ConfigManager.Module.CROPS));
-            drafts.remove(editingCrop); build();
-        }, this::canEditFarmConfiguration);
+    }
+    private void cropLineChangeFields(Map<String, String> fields) {
+        for (String key : fields.keySet()) if (key.startsWith("lineChange")) {
+            if (key.endsWith(".enabled")) toggle(fieldLabel(key), () -> Boolean.parseBoolean(fields.get(key)), () -> fields.put(key, Boolean.toString(!Boolean.parseBoolean(fields.get(key)))), this::canEditFarmConfiguration);
+            else routeInputs.add(input(fieldLabel(key), fields.get(key), value -> fields.put(key, value), this::canEditFarmConfiguration));
+        }
+    }
+    private void cropDefinitionSaveButton(Map<String, String> fields) {
+        button("ui.ultimategarden.apply_and_save_crop_definition", true, () -> applyCropDefinition(fields), this::canEditFarmConfiguration);
+    }
+    private void applyCropDefinition(Map<String, String> fields) {
+        if (!farm.canEditRouteConfiguration()) throw new IllegalStateException("ui.ultimategarden.error.pause_or_reset_first_pending_actions_block_route_edits");
+        configs.getCropConfig().updateCrop(editingCrop, fields); saved(configs.save(ConfigManager.Module.CROPS));
+        drafts.remove(editingCrop); build();
     }
     private String fieldLabel(String key) { return "ui.ultimategarden.field." + key; }
     private String timerText() {
@@ -331,7 +374,9 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     }
     private void hotkeys() {
         for (var binding : MacroKeyBindings.getBindings()) {
-            heading(LanguageKeys.hotkey(binding.title()));
+            String title = LanguageKeys.hotkey(binding.title());
+            heading(title, title.equals("ui.ultimategarden.set_spawn")
+                    ? language.optional(title + ".hotkey.help") : helpText(title));
             info(() -> language.text("ui.ultimategarden.state.key", language.keyName(
                     ((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)binding.mapping()).getKey().getName(),
                     binding.mapping().getTranslatedKeyMessage().getString())));
@@ -341,9 +386,14 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         heading("ui.ultimategarden.preferences");
         var general = configs.getGeneralConfig(); var ui = configs.getUIConfig();
         toggle("ui.ultimategarden.show_mod_chat_hints", general::isShowModChatHints, () -> { general.setShowModChatHints(!general.isShowModChatHints()); saved(configs.save(ConfigManager.Module.GENERAL)); }, () -> true);
+        toggle("ui.ultimategarden.auto_pause_farming_when_opening_menu", general::isAutoPauseFarmWhenOpeningMenu, () -> {
+            general.setAutoPauseFarmWhenOpeningMenu(!general.isAutoPauseFarmWhenOpeningMenu()); saved(configs.save(ConfigManager.Module.GENERAL));
+        }, () -> true);
         toggle("ui.ultimategarden.auto_resume_farming_after_closing_menu", general::isAutoResumeFarmAfterGuiClose, () -> {
             general.setAutoResumeFarmAfterGuiClose(!general.isAutoResumeFarmAfterGuiClose()); saved(configs.save(ConfigManager.Module.GENERAL));
-        }, () -> true);
+        }, general::isAutoPauseFarmWhenOpeningMenu, CollapsibleSection.NESTED_INDENT);
+        hudSettings();
+        randomDelaySettings();
         heading("ui.ultimategarden.appearance");
         List<Choice> themes = Arrays.stream(UIConfig.Theme.values()).map(theme -> new Choice(theme.name(), "ui.ultimategarden." + theme.name().toLowerCase(Locale.ROOT), true)).toList();
         dropdown("ui.ultimategarden.theme", ui.getUiThemeMode().name(), themes, value -> { ui.setUiThemeMode(UIConfig.Theme.valueOf(value)); saved(configs.saveUIConfig()); build(); }, () -> true);
@@ -357,6 +407,66 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         }), cursor, () -> true);
         cursor += 42;
         accountConfiguration();
+    }
+    private void hudSettings() {
+        heading("ui.ultimategarden.hud");
+        var parent = currentSection;
+        var hud = configs.getHudConfig();
+        button("ui.ultimategarden.hud.adjust", false, () -> {
+            adjustingHud=true;
+            com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.begin(this);
+        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
+        var display = nestedDelaySection("ui.ultimategarden.hud.display_mode", parent);
+        dropdown("ui.ultimategarden.hud.mode", hud.getMode().name(), Arrays.stream(HudConfig.Mode.values())
+                .map(mode -> new Choice(mode.name(), "ui.ultimategarden.hud.mode." + mode.name(), true)).toList(),
+                value -> { hud.setMode(HudConfig.Mode.valueOf(value)); saved(configs.save(ConfigManager.Module.HUD)); build(); }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
+        display.finishContent(cursor); cursor += CollapsibleSection.SECTION_GAP; currentSection = parent;
+        for (boolean compact : new boolean[]{true,false}) {
+            var section = nestedDelaySection(compact ? "ui.ultimategarden.hud.compact_content" : "ui.ultimategarden.hud.detail_content", parent);
+            for (HudConfig.Item item : HudConfig.Item.values()) {
+                toggle("ui.ultimategarden.hud.item." + item.name(), () -> compact ? hud.compact(item) : hud.detail(item), () -> {
+                    if (compact) hud.setCompact(item,!hud.compact(item)); else hud.setDetail(item,!hud.detail(item));
+                    saved(configs.save(ConfigManager.Module.HUD));
+                }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD) && (compact || !hud.compact(item)));
+            }
+            section.finishContent(cursor); cursor += CollapsibleSection.SECTION_GAP; currentSection = parent;
+        }
+    }
+    private CollapsibleSection nestedDelaySection(String title, CollapsibleSection parent) {
+        var state = sectionStates.computeIfAbsent(page, ignored -> new HashMap<>())
+                .computeIfAbsent(title, ignored -> new CollapsibleSection.State(parent.state()));
+        var section = new CollapsibleSection(contentX, contentTop + cursor, contentWidth, cursor,
+                language.text(title), state, this::palette, help, helpText(title), () -> {
+            help.clear(); clearFocus(); setDragging(false); positionContent();
+        });
+        currentSection = parent;
+        place(section, cursor, () -> true);
+        sections.add(section); currentSection = section;
+        cursor += section.getHeight() + CollapsibleSection.CONTENT_GAP;
+        return section;
+    }
+    private void randomDelaySettings() {
+        heading("ui.ultimategarden.anti_check");
+        var antiCheck = currentSection;
+        var random = nestedDelaySection("ui.ultimategarden.random_delay", antiCheck);
+        for (RandomDelayConfig.Key key : RandomDelayConfig.Key.values()) {
+            var parameter = nestedDelaySection("ui.ultimategarden.random_delay." + key.name(), random);
+            String[] draft = randomDelayDrafts.computeIfAbsent(key, ignored -> {
+                var range = configs.getRandomDelayConfig().get(key);
+                return new String[]{Integer.toString(range.minTicks()), Integer.toString(range.maxTicks())};
+            });
+            BooleanSupplier editable = () -> !configs.isPendingRestart(ConfigManager.Module.RANDOM_DELAY);
+            input("ui.ultimategarden.random_delay.min_ticks", draft[0], value -> draft[0] = value, editable);
+            input("ui.ultimategarden.random_delay.max_ticks", draft[1], value -> draft[1] = value, editable);
+            button("ui.ultimategarden.random_delay.save", true, () -> {
+                configs.getRandomDelayConfig().set(key, Integer.parseInt(draft[0].trim()), Integer.parseInt(draft[1].trim()));
+                saved(configs.save(ConfigManager.Module.RANDOM_DELAY));
+            }, editable);
+            parameter.finishContent(cursor); cursor += CollapsibleSection.SECTION_GAP;
+            currentSection = random;
+        }
+        random.finishContent(cursor); cursor += CollapsibleSection.SECTION_GAP;
+        currentSection = antiCheck;
     }
     private boolean canEditFarmConfiguration() {
         return !configs.isPendingRestart(ConfigManager.Module.FARM) && !configs.isPendingRestart(ConfigManager.Module.CROPS) && farm.canEditRouteConfiguration();
@@ -444,6 +554,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
                     if (plan.modules().contains(ConfigManager.Module.UI)) accentDraft = configs.getUIConfig().getAccentColor();
                     if (plan.modules().contains(ConfigManager.Module.PEST)) pestDelayDraft = Integer.toString(configs.getPestConfig().getPestLoadoutDelayTicks());
                     if (plan.modules().contains(ConfigManager.Module.ESP)) espDrafts.clear();
+                    if (plan.modules().contains(ConfigManager.Module.RANDOM_DELAY)) randomDelayDrafts.clear();
                 }
                 message = copyReport.restartRequired().isEmpty() ? "ui.ultimategarden.account.success" : "ui.ultimategarden.account.success_restart"; error = false;
             } else { message = copyReport.rollbackFailures().isEmpty() ? "ui.ultimategarden.account.failed" : "ui.ultimategarden.account.partial"; error = true; }
@@ -511,7 +622,11 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
             act(() -> { update.accept(value); saved(configs.save(ConfigManager.Module.ESP)); });
         }, enabled);
     }
-    private String helpText(String key) { return language.optional(key + ".help"); }
+    private String helpText(String key) {
+        if (key.equals("ui.ultimategarden.open_ultimate_garden_menu"))
+            return language.text(key + ".help", MacroKeyBindings.getMenuKeyName());
+        return language.optional(key + ".help");
+    }
     private String runStatus() {
         String status = farm.getRunStatus();
         if (status.startsWith("Menu open - ")) return language.text("ui.ultimategarden.state.menu_open", language.localize(status.substring(12)));
@@ -578,7 +693,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         g.text(font, Component.literal(choices != null ? language.text("ui.ultimategarden.choose_an_option") : language.text("ui.ultimategarden." + page.name().toLowerCase(Locale.ROOT))).withStyle(ChatFormatting.BOLD), contentX, top + 40, p.fg(p.text()), false);
         for (AbstractWidget widget : fixed) widget.extractRenderState(g, mouseX, mouseY, delta);
         g.enableScissor(contentX - 1, contentTop, contentX + contentWidth + 1, contentBottom);
-        for (Card card : cards) if (sectionVisible(card.section())) RoundedRect.fill(g, sectionX(card.section()), displayedY(card.y()), sectionWidth(card.section()), card.height(), 10, p.bg(p.surface()));
+        for (Card card : cards) if (sectionVisible(card.section())) RoundedRect.fill(g, sectionX(card.section()) + card.inset(), displayedY(card.y()), Math.max(40, sectionWidth(card.section()) - card.inset()), card.height(), 10, p.bg(p.surface(), card.enabled().getAsBoolean() ? 1f : .4f));
         for (Label label : labels) {
             if (!sectionVisible(label.section())) continue;
             int y = displayedY(label.y());
@@ -590,8 +705,8 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
             Component text = Component.literal(label.text().get());
             if (label.heading()) text = text.copy().withStyle(ChatFormatting.BOLD);
             if (!label.help().isBlank()) max -= HelpTooltip.SIZE + HelpTooltip.GAP;
-            g.textWithWordWrap(font, text, sectionX(label.section()) + 10, y, Math.max(40, max), p.fg(label.heading() ? p.text() : p.muted()), false);
-            help.iconAfterText(g, font, label, text, sectionX(label.section()) + 10, y, Math.max(40, max), label.help(), p);
+            g.textWithWordWrap(font, text, sectionX(label.section()) + 10 + label.inset(), y, Math.max(40, max - label.inset()), p.fg(label.heading() ? p.text() : p.muted(), label.enabled().getAsBoolean() ? 1f : .4f), false);
+            help.iconAfterText(g, font, label, text, sectionX(label.section()) + 10 + label.inset(), y, Math.max(40, max - label.inset()), label.help(), p, label.enabled().getAsBoolean() ? 1f : .4f);
         }
         if (choices == null && page == Page.Home && sectionVisible(progressSection)) {
             // Real progress, never an independent UI timer.

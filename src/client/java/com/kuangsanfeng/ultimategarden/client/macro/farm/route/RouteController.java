@@ -8,7 +8,7 @@ import com.kuangsanfeng.ultimategarden.client.config.CropDefinition;
 import com.kuangsanfeng.ultimategarden.client.config.CropConfig;
 
 import com.kuangsanfeng.ultimategarden.client.macro.farm.hint.FarmHints;
-import java.util.concurrent.ThreadLocalRandom;
+import com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.crop.CropType;
 
 // =========================================================
@@ -36,23 +36,7 @@ public final class RouteController {
         this.command = command;
         this.windowsFocusController = windowsFocusController;
         this.resetFarm = resetFarm;
-        this.setLineYP = new SetLineYP(input, command.getScheduler());
-    }
-
-    private int random(
-            int base,
-            int range
-    ) {
-
-        if (range <= 0) {
-            return base;
-        }
-
-
-        return base +
-                ThreadLocalRandom
-                        .current()
-                        .nextInt(range);
+        this.setLineYP = new SetLineYP(input, command.getScheduler(), command::getRandomDelays);
     }
 
     // =========================================================
@@ -84,7 +68,7 @@ public final class RouteController {
     // =========================================================
 
     public void runCurrentMovement() {
-        if (!routeAllowed.getAsBoolean()) return;
+        if (!routeAllowed.getAsBoolean() || state.isCommandRunning()) return;
 
         CropDefinition data =
                 crops.get(
@@ -149,8 +133,8 @@ public final class RouteController {
                 );
 
 
-        int tickLimit = isTimeTesterMode ? crops.getCrop(CropType.TIMETESTER).getTickLimit() : data.getTickLimit();
-        tickLimit = tickLimit + random(0, 10);
+        long tickLimit = isTimeTesterMode ? crops.getCrop(CropType.TIMETESTER).getTickLimit() : data.getTickLimit();
+        tickLimit = tickLimit + command.getRandomDelays().sample(RandomDelayConfig.Key.FARM_ROW_JITTER);
 
         if (state.getTick()
                 >= tickLimit) {
@@ -189,10 +173,10 @@ public final class RouteController {
         FarmHints.printHint("LineFinished", state.getEventCount());
 
 
-        if (state.getCropType() == CropType.CACTUS.getValue()) {
+        if (data.lineChangeMovement().enabled()) {
 
-            command.cactusLineChange(
-                    this::continueLine
+            command.lineChangeMovement(
+                    data.lineChangeMovement().durationTicks(), this::continueLine
             );
 
             return;
@@ -233,35 +217,21 @@ public final class RouteController {
         }
 
 
-        changeLineView();
+        var view = data.lineChangeYawPitch();
+        if (view.enabled()) {
+            state.setCommandRunning(true);
+            state.setLineChangePhase(FarmState.LineChangePhase.YAW_PITCH);
+            // Queue the stage behind existing work; do not select a slot early.
+            command.getScheduler().schedule(0, () -> setLineYP.setAlternate(
+                    state.getEventCount(), view.slot1(), view.slot2(), this::startNextLine));
+        } else startNextLine();
+    }
 
+    private void startNextLine() {
+        state.setCommandRunning(false);
         runCurrentMovement();
-
         state.setEventChange(false);
     }
-
-
-    private void changeLineView() {
-
-        if (crops.get(state.getCropType()).useAlternateSlot()) {
-
-            setLineYP.setAlternate(
-                    state.getEventCount(),
-                    true
-            );
-
-        }
-        else {
-            /*
-            setLineYP.setNormal(
-                    //true
-                    false
-            );
-
-            */
-        }
-    }
-
 
     // =========================================================
     // Farm Route
@@ -362,28 +332,6 @@ public final class RouteController {
         //changeManualLineView();
 
         FarmHints.printHint("LineFinished", state.getEventCount());
-    }
-
-
-    private void changeManualLineView() {
-
-        if (crops.get(state.getCropType()).useAlternateSlot()) {
-
-            setLineYP.setAlternate(
-                    state.getEventCount(),
-                    false
-            );
-
-        }
-        else {
-
-            /*
-            setLineYP.setNormal(
-                    false
-            );
-
-             */
-        }
     }
 
 

@@ -12,6 +12,7 @@ public final class CropDefinition {
         this.type = type;
         data = source.deepCopy();
         text("name"); bool("enabled");
+        validateLineChange(data);
         if (type.isCustom()) return;
         positive("tickLimit"); positive("totalLines");
         keys(true); keys(false); bool("alternateSlot");
@@ -52,7 +53,38 @@ public final class CropDefinition {
     public boolean isExecutable() { return !type.isCustom() && bool("enabled"); }
     public int getTickLimit() { return positive("tickLimit"); }
     public int getLines() { return positive("totalLines"); }
-    public boolean useAlternateSlot() { return bool("alternateSlot"); }
+    public record LineChangeMovement(boolean enabled, int durationTicks) { }
+    public record LineChangeYawPitch(boolean enabled, int slot1, int slot2) { }
+    static void validateLineChange(JsonObject value) {
+        for (String group : List.of("lineChangeMovement", "lineChangeYawPitch")) {
+            JsonObject config = value.getAsJsonObject(group);
+            for (String key : group.equals("lineChangeMovement") ? List.of("enabled", "durationTicks") : List.of("enabled", "slot1", "slot2")) {
+                if (!config.has(key)) throw new IllegalArgumentException(group + "." + key);
+                validateLineChangeField(group, key, config.get(key));
+            }
+        }
+    }
+    static void validateLineChangeField(String group, String key, JsonElement value) {
+        String path = group + "." + key;
+        if (key.equals("enabled")) {
+            if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean()) throw new IllegalArgumentException(path);
+        } else {
+            try {
+                if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) throw new IllegalArgumentException(path);
+                int number = value.getAsBigDecimal().intValueExact();
+                if (number < 1 || (!key.equals("durationTicks") && number > 9)) throw new IllegalArgumentException(path);
+            } catch (RuntimeException e) { throw new IllegalArgumentException(path, e); }
+        }
+    }
+    public LineChangeMovement lineChangeMovement() {
+        JsonObject config = data.getAsJsonObject("lineChangeMovement");
+        return new LineChangeMovement(config.get("enabled").getAsBoolean(), config.get("durationTicks").getAsInt());
+    }
+    public LineChangeYawPitch lineChangeYawPitch() {
+        JsonObject config = data.getAsJsonObject("lineChangeYawPitch");
+        return new LineChangeYawPitch(config.get("enabled").getAsBoolean(), config.get("slot1").getAsInt(), config.get("slot2").getAsInt());
+    }
+    public boolean useAlternateSlot() { return lineChangeYawPitch().enabled(); }
     public double getYaw(boolean a) { return angle(a ? "yawA" : "yawB"); }
     public double getPitch(boolean a) { return angle(a ? "pitchA" : "pitchB"); }
     public double getHintYaw(boolean a) { String key = a ? "hintYawA" : "hintYawB"; return data.has(key) ? angle(key) : getYaw(a); }

@@ -22,19 +22,20 @@ public final class MacroKeyBindings {
     public record Binding(String title, String description, KeyMapping mapping) { }
     public static java.util.List<Binding> getBindings() {
         return java.util.List.of(
-            new Binding("Start / Pause", "Toggle farming using the existing hotkey lifecycle.", MACRO_TOGGLE_KEY),
+            new Binding("Start / Pause", "Start or pause farming macro", MACRO_TOGGLE_KEY),
             new Binding("Reset", "Reset the current farm route.", MACRO_RESET_KEY),
             new Binding("Next line", "Advance one line while stopped.", NEXT_LINE_KEY),
             new Binding("Previous line", "Move back one line while stopped.", PREVIOUS_LINE_KEY),
-            new Binding("Set spawn", "Run the existing spawn-location sequence.", SPAWN_KEY),
-            new Binding("Warp Garden", "Run the existing garden warp.", WARP_KEY),
+            new Binding("Set spawn", "Execute /spawnpoint", SPAWN_KEY),
+            new Binding("Warp Garden", "Execute /warp garden", WARP_KEY),
             new Binding("Pest timer", "Manually start the pest loadout timer in Pests mode.", PEST_LOADOUT_KEY),
             new Binding("Cancel pest timer", "Cancel the current pest loadout timer.", PEST_TIMER_CANCEL_KEY),
-            new Binding("Loadout", "Open the existing loadout sequence.", LOADOUT_KEY),
+            new Binding("Loadout", "Execute /loadout", LOADOUT_KEY),
             new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
             new Binding("Mouse focus", "Toggle cursor release.", WINDOW_FOCUS_KEY),
-            new Binding("Open Ultimate Garden Menu", "Open menu; M closes it outside text input.", OPEN_MENU_KEY));
+            new Binding("Open Ultimate Garden Menu", "Open menu; " + getMenuKeyName() + " closes it outside text input.", OPEN_MENU_KEY));
     }
+    public static String getMenuKeyName() { return OPEN_MENU_KEY.getTranslatedKeyMessage().getString(); }
     public static boolean matchesMenuKey(net.minecraft.client.input.KeyEvent event) { return OPEN_MENU_KEY.matches(event); }
     public static void clearMenuClicks() { while (OPEN_MENU_KEY.consumeClick()) { } }
     public static boolean isMenuKeyPhysicallyDown() {
@@ -342,14 +343,6 @@ public final class MacroKeyBindings {
                 client -> {
 
 
-                    manager.tick();
-                    boolean menuClick = false;
-                    while (OPEN_MENU_KEY.consumeClick()) menuClick = true;
-                    if (menuClick && client.screen == null) com.kuangsanfeng.ultimategarden.client.ui.MenuController.open();
-                    if (controller.isMenuSessionActive()) return;
-
-
-
                     // =====================================================
                     // Num+
                     // =====================================================
@@ -358,11 +351,9 @@ public final class MacroKeyBindings {
                             isPressed(MACRO_TOGGLE_KEY)
                     )) {
 
-                        if (controller.getState().getCropType() == 0){
-                            return;
-                        }
+                        if (controller.getState().getCropType() == 0) break;
 
-                        if (controller.getState().isRunning()) {
+                        if (controller.shouldPauseByHotkey()) {
 
                             manager.pauseByHotkey(MacroManager.FARM);
 
@@ -384,15 +375,22 @@ public final class MacroKeyBindings {
                             isPressed(MACRO_RESET_KEY)
                     )) {
 
-                        if (controller.getState().getCropType() == 0){
-                            return;
-                        }
+                        if (controller.getState().getCropType() == 0) break;
 
                         manager.resetByHotkey(MacroManager.FARM);
 
                     }
 
 
+
+                    manager.tick();
+                    boolean menuClick = false;
+                    while (OPEN_MENU_KEY.consumeClick()) menuClick = true;
+                    if (menuClick && client.screen == null) com.kuangsanfeng.ultimategarden.client.ui.MenuController.open();
+
+
+
+                    if (controller.isMenuSessionActive()) return;
 
                     // =====================================================
                     // ]

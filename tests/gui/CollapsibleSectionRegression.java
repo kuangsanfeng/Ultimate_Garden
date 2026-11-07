@@ -81,6 +81,17 @@ public final class CollapsibleSectionRegression {
                 check(bY == 39+29+8 + (a.isExpanded()?90:0));
             }
         }
+        for (int mask = 0; mask < 8; mask++) {
+            State anti = new State(), random = new State(anti), operation = new State(random);
+            anti.measure(0,29,300); random.measure(39,29,292); operation.measure(78,29,284);
+            if ((mask & 1) != 0) anti.toggle();
+            if ((mask & 2) != 0) random.toggle();
+            if ((mask & 4) != 0) operation.toggle();
+            check(operation.depth() == 2);
+            check(operation.isContentVisible() == (mask == 7));
+            int hidden = anti.hiddenHeight() + random.hiddenHeight() + operation.hiddenHeight();
+            check(hidden == ((mask & 1) == 0 ? 271 : (mask & 2) == 0 ? 224 : (mask & 4) == 0 ? 177 : 0));
+        }
         System.out.println("PASS: " + checks + " section layout checks: default collapse, independent panels, nested visibility, no double subtraction, reopening and resize.");
     }
 }
