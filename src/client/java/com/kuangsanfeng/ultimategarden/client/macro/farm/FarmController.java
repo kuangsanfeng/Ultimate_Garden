@@ -510,7 +510,7 @@ public final class FarmController implements MacroManager.Module {
                 CropType crop =
                         CropType.fromValue(value);
                 if (crop.isCustom()) {
-                    com.kuangsanfeng.ultimategarden.client.hint.HintManager.printRequired("Not implemented / Coming soon");
+                    com.kuangsanfeng.ultimategarden.client.hint.HintManager.printFor("CropSelect", "Not implemented / Coming soon");
                     return true;
                 }
                 if (!configManager.getCropConfig().getCrop(crop).isExecutable()) return true;
@@ -611,7 +611,7 @@ public final class FarmController implements MacroManager.Module {
                 CropType crop =
                         CropType.fromValue(value);
                 if (crop.isCustom()) {
-                    com.kuangsanfeng.ultimategarden.client.hint.HintManager.printRequired("Not implemented / Coming soon");
+                    com.kuangsanfeng.ultimategarden.client.hint.HintManager.printFor("CropSelect", "Not implemented / Coming soon");
                     return true;
                 }
                 if (!configManager.getCropConfig().getCrop(crop).isExecutable()) return true;

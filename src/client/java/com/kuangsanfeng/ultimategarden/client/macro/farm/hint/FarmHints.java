@@ -30,6 +30,7 @@ public final class FarmHints {
             String type
     ) {
 
+        if (!HintManager.isEnabled(type)) return;
         HintManager.printNull();
 
         switch (type) {
@@ -144,6 +145,7 @@ public final class FarmHints {
             Object arg
     ) {
 
+        if (!HintManager.isEnabled(type)) return;
         HintManager.printNull();
 
         switch (type) {
@@ -247,8 +249,8 @@ public final class FarmHints {
 
     private static void printPestLoadoutTimeUp() {
 
-        HintManager.print("PestLoadout Ticker Done");
-        HintManager.print("Run The Loadout Change Macro");
+        HintManager.printFor("PestTimerDone", "PestLoadout Ticker Done");
+        HintManager.printFor("PestLoadoutChange", "Run The Loadout Change Macro");
 
     }
 

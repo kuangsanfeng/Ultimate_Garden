@@ -202,6 +202,7 @@ public final class ConfigManager {
                         field(document, "uiThemeMode", "theme", value -> ui.setUiThemeMode(UIConfig.Theme.valueOf(textValue(value))), value -> ui.setUiThemeMode(UIConfig.Theme.valueOf(textValue(value))));
                         field(document, "accentColor", null, value -> ui.setAccentColor(textValue(value)), null);
                     } else if (module == Module.GENERAL) {
+                        repairedField |= general.loadHints(document);
                         field(document, "showModChatHints", null, value -> general.setShowModChatHints(boolValue(value)), null);
                         field(document, "autoPauseFarmWhenOpeningMenu", null, value -> general.setAutoPauseFarmWhenOpeningMenu(boolValue(value)), null);
                         field(document, "autoResumeFarmAfterGuiClose", null, value -> general.setAutoResumeFarmAfterGuiClose(boolValue(value)), null);
@@ -231,6 +232,7 @@ public final class ConfigManager {
             case RANDOM_DELAY -> document = randomDelays.toJson(document);
             case HUD -> document = hud.toJson(document);
             case GENERAL -> {
+                document.add("hint",general.hintsToJson(document));
                 document.addProperty("showModChatHints", general.isShowModChatHints());
                 document.addProperty("autoPauseFarmWhenOpeningMenu", general.isAutoPauseFarmWhenOpeningMenu());
                 document.addProperty("autoResumeFarmAfterGuiClose", general.isAutoResumeFarmAfterGuiClose());

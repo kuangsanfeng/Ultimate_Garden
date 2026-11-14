@@ -385,13 +385,13 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     private void settings() {
         heading("ui.ultimategarden.preferences");
         var general = configs.getGeneralConfig(); var ui = configs.getUIConfig();
-        toggle("ui.ultimategarden.show_mod_chat_hints", general::isShowModChatHints, () -> { general.setShowModChatHints(!general.isShowModChatHints()); saved(configs.save(ConfigManager.Module.GENERAL)); }, () -> true);
         toggle("ui.ultimategarden.auto_pause_farming_when_opening_menu", general::isAutoPauseFarmWhenOpeningMenu, () -> {
             general.setAutoPauseFarmWhenOpeningMenu(!general.isAutoPauseFarmWhenOpeningMenu()); saved(configs.save(ConfigManager.Module.GENERAL));
         }, () -> true);
         toggle("ui.ultimategarden.auto_resume_farming_after_closing_menu", general::isAutoResumeFarmAfterGuiClose, () -> {
             general.setAutoResumeFarmAfterGuiClose(!general.isAutoResumeFarmAfterGuiClose()); saved(configs.save(ConfigManager.Module.GENERAL));
         }, general::isAutoPauseFarmWhenOpeningMenu, CollapsibleSection.NESTED_INDENT);
+        hintSettings();
         hudSettings();
         randomDelaySettings();
         heading("ui.ultimategarden.appearance");
@@ -407,6 +407,35 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         }), cursor, () -> true);
         cursor += 42;
         accountConfiguration();
+    }
+    private void hintSettings() {
+        heading("ui.ultimategarden.hint");
+        var parent=currentSection;
+        var general=configs.getGeneralConfig();
+        BooleanSupplier editable=() -> !configs.isPendingRestart(ConfigManager.Module.GENERAL);
+        BooleanSupplier childEditable=() -> editable.getAsBoolean() && general.isShowModChatHints();
+        toggle("ui.ultimategarden.show_mod_chat_hints",general::isShowModChatHints,() -> {
+            general.setShowModChatHints(!general.isShowModChatHints()); saved(configs.save(ConfigManager.Module.GENERAL));
+        },editable);
+        for (String group:new String[]{"macro","pest","focus"}) {
+            var section=nestedDelaySection("ui.ultimategarden.hint."+group,parent,childEditable);
+            for (var hint:GeneralConfig.Hint.values()) {
+                boolean inGroup=switch(group) {
+                    case "macro" -> hint.ordinal()<=GeneralConfig.Hint.timeTesterTicks.ordinal();
+                    case "pest" -> hint.ordinal()>=GeneralConfig.Hint.pestTimerStart.ordinal() && hint.ordinal()<=GeneralConfig.Hint.pestLoadoutChange.ordinal();
+                    default -> hint==GeneralConfig.Hint.focusReleased || hint==GeneralConfig.Hint.focusRestored;
+                };
+                if (inGroup) hintToggle(hint,childEditable);
+            }
+            section.finishContent(cursor); cursor+=CollapsibleSection.SECTION_GAP; currentSection=parent;
+        }
+        for (var hint:new GeneralConfig.Hint[]{GeneralConfig.Hint.cropSelectionInitialization,GeneralConfig.Hint.hotkeyHelp,GeneralConfig.Hint.commandHelpErrors}) hintToggle(hint,childEditable);
+    }
+    private void hintToggle(GeneralConfig.Hint hint,BooleanSupplier enabled) {
+        var general=configs.getGeneralConfig();
+        toggle("ui.ultimategarden.hint."+hint.name(),() -> general.hintEnabled(hint),() -> {
+            general.setHintEnabled(hint,!general.hintEnabled(hint)); saved(configs.save(ConfigManager.Module.GENERAL));
+        },enabled);
     }
     private void hudSettings() {
         heading("ui.ultimategarden.hud");
@@ -436,6 +465,9 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         }
     }
     private CollapsibleSection nestedDelaySection(String title, CollapsibleSection parent) {
+        return nestedDelaySection(title,parent,() -> true);
+    }
+    private CollapsibleSection nestedDelaySection(String title, CollapsibleSection parent,BooleanSupplier enabled) {
         var state = sectionStates.computeIfAbsent(page, ignored -> new HashMap<>())
                 .computeIfAbsent(title, ignored -> new CollapsibleSection.State(parent.state()));
         var section = new CollapsibleSection(contentX, contentTop + cursor, contentWidth, cursor,
@@ -443,7 +475,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
             help.clear(); clearFocus(); setDragging(false); positionContent();
         });
         currentSection = parent;
-        place(section, cursor, () -> true);
+        place(section, cursor, enabled);
         sections.add(section); currentSection = section;
         cursor += section.getHeight() + CollapsibleSection.CONTENT_GAP;
         return section;

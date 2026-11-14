@@ -1,895 +1,737 @@
-# Ultimate Garden 项目代码结构与行为总结
+# Ultimate Garden — Code Structure
 
-## ESP 与 Silverfish 可视化（当前实现）
+> 以当前工作区源码为准；本文说明本地实现，不把服务器响应或测试桩结果视为实机保证。代码定位以文件与函数为主。原文备份：[Code_Structure.backup.md](Code_Structure.backup.md)。
 
-```text
-client/config/ESPConfig.java
-client/macro/esp/
-├── ESPManager.java
-├── ESPRenderer.java
-├── ESPTarget.java
-├── render/
-│   ├── ESPBoxRenderer.java
-│   ├── ESPFillRenderer.java
-│   └── ESPTracerRenderer.java
-└── style/
-    ├── ESPStyle.java
-    ├── ESPColorMode.java
-    └── ESPColorProvider.java
-client/macro/farm/pest/PestESP.java
-tests/esp/ESPRegression.java
-tests/esp/run.ps1
-```
+## Table of Contents
 
-`Ultimate_GardenClient` 创建唯一 ESPManager，注册 `PestESP::collect` 后注册一次 Fabric `LevelRenderEvents.END_EXTRACTION` 与 `END_MAIN`。新增 ESP 模块只需注册目标提取回调，不复制绘制代码。ESP 不依赖农业宏 running、菜单暂停或害虫装备计时器。
+1. [Project Overview](#project-overview)
+2. [Project Directory Structure](#project-directory-structure)
+3. [Module Architecture](#module-architecture)
+4. [Execution Flows](#execution-flows)
+5. [Configuration Reference](#configuration-reference)
+6. [UI Structure](#ui-structure)
+7. [Hotkey Reference](#hotkey-reference)
+8. [Code Navigation Index](#code-navigation-index)
+9. [Testing & Build](#testing-build)
+10. [Documentation Maintenance Rules](#documentation-maintenance-rules)
 
-PestESP 只在 `pestESPEnabled` 为 true 时遍历当前 ClientLevel 的 `entitiesForRendering()`；26.1.2 该接口返回客户端实体集合，不做摄像机视锥筛选。严格使用 `EntityType.SILVERFISH`，排除死亡/移除实体；使用 `getPosition(partialTick)` 平移实际 AABB 获得插值边界框。没有实体名称匹配、额外区块请求、追踪范围修改、网络消息、输入或实体写操作。
+<a id="project-overview"></a>
+## 1. Project Overview
 
-提取阶段在 LevelRenderState 的 Fabric RenderStateDataKey 中保存当前帧不可变目标、颜色配置与连续时间快照；绘制阶段不读取实体或配置。没有跨世界实体引用缓存，每次提取完整替换快照，断线令旧代快照失效，退出释放自有 ByteBufferBuilder。GPU 上传和资源由原生 RenderType 管理，不增加 LevelRenderer Mixin。
+Ultimate Garden 是客户端农业自动化 Mod，包含路线移动、loadout 操作、Pest 倒计时、Pest ESP、设置菜单及状态 HUD。PestLoadout 是装备切换流程，不是寻路或攻击害虫的 Macro。
 
-ESPRenderer 使用隔离的 RenderPipeline/RenderSetup。Box 的 12 条边与 Tracer 使用当前原生 LINES 管线及逐顶点 LineWidth，合法宽度为 0.5..16 帧缓冲像素；颜色片元着色器不应用雾衰减。Fill 使用排序的 QUADS、双面六面填充及透明混合。所有深度模式均不写深度；throughWalls=true 关闭深度测试，否则遵守场景深度。彩虹由同一 ESPColorProvider 计算，基于单调连续时间和世界坐标逐顶点变色。
-
-Tracer 使用当前相机投影矩阵和实际绘制 ModelView 矩阵，把目标中心投影至 NDC，再反投影到安全的相机平面上绘制原生粗线；起点为视口中心。该辅助线始终置顶，不宣称墙体遮挡。后方/无效投影跳过，屏幕外端点截到视口边缘，中心重合不产生退化线。平面深度 0.5 兼容 OpenGL 与 zero-to-one 深度范围。
-
-ConfigManager 新增 `Module.ESP` / `getESPConfig()`，沿用 FabricLoader 实例配置目录与 ConfigIO 原子保存。`esp.json` 保存 schemaVersion、throughWalls、box/fill/tracer 各自的 enabled/colorMode/color/alpha、box/tracer 的 lineWidth，以及 rainbow.cycleDurationMs。非法字段逐项回退、备份原文，保留其他合法字段和未知字段，高版本文件禁止覆盖。PestConfig 仅新增 `pestESPEnabled=false`，autoPestLoadout 与 2500 tick 默认计时逻辑不变。
-
-GUI 的 Pests 页提供独立 Pest ESP 开关；Settings 提供共享 Box/Fill/Tracer 设置。合法输入即时应用并保存，非法草稿保留最后合法值；RAINBOW 模式禁用单色输入。界面不自行读写 JSON。`tests/esp/run.ps1` 使用已有 runtimeClasspath 检查持久化、颜色、几何生成与投影；GPU 外观、实体识别及不同图形设备表现仍需游戏内测试。
-
-## 原生 GUI 与菜单生命周期（当前实现，以本节为准）
-
-### 入口与界面
-
-新增 `client/ui/MenuController.java` 作为统一打开入口，供 M 原生 KeyMapping 与 `/ultimategarden menu` 复用。只在有效游戏上下文打开；快捷键不抢占其他 Screen 的输入，菜单内文本编辑焦点下 M 不关闭。Screen 的正常移除统一通知农业菜单会话；ESC 的选择弹层取消不会移除整个菜单，关闭按钮和非编辑状态的 M 直接关闭菜单。
-
-```text
-client/ui/
-├── MenuController.java
-├── screen/UltimateGardenScreen.java
-├── theme/ThemePalette.java
-├── render/RoundedRect.java
-└── widget/
-    ├── StyledButton.java
-    ├── ToggleSwitch.java
-    └── DropdownSelector.java
-```
-
-使用本项目 Minecraft 26.1.2 实际的 `GuiGraphicsExtractor` / `extractRenderState` API；原生 EditBox 处理文字输入，统一控件提供圆角、禁用、选中、悬停、提示与键盘操作。内容可滚动、选择器使用同一 Screen 内的选择层，小尺寸导航间距自适应。字段编辑草稿只用于未提交表单，不是另一份有效业务配置；页面切换保留草稿。
-
-视觉参考已查阅 LocalSend 官方 [theme.dart](https://github.com/localsend/localsend/blob/main/app/lib/config/theme.dart)，采用其 Material 3、teal 种子色和填充式控件思路，结合 Minecraft 原生字体与渲染，不宣称像素级复刻，也不使用 LocalSend 商标。LIGHT/DARK 与强调色实时取自 UIConfig；SYSTEM 明确回退 LIGHT。
-
-| 页面 | 数据与控制入口 |
-| --- | --- |
-| Home | FarmState、FarmController.getRunStatus、实际作物/模式/方向、路线计数/进度、真实 Pest 计时与待处理状态；Start 记录关闭后的明确意图，Pause/Reset 复用原控制入口 |
-| Farm | 三个 FarmConfig 选择；CropConfig 的高级参数表单；Previous/Next Line、Set Spawn、Warp Garden、Loadout 进入关闭后待执行的控制操作队列 |
-| Pests | PestConfig 两个字段，真实剩余 tick/20TPS 秒数；手动启动和取消仍走 FarmCommandController，自动开关不限制手动计时 |
-| Hotkeys | MacroKeyBindings.getBindings 返回全部 12 个实际 KeyMapping；键位变更仍由 Minecraft 原生 Controls 管理 |
-| Settings | showModChatHints、autoResumeFarmAfterGuiClose、uiThemeMode、accentColor，通过 ConfigManager 保存；不直接读写 JSON |
-
-涉及路线的编辑仅在用户已暂停/重置、无动作队列、无待执行菜单操作、无活动害虫计时器时允许；改变作物选择后明确重置路线上下文。CropConfig.updateCrop 在整条定义验证成功后再提交，不接受 CUSTOM；高级 Hint 空值表示删除可选覆盖并使用运行角度回退，默认 JSON 本身没有改动。
-
-### 菜单暂停与恢复
-
-新增 `macro/GuiPauseState.java` 保存临时菜单状态与用户意图，由 FarmController 持有。它不存入 JSON，也不重复实现农业算法。菜单打开时通过 beginMenuPause 暂停运行、冻结队列、禁用物理输入拦截以便 GUI 操作，并释放模拟输入；不调用原 pauseMacro，不清行数、方向或路线 tick。
-
-VirtualInput 新增动作输入所有权和 HeldActions 快照。FarmCommandController 与 SetLineYP 的持续输入被标记为动作输入；路线输入不在关闭后队列恢复阶段重放。快照只恢复尚在执行队列需要的持续输入，完成后统一释放，再按原 startMacro 入口恢复路线。
-
-| 职责 | 菜单打开时 | 关闭后 |
-| --- | --- | --- |
-| 路线 tick / 换行推进 | 冻结，保留 FarmState 上下文 | 仅在恢复条件满足后继续 |
-| 农业 ActionScheduler | setPaused(true)，保留 current、FIFO 队列与剩余延迟 | 原位置继续倒计时，不重放已完成动作 |
-| PestLoadoutTimer | 继续真实倒计时，到期事件只消费一次并标记 pending | 原队列空闲后执行到期装备流程 |
-| 菜单请求的农业操作 | 只记录现有控制器操作，不发包、不模拟输入 | 在既有业务动作之后逐个调用原接口 |
-| 旧 VirtualMouse 独立队列 | 没有新增或删除其驱动，原未接入状态保留 | 不与农业队列合并 |
-
-关闭处理在后续客户端 tick 确认 Screen 已关闭后开始；恢复原窗口光标模式，并保持菜单会话为 draining。原队列先执行，到期 Pest 流程在队列空闲后进入同一动作调度器，菜单操作最后分发；全部工作结束后才判断路线恢复。业务 loadout 允许操作预期的容器界面；无关 Screen/overlay 会继续阻止游戏动作。没有用硬编码等待时间模拟完成。
-
-GeneralConfig 新增 `autoResumeFarmAfterGuiClose=false`，ConfigManager 字段级加载、保存、异常和高版本保护沿用现有机制。菜单开关立即保存，关闭时读取最新值。false 仍允许业务动作完成，但路线保持暂停；true 只恢复打开前的运行意图（包含原装备流程的业务暂停上下文）。打开前已停止/手动暂停不会自启。菜单内 Start 明确请求关闭后启动，Pause/Reset 取消自动恢复资格；失败、超时或取消待处理业务动作均阻止无条件恢复。
-
-菜单内的 Pause/Reset 保留原取消语义；Reset 才清路线。害虫倒计时不会被普通 GUI 暂停取消。菜单正常关闭不会取消队列；断线、世界身份变化和客户端退出会中止失效动作、取消计时、释放全部输入并丢弃无效路线进度，恢复配置选择到停止状态。原有唯一 END_CLIENT_TICK 注册点保留，没有重复 tick 或重复菜单事件注册。
-
-### 变动与验证
-
-除新增 UI 类和 GuiPauseState 外，本轮修改 GeneralConfig/ConfigManager、CropConfig、FarmController、FarmCommandController、PestLoadoutTimer、ActionScheduler、VirtualInput/VirtualKeyboard、SetLineYP、RouteController、WindowsFocusController、MacroKeyBindings、CommandTree、Ultimate_GardenClient 与 en_us 语言资源。增加了 tests/gui 独立回归及边界桩，扩展 tests/config；桩只在独立测试类路径，不进入生产 JAR。
-
-Java 25 下 `gradlew.bat build` 通过；`tests/gui/run.ps1` 通过 30 项意图/调度测试与 13 项实际 FarmCommandController/PestLoadoutTimer 边界测试；`tests/config/run.ps1` 通过 115 项配置检查。包含 2500 个冻结 tick、残余延迟、FIFO、开关往返、一次性恢复、明确用户操作优先、延迟事件、手动计时、取消、断线清理、配置持久化和非法作物编辑不提交。
-
-已启动开发客户端，并在新建 `UG GUI QA` 世界观察到原生菜单及高级参数界面；未进入此前存档。检测到用户输入后停止继续自动控制窗口。最后的小尺寸布局、关闭命中区域等修正通过编译与静态检查，未重新进行完整视觉测试。独立测试不验证原生渲染、实际网络包或服务器 GUI。仍需实机验证全部关闭方式、M 重绑定/文本焦点、两种主题和 GUI Scale、真实农业路线暂停/恢复、服务器 loadout/warp/spawn、超时/取消与断线组合场景。
-
-以下章节是此前任务的历史说明，涉及“没有 UI”、旧菜单命令状态或菜单生命周期的描述，以本节为准。
-
-## 独立作物与编号更新（当前实现，以本节为准）
-
-- CropType 只有十五个独立值：1 WHEAT，2 FLOWER，3 COCOA，4 MELON，5 PUMPKIN，6 SUGARCANE，7 MUSHROOM，8 CACTUS，9 CARROT，10 POTATO，11 NETHER_WART，12 TIMETESTER，13 CUSTOM1，14 CUSTOM2，15 CUSTOM3。0 仅为未选；不保留旧编号或组合枚举别名。
-- default-crops.json 已拆成十五个独立节点。胡萝卜/马铃薯、小麦/地狱疣、西瓜/南瓜分别深复制原组合参数；默认 tickLimit、行数、移动、运行角度及 alternateSlot 不变。CARROT/POTATO 的 hintPitch 为 +3，运行 Pitch 仍 -3；WHEAT/NETHER_WART 提示及运行均 -3。
-- CropConfig 的旧组合字符串仅用于数据迁移，不参与业务枚举。迁移先复制旧节点，再以已有新节点字段覆盖，删除旧节点；保存前 ConfigManager 备份原文件，备份失败禁写。保留合法自定义参数和自定义名称，旧默认组合名称换成独立名称。
-- FarmConfig 不接受旧组合名称，回退 selectedCropType=NONE、selectedSimulatedCropType=WHEAT 并备份。无版本信息的旧 cropType/simulateCropType 数字不再解释为任何选择别名，要求重新选择；模式 0/1 转换不变。稳定独立名称如 FLOWER、MUSHROOM、TIMETESTER 继续有效。
-- FarmController 的蘑菇出生点分支与 RouteController 的仙人掌换行分支使用明确枚举；TimeTester 使用 TIMETESTER 枚举，模拟目标仅接受 1～11。CUSTOM 即使 enabled=true 也不可启动，聊天选择时明确显示未实现。
-- FarmHints 按枚举顺序显示“数字. 名称”，Program 与 A/B 角度使用当前独立节点，角度两位小数。不再输出旧映射或组合兼容说明。没有修改 UI、输入、服务器命令、害虫计时或路线算法。
-- Java 25 下构建通过；独立配置回归通过 109 项，覆盖完整编号、模拟目标范围、CUSTOM 拒绝执行、旧选择安全回退、组合参数复制、新节点优先与原文件备份。尚未验证游戏内初始化、TimeTester、特殊换行和实际提示输出。
-
-以下为此前阶段的历史记录；旧编号、组合节点和兼容提示描述均已被本节取代。
-
-## 配置命名与业务接线更新（2026-11-07，以本节为准）
-
-- 继续使用唯一 ConfigManager。开发实例 `run/config/ultimategarden` 检查时未发现现有配置文件；本次只在隔离临时目录执行文件测试，没有覆盖真实实例文件。
-- FarmConfig 的持久化字段为 selectedCropType（字符串，NONE 表示原 ID 0）、selectedFarmMode（FARM/PESTS）、selectedSimulatedCropType（TimeTester 模拟作物字符串）。旧 cropType/mode/simulateCropType 数字分别转换，原 1～8、9 和模式 0/1 语义保留；数字只通过显式 ID 适配方法进入 FarmState，不改变其运行状态字段。
-- UIConfig 的 theme 改名为 uiThemeMode，accentColor 不变。优先使用合法新字段，非法或缺失时尝试合法旧字段，再采用该字段默认值；坏字段先备份原文件，不重置其他合法字段。迁移成功保存新名称，移除已知旧名称，未知字段仍保留。未来 schema 文件仍禁止降级覆盖。
-- 新增 config/PestConfig 与 pest.json：autoPestLoadout 默认 true，仅在 FarmController.automateTaskByMonitorMessage 的事件入队及延迟回调处检查。手动热键调用 FarmCommandController.startPestLoadoutTimer 不检查该开关。已开始的倒计时不会因关闭事件开关而被取消，已排队但尚未启动的事件会再次检查开关。
-- pestLoadoutDelayTicks 默认 2500，要求正整数；FarmCommandController 在启动倒计时时将其传给 PestLoadoutTimer.start(int)，捕获本次时长。运行中修改不会重置当前计时；重复 start 的原有不重置行为、暂停/reset 不取消计时行为均保留。
-- GeneralConfig 新增 showModChatHints 默认 true。HintManager.print/printNull 控制普通提示与空行；命令错误使用 printRequired 绕过普通提示开关，故障日志不受影响。关闭普通提示也会隐藏初始化说明，但不影响输入处理。
-- 未添加 interceptPhysicalInputWhileMacroRunning：实体按键的释放事件和原生 KeyMapping 可能覆盖虚拟按住状态，当前没有安全的双来源输入仲裁。保留始终启用的既有拦截策略。没有添加未来三个农业路线开关。
-- 农业配置在控制器构造时复制合法选择到新 FarmState，或在停止状态的聊天初始化完成后应用并保存。直接修改配置对象不会切换运行中的路线；运行中设置变更用于下一次控制器初始化/完整选择流程。Pest 事件开关对后续触发生效、延迟对下一次计时生效、普通提示开关对下一次输出生效。UI 尚无实际界面，主题配置提供统一访问接口，不另存副本。
-- 本次修改 ConfigManager、FarmConfig、GeneralConfig、UIConfig、FarmController、FarmCommandController、PestLoadoutTimer、HintManager，新增 PestConfig，更新独立配置测试与本文。未修改 crops.json 默认资源、角度、路线算法、热键或输入逻辑。
-- Java 25 下 gradlew.bat build 成功，独立配置测试通过 66 项；新增验证旧数字迁移、新字段优先级、单字段恢复、主题改名、Pest/General 参数保存。独立测试未启动 Minecraft，也未验证实际消息、按键、GUI、倒计时与聊天显示；这些仍需实机测试。
-
-最终默认字段：
-
-```json
-{
-  "farm.json": {"schemaVersion": 1, "selectedCropType": "NONE", "selectedFarmMode": "FARM", "selectedSimulatedCropType": "CARROT_POTATO"},
-  "pest.json": {"schemaVersion": 1, "autoPestLoadout": true, "pestLoadoutDelayTicks": 2500},
-  "general.json": {"schemaVersion": 1, "showModChatHints": true},
-  "ui.json": {"schemaVersion": 1, "uiThemeMode": "SYSTEM", "accentColor": "#1B978C"}
-}
-```
-
-以下章节记录此前迁移的历史状态；字段命名和当前行为以本节为准。
-
-## 作物数据库迁移更新（2026-11-07，以本节为当前实现）
-
-- 沿用现有 ConfigManager/ConfigIO，新增 CROPS 模块、getCropConfig()，默认在实例 config/ultimategarden/crops.json 存储。默认值唯一来源是 `src/client/resources/ultimategarden/default-crops.json`；JAR 中该资源只用于首次生成、缺失字段及损坏恢复，业务只消费内存中加载的有效 JSON。
-- FarmConfig 已从 macro/farm 移至 client/config。新增 config/CropConfig、CropDefinition；旧 CropData 迁入 config，作为未接入的兼容 DTO，无静态参数。RouteData 是运行时适配对象，RouteKey 是业务键枚举，继续保留。
-- CropDatabase 仅保留查询适配 API，不再含硬编码参数表；未接入的 RouteDatabase 保留 API，由同一 CropConfig 构造 RouteData，不再维护 EnumMap 参数表。活动 RouteController 直接注入 CropConfig。
-- 数字兼容：1→CARROT_POTATO（旧合并选择的运行参数全部保留），2→FLOWER，3→COCOA，4→MELON_PUMPKIN，5→SUGARCANE，6→MUSHROOM，7→CACTUS，8→TIMETESTER；9→WHEAT_NETHER_WART。旧枚举合并名称保留为指向 CARROT_POTATO 的源代码别名，不创建第十三个定义。
-- CUSTOM1/2/3 的内部编号为 101/102/103，列表显示 Coming soon；即使用户设 enabled=true 也不可执行。FarmConfig 拒绝保存 CUSTOM 选择，聊天选择拒绝 CUSTOM，startMacro 也检查执行资格。TimeTester 的模拟作物支持旧 1～7 及新 9，不接受 8 或 CUSTOM。
-- 原 ID 1 的 CropDatabase 运行 Pitch=-3，而旧提示对胡萝卜/马铃薯显示 +3。迁移后 CARROT_POTATO 的 pitchA/B 仍为 -3，hintPitchA/B 为 +3；WHEAT_NETHER_WART 运行及提示均为 -3。没有按照示例把运行角度改成 +3。
-- FarmHints 动态读取名称、A/B 两组运行及提示角度，Locale.ROOT 格式化两位小数；ID 1 还动态展示拆分两类的提示 Pitch，说明旧合并语义。提示层不直接读文件。Inventory 文案是既有物品操作约定，未为其增加配置字段。
-- alternateSlot 从 RouteDatabase 的甘蔗/蘑菇属性迁入 JSON，RouteController 消费该字段；TimeTester 的长路线时间从 TIMETESTER.tickLimit 获取。除这些数据读取位置外，换行顺序、随机附加时间、攻击移动、服务器命令、害虫计时和键位保持原实现。Yaw/Pitch 仍然是数据/提示，旧逻辑依赖物品切换，没有新增直接旋转玩家的动作。
-- 加载时补齐缺少的作物/字段，保留合法值和未知字段。移动只接受不重复 W/S/A/D，非空；行时间/行数为正整数；角度必须有限且 yaw 在 ±180、pitch 在 ±90 范围；CUSTOM 可不含路线。单条坏作物恢复该条默认，其他合法修改保留，先备份原文件再保存；备份失败禁写。高 schemaVersion 保护继续生效。
-- 没有热重载系统；编辑 crops.json 后重启生效。不在 tick 或提示时读写文件。未来统一重载入口可调用 CropConfig.load（只更新内存），文件生命周期仍须由 ConfigManager 管理。
-- 构建：Java 25 下 gradlew.bat build 成功。独立配置回归通过 51 项，新增覆盖 12 标识、运行/展示差异、CUSTOM 禁用、用户参数重载、缺失定义补齐、坏移动恢复与合法修改保留。游戏内路线、旧 ID 1 兼容提示、9 的选择、TimeTester 和 GUI 尚待实机测试。
-
-当前主要配置目录：
-
-```text
-client/config/
-├── ConfigManager.java
-├── ConfigIO.java
-├── GeneralConfig.java
-├── UIConfig.java
-├── FarmConfig.java
-├── CropConfig.java
-├── CropDefinition.java
-└── CropData.java
-```
-
-完整默认 crops.json（与生成资源相同）：
-
-```json
-{
-  "schemaVersion": 1,
-  "crops": {
-    "CARROT_POTATO": {
-      "name": "Carrot/Potato",
-      "enabled": true,
-      "tickLimit": 806,
-      "totalLines": 15,
-      "movementA": [
-        "W",
-        "D"
-      ],
-      "movementB": [
-        "W",
-        "A"
-      ],
-      "yawA": -90.0,
-      "pitchA": -3.0,
-      "yawB": -90.0,
-      "pitchB": -3.0,
-      "alternateSlot": false,
-      "hintPitchA": 3.0,
-      "hintPitchB": 3.0
-    },
-    "FLOWER": {
-      "name": "Flower",
-      "enabled": true,
-      "tickLimit": 544,
-      "totalLines": 16,
-      "movementA": [
-        "W",
-        "A"
-      ],
-      "movementB": [
-        "W",
-        "D"
-      ],
-      "yawA": 90.0,
-      "pitchA": -3.0,
-      "yawB": 90.0,
-      "pitchB": -3.0,
-      "alternateSlot": false
-    },
-    "COCOA": {
-      "name": "Cocoa",
-      "enabled": true,
-      "tickLimit": 797,
-      "totalLines": 45,
-      "movementA": [
-        "W",
-        "D"
-      ],
-      "movementB": [
-        "S",
-        "D"
-      ],
-      "yawA": 0.0,
-      "pitchA": -45.0,
-      "yawB": 0.0,
-      "pitchB": -45.0,
-      "alternateSlot": false
-    },
-    "MELON_PUMPKIN": {
-      "name": "Melon/Pumpkin",
-      "enabled": true,
-      "tickLimit": 560,
-      "totalLines": 23,
-      "movementA": [
-        "W",
-        "A"
-      ],
-      "movementB": [
-        "W",
-        "D"
-      ],
-      "yawA": 90.0,
-      "pitchA": -61.0,
-      "yawB": 90.0,
-      "pitchB": -61.0,
-      "alternateSlot": false
-    },
-    "SUGARCANE": {
-      "name": "SugarCane",
-      "enabled": true,
-      "tickLimit": 475,
-      "totalLines": 30,
-      "movementA": [
-        "W"
-      ],
-      "movementB": [
-        "W"
-      ],
-      "yawA": 45.0,
-      "pitchA": -3.0,
-      "yawB": 135.0,
-      "pitchB": -3.0,
-      "alternateSlot": true
-    },
-    "MUSHROOM": {
-      "name": "Mushroom",
-      "enabled": true,
-      "tickLimit": 800,
-      "totalLines": 15,
-      "movementA": [
-        "W"
-      ],
-      "movementB": [
-        "W"
-      ],
-      "yawA": -65.0,
-      "pitchA": -3.0,
-      "yawB": -115.0,
-      "pitchB": -3.0,
-      "alternateSlot": true
-    },
-    "CACTUS": {
-      "name": "Cactus",
-      "enabled": true,
-      "tickLimit": 272,
-      "totalLines": 30,
-      "movementA": [
-        "D"
-      ],
-      "movementB": [
-        "A"
-      ],
-      "yawA": -90.0,
-      "pitchA": 0.0,
-      "yawB": -90.0,
-      "pitchB": 0.0,
-      "alternateSlot": false
-    },
-    "TIMETESTER": {
-      "name": "TimeTester",
-      "enabled": true,
-      "tickLimit": 99999,
-      "totalLines": 99999,
-      "movementA": [
-        "W",
-        "A"
-      ],
-      "movementB": [
-        "W",
-        "D"
-      ],
-      "yawA": 66.66,
-      "pitchA": 66.66,
-      "yawB": 66.66,
-      "pitchB": 66.66,
-      "alternateSlot": false
-    },
-    "WHEAT_NETHER_WART": {
-      "name": "Wheat/NetherWart",
-      "enabled": true,
-      "tickLimit": 806,
-      "totalLines": 15,
-      "movementA": [
-        "W",
-        "D"
-      ],
-      "movementB": [
-        "W",
-        "A"
-      ],
-      "yawA": -90.0,
-      "pitchA": -3.0,
-      "yawB": -90.0,
-      "pitchB": -3.0,
-      "alternateSlot": false,
-      "hintPitchA": -3.0,
-      "hintPitchB": -3.0
-    },
-    "CUSTOM1": {
-      "name": "CUSTOM1",
-      "enabled": false
-    },
-    "CUSTOM2": {
-      "name": "CUSTOM2",
-      "enabled": false
-    },
-    "CUSTOM3": {
-      "name": "CUSTOM3",
-      "enabled": false
-    }
-  }
-}
-```
-
-以下章节包含前轮架构和配置任务的历史记录；若类路径、静态数据库或持久化描述冲突，以本节为准。
-
-
-## 配置系统更新（2026-11-07，以本节为准）
-
-- 当前业务源码新增四个配置类：`client/config/ConfigManager`、`ConfigIO`、`GeneralConfig`、`UIConfig`，复用 `macro/farm/FarmConfig`；业务源码共 48 个 Java 文件。历史迁移表仍记录上次架构重构。
-- 客户端入口先创建唯一 ConfigManager，加载完毕后注入 FarmController；控制器引用管理器的同一 FarmConfig，不再自行 new 或调用空 load/save。
-- 路径为 `FabricLoader.getInstance().getConfigDir().resolve("ultimategarden")`；文件为 general.json、farm.json、ui.json。版本均为 schemaVersion=1；未知字段保留，缺失字段采用默认。
-- general 仅有版本；farm 保存 cropType（默认 0，未选）、mode（默认 0 Farm，1 Pests）、simulateCropType（默认 1，用于重启恢复 TimeTester 模拟作物）；ui 为 SYSTEM/LIGHT/DARK 主题与默认 #1B978C 强调色。
-- 完成整个合法聊天选择后才提交并保存；TimeTester 等模拟作物选完才保存。半完成输入不更新持久化对象。重启仅恢复选择，不启动宏、不恢复进度、按键、队列、等待标记或计时器。
-- ConfigIO 使用已有 Gson 严格解析，同目录临时写入后优先原子替换；不支持时回退替换。失败记录原有 LOGGER。坏文件先复制 `.broken-时间戳-UUID` 备份；备份失败不覆盖。读取失败使用内存默认并禁写。高版本文件警告并禁写，包含 reset/saveAll。
-- ConfigManager 提供三个 getter、save(Module)、saveAll、reset(Module)、saveFarmConfig、saveUIConfig。reset 保留对象身份，不操纵运行中的宏；直接 API 修改需显式保存，农业运行时选择在构造或聊天完成流程应用。
-- UI 尚未实现，只有配置数据与接口，不新增 ThemeManager。KeyMapping 继续由 options.txt 管理，不创建 hotkeys.json。未修改路线、动作、计时和输入算法。
-- Java 25 下 `.\gradlew.bat build` 成功；独立 `tests/config/ConfigRegression.java` 通过 38 项隔离文件检查。设置 JAVA_HOME 后可运行 `tests/config/run.ps1`。覆盖默认生成、重载、TimeTester、主题、删除恢复、缺失/未知字段、损坏备份、非法 ID/类型、高版本保护、写失败；独立测试没有日志 provider，未捕获日志输出。游戏聊天、热键、GUI 仍待实机验证。
-
-更新时间：2026-11-06（架构重构后）。用途：后续开发前的阅读入口，源码变化后应同步维护本文。
-
-本次完整复核项目源码并实施目录迁移、类重命名、路线职责提取与管理器接线。最终共 **44 个 Java 源文件**：客户端 42 个，公共源集 2 个。所有农业自动化实现集中到 `client/macro/farm/`；公共源集、资源、构建配置与版本保持不变。未创建无用途的 `ui/` 空目录，未来新增 UI 时直接放在 `client/ui/`。
-
-本文记录最终代码的静态结构与既有行为。Java 构建及自动化对照检查已通过，未启动 Minecraft 验证交互。后续任务应先读本文，再读取实际要修改的源码，不能把快照当作永久事实。`.git`、IDE 数据、构建缓存、运行日志及第三方二进制不属于业务源码范围。
-
-## 1. 项目定位与构建
-
-Fabric Minecraft 客户端花园农业自动化 Mod，支持作物路线、持续攻击与移动、换行、传送、出生点设置、害虫模式装备切换和鼠标释放。源码注释保留 C++ 输入迁移背景，但仓库内没有原 C++ 代码。
-
-| 项目项 | 当前配置（本次未修改） |
-| --- | --- |
-| Mod ID / Gradle 项目名 | `ultimate_garden` |
-| 根包 | `com.kuangsanfeng.ultimategarden` |
-| Mod 版本 / group | `1.0.1` / `com.kuangsanfeng.ultimategarden` |
+| 项目 | 当前值 / 边界 |
+|---|---|
+| Mod ID / 版本 | `ultimate_garden` / `1.0.2` |
 | Minecraft / Java | `26.1.2` / Java 25 |
-| Fabric Loader / API | `0.19.3` / `0.155.2+26.1.2` |
-| Loom 配置 / Wrapper | `1.17-SNAPSHOT` / Gradle `9.5.1` |
-| 源码划分 | `src/main` 公共入口；`src/client` 客户端，Loom splitEnvironmentSourceSets |
-| 许可证 | CC0-1.0 |
+| Mod Loader | Fabric Loader `0.19.3` |
+| Fabric API | `0.155.2+26.1.2` |
+| 构建工具 | Gradle 9.5.1；Loom 声明 `1.17-SNAPSHOT` |
+| 技术架构 | Fabric 事件 + 原生 Screen / KeyMapping + Mixin + 客户端 Tick 队列 + Gson JSON |
+| 渲染 | HUD 使用 GuiGraphicsExtractor；ESP 使用 Fabric LevelRenderEvents 与统一 RenderPipeline |
+| 运行配置 | 按 Minecraft 账号隔离，选择、偏好与样式持久化；运行状态不落盘 |
 
-`build.gradle` 设置 Java release/source/target 25、sources JAR、版本资源展开及 maven-publish（没有发布仓库）。Gradle 最大堆 1G、并行构建、关闭 configuration cache。Fabric 元数据和 README 仍有模板文案。`fabric.mod.json` environment 为 `*`，客户端 Mixin 单独限于 client。
+主入口 [Ultimate_Garden](src/main/java/com/kuangsanfeng/ultimategarden/Ultimate_Garden.java) 提供 Mod 标识等基础设施；客户端组装入口为 [Ultimate_GardenClient.onInitializeClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)。业务主要在客户端，`fabric.mod.json` 仍包含模板描述和作者信息，不能据此推导额外功能。
 
-Windows 构建命令：`./gradlew.bat build`。当前 shell 默认 Java 是 17；本次构建临时指定 IntelliJ 配置的 `C:/Users/Zhou/.jdks/ms-25.0.4.1` 为 JAVA_HOME，没有修改项目 JDK 配置。CI 仍在 Ubuntu 24.04 / Microsoft JDK 25 下构建并上传 `build/libs/`。未引入第三方依赖或新的测试框架。
+**依赖方向：** 初始化器组装 Config / Input / Focus → FarmController 创建 Command / Route → MacroManager 分发 Tick；Hotkeys、聊天事件和 Menu 调用控制器。HUD 读取状态，ESP 提取实体并独立绘制。修改 HUD 不应驱动计时或 Macro；修改统一渲染器不应改动实体识别。
 
-## 2. 最终源码结构与类索引
+<a id="project-directory-structure"></a>
+## 2. Project Directory Structure
 
-以下树由最终文件系统生成，相对于 `src/client/java/com/kuangsanfeng/ultimategarden/`：
+以下列出全部核心 Java 源码与运行资源；路径中的包根为 `com/kuangsanfeng/ultimategarden`。不包含缓存和生成文件。目录树用于找文件，职责与调用入口见下一节。
 
 ```text
-client/
-├── command/
-│   ├── CommandHelper.java
-│   ├── CommandListener.java
-│   └── CommandTree.java
-├── hint/
-│   ├── HintManager.java
-│   └── KeyNameMap.java
-├── hotkey/
-│   └── MacroKeyBindings.java
-├── input/
-│   ├── VirtualInput.java
-│   ├── VirtualKeyboard.java
-│   └── VirtualMouse.java
-├── macro/
-│   ├── farm/
-│   │   ├── action/
-│   │   │   ├── FarmCommandController.java
-│   │   │   └── FarmCommandInput.java
-│   │   ├── crop/
-│   │   │   ├── CropData.java
-│   │   │   ├── CropDatabase.java
-│   │   │   └── CropType.java
-│   │   ├── hint/
-│   │   │   └── FarmHints.java
-│   │   ├── pest/
-│   │   │   └── PestLoadoutTimer.java
-│   │   ├── route/
-│   │   │   ├── RouteController.java
-│   │   │   ├── RouteData.java
-│   │   │   ├── RouteDatabase.java
-│   │   │   ├── RouteKey.java
-│   │   │   ├── SetLineYP.java
-│   │   │   └── SlotSelector.java
-│   │   ├── FarmConfig.java
-│   │   ├── FarmController.java
-│   │   ├── FarmState.java
-│   │   └── MacroConstants.java
-│   └── MacroManager.java
-├── mixin/
-│   ├── ExampleClientMixin.java
-│   ├── KeyMappingAccessor.java
-│   ├── KeyboardHandlerAccessor.java
-│   ├── WindowsFocusMixin.java
-│   ├── WindowsInputMixin.java
-│   ├── WindowsMissTimeMixin.java
-│   ├── WindowsMouseMixin.java
-│   └── WindowsPauseMixin.java
-├── scheduler/
-│   ├── ActionScheduler.java
-│   └── InputScheduler.java
-├── window/
-│   ├── WindowsFocusController.java
-│   ├── WindowsInputInterceptor.java
-│   ├── WindowsNativeBridge.java
-│   └── WindowsState.java
-└── Ultimate_GardenClient.java
+src/
+├── client/
+│   ├── java/
+│   │   └── com/
+│   │       └── kuangsanfeng/
+│   │           └── ultimategarden/
+│   │               └── client/
+│   │                   ├── command/
+│   │                   │   ├── CommandHelper.java
+│   │                   │   ├── CommandListener.java
+│   │                   │   └── CommandTree.java
+│   │                   ├── config/
+│   │                   │   ├── AccountDirectories.java
+│   │                   │   ├── AccountIdentity.java
+│   │                   │   ├── ConfigIO.java
+│   │                   │   ├── ConfigManager.java
+│   │                   │   ├── CropConfig.java
+│   │                   │   ├── CropData.java
+│   │                   │   ├── CropDefinition.java
+│   │                   │   ├── ESPConfig.java
+│   │                   │   ├── FarmConfig.java
+│   │                   │   ├── GeneralConfig.java
+│   │                   │   ├── HudConfig.java
+│   │                   │   ├── PestConfig.java
+│   │                   │   ├── RandomDelayConfig.java
+│   │                   │   └── UIConfig.java
+│   │                   ├── hint/
+│   │                   │   ├── HintManager.java
+│   │                   │   └── KeyNameMap.java
+│   │                   ├── hotkey/
+│   │                   │   └── MacroKeyBindings.java
+│   │                   ├── input/
+│   │                   │   ├── PlayerGuiInput.java
+│   │                   │   ├── VirtualInput.java
+│   │                   │   ├── VirtualKeyboard.java
+│   │                   │   └── VirtualMouse.java
+│   │                   ├── macro/
+│   │                   │   ├── esp/
+│   │                   │   │   ├── render/
+│   │                   │   │   │   ├── ESPBoxRenderer.java
+│   │                   │   │   │   ├── ESPFillRenderer.java
+│   │                   │   │   │   └── ESPTracerRenderer.java
+│   │                   │   │   ├── style/
+│   │                   │   │   │   ├── ESPColorMode.java
+│   │                   │   │   │   ├── ESPColorProvider.java
+│   │                   │   │   │   ├── ESPStyle.java
+│   │                   │   │   │   └── ESPTargetStyle.java
+│   │                   │   │   ├── ESPManager.java
+│   │                   │   │   ├── ESPRenderer.java
+│   │                   │   │   └── ESPTarget.java
+│   │                   │   ├── farm/
+│   │                   │   │   ├── action/
+│   │                   │   │   │   ├── FarmCommandController.java
+│   │                   │   │   │   └── FarmCommandInput.java
+│   │                   │   │   ├── crop/
+│   │                   │   │   │   ├── CropDatabase.java
+│   │                   │   │   │   └── CropType.java
+│   │                   │   │   ├── hint/
+│   │                   │   │   │   └── FarmHints.java
+│   │                   │   │   ├── pest/
+│   │                   │   │   │   ├── PestESP.java
+│   │                   │   │   │   └── PestLoadoutTimer.java
+│   │                   │   │   ├── route/
+│   │                   │   │   │   ├── RouteController.java
+│   │                   │   │   │   ├── RouteData.java
+│   │                   │   │   │   ├── RouteDatabase.java
+│   │                   │   │   │   ├── RouteKey.java
+│   │                   │   │   │   ├── SetLineYP.java
+│   │                   │   │   │   └── SlotSelector.java
+│   │                   │   │   ├── FarmController.java
+│   │                   │   │   ├── FarmState.java
+│   │                   │   │   └── MacroConstants.java
+│   │                   │   ├── GuiPauseState.java
+│   │                   │   └── MacroManager.java
+│   │                   ├── mixin/
+│   │                   │   ├── ExampleClientMixin.java
+│   │                   │   ├── InventoryInputMixin.java
+│   │                   │   ├── KeyboardHandlerAccessor.java
+│   │                   │   ├── KeyMappingAccessor.java
+│   │                   │   ├── MenuFarmInputMixin.java
+│   │                   │   ├── WindowsFocusMixin.java
+│   │                   │   ├── WindowsInputMixin.java
+│   │                   │   ├── WindowsMissTimeMixin.java
+│   │                   │   ├── WindowsMouseMixin.java
+│   │                   │   └── WindowsPauseMixin.java
+│   │                   ├── scheduler/
+│   │                   │   ├── ActionScheduler.java
+│   │                   │   └── InputScheduler.java
+│   │                   ├── ui/
+│   │                   │   ├── hud/
+│   │                   │   │   ├── HudAdjustmentController.java
+│   │                   │   │   └── MacroStatusHud.java
+│   │                   │   ├── language/
+│   │                   │   │   ├── LanguageKeys.java
+│   │                   │   │   ├── LanguageManager.java
+│   │                   │   │   └── LanguageType.java
+│   │                   │   ├── render/
+│   │                   │   │   ├── MenuInputGraphics.java
+│   │                   │   │   └── RoundedRect.java
+│   │                   │   ├── screen/
+│   │                   │   │   └── UltimateGardenScreen.java
+│   │                   │   ├── theme/
+│   │                   │   │   └── ThemePalette.java
+│   │                   │   ├── widget/
+│   │                   │   │   ├── CollapsibleSection.java
+│   │                   │   │   ├── DropdownSelector.java
+│   │                   │   │   ├── HelpTooltip.java
+│   │                   │   │   ├── LanguageSelector.java
+│   │                   │   │   ├── SelectionCheckbox.java
+│   │                   │   │   ├── StyledButton.java
+│   │                   │   │   ├── ToggleSwitch.java
+│   │                   │   │   └── TransparencySlider.java
+│   │                   │   └── MenuController.java
+│   │                   ├── window/
+│   │                   │   ├── WindowsFocusController.java
+│   │                   │   ├── WindowsInputInterceptor.java
+│   │                   │   ├── WindowsNativeBridge.java
+│   │                   │   └── WindowsState.java
+│   │                   └── Ultimate_GardenClient.java
+│   └── resources/
+│       ├── assets/
+│       │   └── ultimate_garden/
+│       │       ├── shaders/
+│       │       │   └── core/
+│       │       │       └── esp_tracer.vsh
+│       │       └── textures/
+│       │           └── gui/
+│       │               └── language/
+│       │                   ├── cn.png
+│       │                   └── us.png
+│       ├── ultimategarden/
+│       │   └── default-crops.json
+│       └── ultimate_garden.client.mixins.json
+└── main/
+    ├── java/
+    │   └── com/
+    │       └── kuangsanfeng/
+    │           └── ultimategarden/
+    │               ├── mixin/
+    │               │   └── ExampleMixin.java
+    │               └── Ultimate_Garden.java
+    └── resources/
+        ├── assets/
+        │   └── ultimate_garden/
+        │       ├── lang/
+        │       │   ├── en_us.json
+        │       │   └── zh_cn.json
+        │       └── icon.png
+        ├── fabric.mod.json
+        └── ultimate_garden.mixins.json
 ```
 
-| 模块 | 类与职责 |
-| --- | --- |
-| 公共源集 | `Ultimate_Garden`：MOD_ID/LOGGER/Identifier 与日志初始化；`mixin.ExampleMixin`：loadLevel 空模板注入 |
-| 客户端入口 | `Ultimate_GardenClient`：创建共享输入、窗口状态、农业控制器、管理器并注册事件，提供对应 getter |
-| command | `CommandTree`：客户端命令注册；`CommandHelper`：合并原 Helper/Hotkey/Initialize 的命令适配方法；`CommandListener`：发送聊天拦截、接收 GAME 消息及分发 |
-| hint | `HintManager`：统一本地聊天输出、通用帮助/错误/热键/焦点提示；`KeyNameMap`：未接入的 GLFW 键码名称表 |
-| hotkey | `MacroKeyBindings`：11 个 KeyMapping 与上升沿检测；唯一 END_CLIENT_TICK 注册点；管理器生命周期入口与农业专用动作入口 |
-| input | `VirtualInput`：通用输入外观；`VirtualKeyboard`：KeyMapping 按住/点击、快捷栏和 GUI 键盘事件；`VirtualMouse`：keyAttack、本地 leftDown、原有点击延迟接口与空 mouseMove |
-| window | `WindowsState`：mouseReleased/inputIntercepting；`WindowsFocusController`：GLFW 光标模式及恢复输入回调；`WindowsInputInterceptor`：物理输入拦截规则；`WindowsNativeBridge`：未实现的 Win32 占位 |
-| scheduler | `ActionScheduler`：FIFO 串行延迟队列；`InputScheduler`：未接入的单倒计时等待器 |
-| macro | `MacroManager`：显式注册模块、按 ID 启停/reset/热键生命周期、tick 和消息分发；嵌套 `Module` 是最小接口，无反射或事件总线 |
-| macro/farm | `FarmController`：农业生命周期、配置聊天状态机、出生点/传送流程协调；`FarmState`：唯一农业运行时状态；`FarmConfig`：ConfigManager 统一持有的持久化选择；`MacroConstants`：保留但未引用的农业常量 |
-| macro/farm/crop | `CropType`：1～8 枚举；`CropData`：移动键、行参数、角度；`CropDatabase`：当前实际运行使用的参数表 |
-| macro/farm/route | `RouteController`：路线 tick、方向/行数推进、手动换行、完成路线处理和移动输入；`SetLineYP`：物品栏视角动作；保留未接入的 `RouteKey`、`RouteData`、`RouteDatabase`、`SlotSelector` |
-| macro/farm/action | `FarmCommandController`：农业服务器命令、GUI 轮询、组合动作、动作队列与害虫计时协调；`FarmCommandInput`：保留未接入的逐字符旧命令接口 |
-| macro/farm/pest | `PestLoadoutTimer`：125×20 tick 计时器；害虫模式状态仍在 FarmState，装备/完成回调仍由 FarmCommandController 协调，本次未强拆 PestController |
-| macro/farm/hint | `FarmHints`：农业专用提示分发、作物文案、路线/计时/初始化提示；输出经 HintManager，不在通用提示层依赖作物类型 |
-| mixin | `KeyMappingAccessor`、`KeyboardHandlerAccessor`：字段/事件访问；`WindowsFocusMixin`、`WindowsPauseMixin`、`WindowsInputMixin`、`WindowsMouseMixin`、`WindowsMissTimeMixin`：原有输入/窗口注入；`ExampleClientMixin`：空模板注入 |
+根目录构建文件：[gradle.properties](gradle.properties)、[build.gradle](build.gradle)、[settings.gradle](settings.gradle)、[Gradle Wrapper](gradle/wrapper/gradle-wrapper.properties)。测试目录见 [Testing & Build](#testing-build)。
 
-Mixin JSON 与注入包未变，required/JAVA_25/defaultRequire=1 均保留；Mixin 仅在必要处更新窗口类 import。Accessor/Invoker 与注入点没有调整。语言资源仍只有分类及遗留 test 键名称，没有补齐翻译键或新增 UI。
+<a id="module-architecture"></a>
+## 3. Module Architecture
 
-## 3. 组件创建、所有权、生命周期与事件流
+### 3.1 启动与 Macro
 
-初始化顺序：Minecraft → WindowsState → legacyMouseClickScheduler/VirtualKeyboard/VirtualMouse → WindowsFocusController/WindowsInputInterceptor → VirtualInput → FarmController → MacroManager → 热键/命令树/聊天监听注册。
+- **职责：** 创建单例控制器、注册事件、分发农业生命周期；不另建第二套农业状态机。
+- **关键文件：** [Ultimate_GardenClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[MacroManager](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/MacroManager.java)、[FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java)、[GuiPauseState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java)。
+- **入口函数：** `onInitializeClient`、`MacroManager.register/start/pause/reset/tick`；Hotkey 版本通过 Module 默认接口或 Farm 覆盖实现分发。
+- **工作流程：** Config → ESP 注册 → Window / VirtualInput → Farm → MacroManager → HUD / Screen / 生命周期 / Hotkey / Command 注册。START_CLIENT_TICK 检查 HUD 调整及账号变化；END_CLIENT_TICK 内 Hotkey 处理并调用 `manager.tick()`。
+- **相关配置：** general、farm、crops；MacroManager 当前注册 FARM 模块，接口允许扩展，但没有实现其他独立 Macro 模块。
 
-FarmController 创建并持有 FarmState、FarmConfig、FarmCommandController、RouteController；RouteController 引用同一 FarmState，不复制路线状态。FarmCommandController 创建自己的 ActionScheduler 和 PestLoadoutTimer；RouteController 的 SetLineYP 共享农业动作队列。
+### 3.2 Farm 与 Route
 
-MacroManager 构造时注册唯一的 `farm` 模块。`start/pause/reset(id)` 为普通生命周期入口，`startByHotkey/pauseByHotkey/resetByHotkey(id)` 保留原热键包装的焦点行为。农业内部回调仍直接调用 FarmController 生命周期，以保留顺序及取消行为。管理器没有另存一套 running 状态，也不引入新的模块互斥策略。注册防止重复 ID 和同一实例重复 tick。
+- **职责：** FarmController 管启动、停止意图、菜单会话与业务入口；RouteController 管方向、行完成和下一行移动。
+- **关键文件：** [FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java)、[RouteController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[SetLineYP](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)、[CropConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[CropDefinition](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropDefinition.java)。
+- **入口函数：** `startMacro/pauseMacro/resetMacro/tick`、`RouteController.tick`、`runCurrentMovement`、`nextLine/previousLine`。
+- **工作流程：** Tick 先推进命令队列，再推进正常行计时；额外移动 → 检查路线结束 → 可选 Mousemat → 下一行。暂停、取消和世界清理不由 HUD 控制。
+- **相关配置：** farm、crops、random_delay。TIMETESTER 以所选模拟作物移动，但用 TIMETESTER 的行阈值。
+
+### 3.3 Pest 与命令工作流
+
+- **职责：** 发服务器命令、串行等待和输入动作；Pest 倒计时与农业行 Tick 分离。
+- **关键文件：** [FarmCommandController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[PestLoadoutTimer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestLoadoutTimer.java)、[CommandListener](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[CommandTree](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[CommandHelper](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java)。
+- **入口函数：** `spawn/warpGarden/loadout`、`spawnPoint/spawnPests/pestLoadout`、`startPestLoadoutTimer`、`automateTaskByMonitorMessage`。
+- **工作流程：** 客户端聊天初始化走 ALLOW_CHAT；服务端 GAME 消息分发到 MacroManager，再识别 Pest 消息并安排启动计时。延迟动作都进入命令控制器拥有的 ActionScheduler。
+- **相关配置：** pest、random_delay。服务器是否接受命令、是否切换成功，不能仅由本地回调完成来证明。
+
+### 3.4 ESP
+
+- **职责：** PestESP 负责类型筛选；ESPManager 管模块提取和每帧快照；ESPRenderer 管统一绘制。
+- **关键文件：** [PestESP](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java)、[ESPManager](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java)、[ESPTarget](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPTarget.java)、[ESPRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java)、[ESPBoxRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPBoxRenderer.java)、[ESPFillRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPFillRenderer.java)、[ESPTracerRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java)、[ESPColorProvider](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorProvider.java)、[ESPStyle](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPStyle.java)、[ESPTargetStyle](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPTargetStyle.java)、[ESPColorMode](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorMode.java)。
+- **入口函数：** `PestESP.collect`、`ESPManager.register/initialize`、`ESPRenderer.draw/close`。
+- **工作流程：** END_EXTRACTION 抓取实体 AABB / 插值 / 样式 → Frame → END_MAIN 画 fill、box、tracer。generation 防止账号 / 断线后的旧帧继续绘制。
+- **相关配置：** pest 的开关 + esp 的样式。Bat 与 Silverfish 均使用内部 `SILVERFISH` 目标 ID；不按名称筛选、不区分是否真为 Hypixel 害虫，也没有独立 Bat 配置。
+
+### 3.5 HUD
+
+- **职责：** 只读状态展示；显示开关、内容及几何偏好管理。
+- **关键文件：** [MacroStatusHud](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java)。
+- **入口函数：** `MacroStatusHud.render`；调整模式 `begin/layout/move/button/tick/finish`。
+- **工作流程：** 每帧读取状态和模式；普通 HUD 受 showHud、F1、玩家 / 世界及自身 Menu 隐藏条件控制。调整模式无新 Screen，临时离开原菜单并消费原生输入，退出保存。
+- **相关配置：** hud；正向颜色沿用 UI accent。详细显示规则和几何约束见执行流程。
+
+### 3.6 UI
+
+- **职责：** 原生 Screen 的页面、草稿、校验、保存反馈及嵌套设置卡片。
+- **关键文件：** [MenuController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/MenuController.java)、[UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[CollapsibleSection](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)、[ToggleSwitch](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/ToggleSwitch.java)、[DropdownSelector](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/DropdownSelector.java)、[StyledButton](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/StyledButton.java)、[SelectionCheckbox](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/SelectionCheckbox.java)、[LanguageSelector](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/LanguageSelector.java)、[TransparencySlider](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/TransparencySlider.java)、[HelpTooltip](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/HelpTooltip.java)、[RoundedRect](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/RoundedRect.java)、[MenuInputGraphics](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/MenuInputGraphics.java)、[ThemePalette](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/theme/ThemePalette.java)。
+- **入口函数：** `MenuController.open/saveFarmSelection`；Screen 的 `added/removed/onClose/keyPressed/build` 及各页面方法。
+- **工作流程：** 选择 / Toggle 多数即时保存；作物路线使用 drafts 并统一 Apply；账号复制有确认和后续执行阶段。输入框草稿不能等同于已落盘配置。
+- **相关配置：** 各模块 JSON；UI 显示由 ui 控制。整张 Disabled 卡片不可交互，开关保留真实 ON / OFF 颜色和位置；子卡片整体缩进。
+
+### 3.7 Hotkeys、命令与提示
+
+- **职责：** 原生按键绑定与上升沿分发；客户端命令；聊天提示与菜单语言映射。
+- **关键文件：** [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[CommandTree](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[CommandListener](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[CommandHelper](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java)、[HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[FarmHints](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)、[KeyNameMap](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/KeyNameMap.java)、[LanguageManager](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageManager.java)、[LanguageType](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageType.java)、[LanguageKeys](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)。
+- **入口函数：** `MacroKeyBindings.register/getBindings/getKeyName`；`HintManager.printHint/printRequired`、`FarmHints.printHint`。
+- **工作流程：** 原生 KeyMapping 保持用户重绑；Mod UI 通过 LanguageManager 使用自身语言，不更改 Minecraft 当前语言。原生 Controls 名称则由 Minecraft 语言资源解析。普通聊天提示由 general 总开关与 hint 子项控制；必要提示逐项分类，未分类的 printRequired 保留原必要输出行为。
+- **相关配置：** general、ui；默认绑定见专节。HintManager 的聊天快捷键帮助是独立列表，当前没有把 Toggle HUD 追加到该列表；Hotkeys 页面与原生 Controls 已包含该项。
+
+聊天输出统一入口为 HintManager.isEnabled(event) / printFor(event,text)，配置在 general.json 的 hint 对象，15 个新增字段默认均为 true。FarmHints 两个分发重载和 HintManager.printHint 在分隔空行之前判定；PestLoadoutTimeUp 按两项 OR 决定是否输出组，再分别判断每条消息。showModChatHints 仍是原总开关，关闭不会改写子项。
+
+| 触发事件 / 入口 | 发送路径与原消息 | hint 字段 |
+|---|---|---|
+| startMacro | FarmHints MacroStart → Macro Start | macroStart |
+| pauseMacro | FarmHints ProgramPause → Program pause | macroPause |
+| resetMacro | FarmHints ProgramReset → Program reset | macroReset |
+| handleInitializeInput 完成 | FarmHints InitializeDone → Macro Initialized | macroInitialized |
+| Route 完成 / 手动上下行 | FarmHints LineFinished → Now done line {line} | lineCompleted |
+| TimeTester 暂停 | FarmHints TimeTesterCount → Ticks costed: {ticks} | timeTesterTicks |
+| PestLoadoutTimer.start | FarmHints PestLoadoutTimerStart → PestLoadout Ticker Start | pestTimerStart |
+| PestLoadoutTimer.cancel | FarmHints PestLoadoutTimerReset → PestLoadout Ticker Reset | pestTimerReset |
+| command.tick 倒计时结束（含延后分支） | FarmHints PestLoadoutTimeUp → printFor(PestTimerDone) → PestLoadout Ticker Done | pestTimerDone |
+| 同一到期事件的第二条输出 | printFor(PestLoadoutChange) → Run The Loadout Change Macro | pestLoadoutChange |
+| releaseFocusWithHint / restoreFocusWithHint | HintManager FocusRelease / FocusRestore → Focus Released / Focus Restored | focusReleased / focusRestored |
+| 作物 / 模式 / 模拟作物选择及 CropInfo | FarmHints 分发；两处未实现作物提示改走 printFor(CropSelect)，只改输出调用 | cropSelectionInitialization |
+| /ultimategarden hotkey | HintManager Hotkey → 原实时绑定帮助列表 | hotkeyHelp |
+| /ultimategarden help、helper、默认帮助及未知命令 | HintManager Helper / WrongCommand（含组内 printRequired） | commandHelpErrors |
+
+动态作物信息仍从 CropConfig 现场读取；关闭选择提示不会跳过输入、改变初始化状态或默认选作物。原帮助列表不新增 / 删除条目；服务器消息监听与显示不受 Hint 配置影响。未知普通事件仍只遵守总开关；本地必要错误处理及日志不受显示开关控制。
+
+### 3.8 Config 与账号
+
+- **职责：** 默认值、字段校验、旧配置兼容、受保护文件和按账号复制事务。
+- **关键文件：** [ConfigManager](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[ConfigIO](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java)、[AccountDirectories](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[AccountIdentity](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountIdentity.java) 及各 Config 类。
+- **入口函数：** `activateAccount/load/save/reset/saveAll/copyConfiguration`、`ConfigIO.read/write/replaceTransaction`。
+- **工作流程：** 先构建默认对象，再加载 JSON；保留长期对象引用供已有控制器读取。账号目录依 UUID 元数据验证，不能只凭目录名信任路径。
+- **相关配置：** 八个模块 JSON + account.json 身份元数据；规则见 Configuration Reference。
+
+### 3.9 Input、Scheduler 与 Focus
+
+- **职责：** 将真实玩家输入与虚拟动作隔离；为串行动作提供 Tick 队列；管理 Mod 鼠标释放和玩家输入拦截。
+- **关键文件：** [VirtualInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java)、[VirtualKeyboard](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java)、[VirtualMouse](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualMouse.java)、[PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java)、[ActionScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java)、[InputScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/InputScheduler.java)、[WindowsFocusController](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsInputInterceptor](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java)、[WindowsState](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsState.java) 及 mixin 目录。
+- **入口函数：** `keyDown/keyUp/slot/mouseDown`、`suspendForMenu/resumeAfterMenu/reapplyHeldState`；`schedule/scheduleDelayTicks/scheduleAfterTicks/tick`；`releaseFocus/restoreFocus/reapplyCursorMode`。
+- **工作流程：** actionKeys / actionAttack 用于会话内业务输入挂起和恢复；虚拟按键主要操作 KeyMapping，非调用操作系统输入模拟。Focus、输入拦截和 running 是三个独立状态。
+- **相关配置：** 调度读取 random_delay，窗口状态本身不持久化。
+
+### 3.10 Mixin 与兼容层边界
+
+| 文件 | 当前用途 |
+|---|---|
+| [WindowsInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[InventoryInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java) | 真实 GUI 输入来源与背包 click 队列跟踪；调整模式键盘拦截 |
+| [WindowsMouseMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) | 普通输入拦截；调整模式拖拽转发与阻止原生 setAll 重新按下真实按键 |
+| [WindowsFocusMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java)、[WindowsPauseMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsPauseMixin.java)、[WindowsMissTimeMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMissTimeMixin.java) | Screen 关闭后重新应用鼠标模式、失焦暂停例外、抓鼠后清理 missTime |
+| [MenuFarmInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java) | 自身 Menu 不暂停时维持农业虚拟输入与原版攻击处理 |
+| [KeyMappingAccessor](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyMappingAccessor.java)、[KeyboardHandlerAccessor](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyboardHandlerAccessor.java) | 取得实际绑定及调用键盘内部入口 |
+| [ExampleMixin](src/main/java/com/kuangsanfeng/ultimategarden/mixin/ExampleMixin.java)、[ExampleClientMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ExampleClientMixin.java) | 模板注入类，保留而非业务控制器 |
+| [CropDatabase](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/CropDatabase.java)、[CropData](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropData.java) | JSON 定义的兼容访问 / 旧接口，不是另一套静态参数来源 |
+| [RouteDatabase](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteDatabase.java)、[RouteData](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteData.java)、[RouteKey](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteKey.java)、[SlotSelector](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SlotSelector.java)、[MacroConstants](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/MacroConstants.java) | 遗留路线 / 辅助 API；当前 RouteController 不依赖其构建第二套路线 |
+| [FarmCommandInput](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandInput.java)、[InputScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/InputScheduler.java) | 旧逐字符命令输入实现；主命令流实际使用 FarmCommandController.sendCommand |
+| [WindowsNativeBridge](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsNativeBridge.java) | 预留 OS 桥接；当前没有实现 Windows 前台切换 |
+| `legacyMouseClickScheduler` | 初始化器中的兼容队列，没有 Tick 驱动；不要误当成主命令队列 |
+
+<a id="execution-flows"></a>
+## 4. Execution Flows
+
+### 4.1 Tick、Macro 状态与生命周期
+
+`MacroKeyBindings END_CLIENT_TICK → MacroManager.tick → FarmController.tick → command.tick → route.tick`。菜单会话 active 时改为 `tickMenuSession`，不调用普通 route.tick。
+
+| 操作 | 调用链与状态 |
+|---|---|
+| Num+ 启动 | `shouldPauseByHotkey → startMacroByHotkey → startMacro`；会话 active 时只登记 START。正常启动要求已选可执行作物；running=true、开启输入拦截、按住攻击、运行当前方向 |
+| Num+ 暂停 | `pauseMacroByHotkey → restoreFocusWithHint → pauseMacro(true)`；running=false、关闭拦截、释放农业输入并 cancel 命令队列 |
+| Num- 重置 | `resetMacroByHotkey → resetMacro`；登记 RESET、清菜单动作及运行计数、释放输入、cancel 队列 |
+| GUI 临时暂停 | `beginMenuPause` 挂起输入和队列；真实玩家 GUI 运行中另调用 `pauseMacro(false)`，不 cancel 原业务队列 |
+| 世界 / 玩家失效 | `abortForWorldChange → command.abortWorld`；清会话、GUI 来源、输入、动作与 Pest 倒计时，并按配置恢复作物 / 模式选择 |
+
+关键字段：
+
+- FarmState：`running` 是农业开关；`commandRunning` 阻止正常农业阶段执行；`eventSelect=true` 对应 movementA，false 对应 movementB；`eventCount` 是已完成行数。
+- `tick` 是当前行正常作业累计；`totalTicks` 同时在 incrementTick 中增加。resetTick / resetRoute 不清总数，reset 清总数。
+- `LineChangePhase` 为 IDLE / MOVEMENT / YAW_PITCH，是展示阶段；`Workflow` 用于工作流观察，不作为替代业务状态机。
+- `menuActions` 是 UI 排队的业务操作；`heldActions/actionsRestored` 是挂起恢复状态；`businessResumePending` 记录 PestLoadout 后是否应恢复先前运行。
+
+### 4.2 农业路线与换行
+
+来源：[RouteController.tick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[RouteController.onLineFinished](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[RouteController.continueLine](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[SetLineYP.setAlternate](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)。
 
 ```mermaid
 flowchart TD
-    EndTick[END_CLIENT_TICK] --> Keys[MacroKeyBindings]
-    Keys --> Manager[MacroManager]
-    Chat[发送聊天 / 接收 GAME 消息] --> Listener[CommandListener]
-    Listener --> Manager
-    Tree[CommandTree / CommandHelper] --> Farm[FarmController]
-    Manager --> Farm
-    Farm --> State[FarmState / FarmConfig]
-    Farm --> Action[FarmCommandController]
-    Action --> Queue[ActionScheduler / PestLoadoutTimer]
-    Farm --> Route[RouteController]
-    Route --> State
-    Route --> Crop[CropDatabase]
-    Route --> View[SetLineYP]
-    View --> Queue
-    Farm --> Input[VirtualInput]
-    Route --> Input
-    Action --> Input
-    Farm --> Window[Window Controllers / WindowsState]
-    Window --> Callback[输入恢复回调]
-    Callback --> Manager
+    A["route.tick"] --> B{"running 且非 commandRunning?"}
+    B -- 否 --> X["不累计正常行 Tick"]
+    B -- 是 --> C["incrementTick：行与总计数 +1"]
+    C --> D{"达到 tickLimit + 本 Tick 的随机 jitter?"}
+    D -- 否 --> Z["等待下一 Tick"]
+    D -- 是 --> E["resetTick / 停移动 / 交换 A-B / 行数 +1"]
+    E --> F{"lineChangeMovement.enabled?"}
+    F -- 是 --> G["commandRunning=true；W 移动及完成等待"]
+    F -- 否 --> H{"已完成全部行?"}
+    G --> H
+    H -- 是 --> I{"PESTS?"}
+    I -- 是 --> J["恢复 Focus；resetMacro"]
+    I -- 否 --> K["停止键鼠；排队等待；warpGarden；resetRoute；恢复路线"]
+    H -- 否 --> L{"lineChangeYawPitch.enabled?"}
+    L -- 是 --> M["commandRunning=true；Mousemat 串行动作"]
+    L -- 否 --> N["startNextLine"]
+    M --> N
+    N --> O["commandRunning=false；恢复方向移动"]
 ```
 
-唯一事件入口仍在热键类：`manager.tick()` → `FarmController.tick()` → `FarmCommandController.tick()`（动作队列，再害虫计时与完成处理）→ `RouteController.tick(isTimeTesterMode)` → 原顺序的热键处理。没有增加第二个 tick 注册点。暂停状态仍推进动作与害虫计时。
+- 额外移动：固定前等 100ms → W down → `scheduleAfterTicks(durationTicks)` → W up → 固定后等 100ms → continueLine。默认 Cactus durationTicks=10，不是 20。
+- Mousemat：完成行数偶数选 slot1，奇数选 slot2；选 Mousemat → VIEW_ATTACK 等待 → actionMouseDown → VIEW_RELEASE 等待 → actionMouseUp → VIEW_TOOL_SLOT 等待 → slot1 工具 → VIEW_RESUME_ATTACK 等待 → actionMouseDown → startNextLine。
+- 两功能串行；最后一行仍先完成额外移动，再判断路线结束，结束分支不会再执行 Mousemat。
+- yaw / pitch 配置提供路线信息与提示；实际切视角用 Mousemat 物品动作，不是直接对玩家调用 setYRot / setXRot。
+- 行阈值 jitter **每次 route.tick 都采样**，不是开行时只采样一次。
+- 已知边界：`finishFarmRoute` 的 500ms 等待及 Warp 没有像额外换行阶段那样统一设置 commandRunning；不能笼统声称所有命令等待都冻结行计时。
+
+### 4.3 Spawn、Warp 与 Loadout
+
+来源：[FarmController.spawn](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.executeSpawnSequence](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.executeSpawnPointAndPests](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmCommandController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)。
+
+| 工作流 | 实际顺序 / 结束条件 |
+|---|---|
+| Num* Spawn | 正在农业运行则 pauseMacro → 排队固定 200ms → Mushroom 先 S + A/D 随机移动 → spawnPoint 发送 `spawnlocation` → SPAWN_POINT 等待 → restoreFocusWithHint → PESTS 模式继续 spawnPests |
+| Spawn 的 Mushroom 方向 | `eventCount / 2 != 0` 决定 moveRight；不要误写为按奇偶交替 |
+| spawnPests | 固定 100ms 后 slot7 → 固定 250ms 后 `loadout` → 等 GUI → slot5 → 等关闭并重新应用当前 Focus → SPAWN_INVENTORY_KEY 等待后虚拟 E → 固定 300ms 后结束 |
+| Warp Garden | FarmController 先停键鼠、slot1 → command.warpGarden 发 `warp garden` → WARP 等待 → PESTS 模式回调释放 Focus 并尝试 startMacro；路线结束触发的 Warp 使用另一个复位路线回调 |
+| 手动 Loadout | 正在运行则 pauseMacro → command.loadout 发 `loadout` → 重新应用当前 Focus → 固定 400ms 后回调；此入口不负责自动选装备或可靠等待 GUI 关闭 |
+
+`warpGarden/spawnPoint/spawnMushroomMovement/loadout/pestLoadout/spawnPests` 在队列忙时可能直接 return，不是自动排入另一条并发流程。Menu 操作先放入 menuActions，等队列空后逐个执行。
 
-发送聊天：CommandListener → MacroManager 顺序分发 → FarmController.handleInitializeInput；处理成功则阻止发送。接收 GAME 消息：CommandListener → MacroManager → FarmController.automateTaskByMonitorMessage。窗口恢复不再通过全局农业 getter；初始化时注入回调，经 MacroManager.restoreInputState 分发到模块，保持状态恢复发生在原来的位置。
-
-### 调度实例与取消边界
-
-| 实例 | 创建者 / 使用者 | tick 驱动 | 取消责任 |
-| --- | --- | --- | --- |
-| 农业 ActionScheduler | FarmCommandController 创建；农业动作、RouteController、SetLineYP 共享 | FarmCommandController.tick，每客户端 tick 一次，即使宏暂停 | FarmCommandController.cancel → clear；FarmController.pause/reset 调用；保留原语义 |
-| legacyMouseClickScheduler | Ultimate_GardenClient 创建，仅供 VirtualMouse.mouseClick | **迁移前就无驱动，本次按兼容边界保留**；当前业务没有 mouseClick 调用 | 原实现没有接线取消入口，本次不改变；不要在未来误当作活动可用队列 |
-| InputScheduler | 当前未实例化；FarmCommandInput 旧接口要求调用者传入 | 未接入；旧接口由 FarmCommandInput.tick 驱动 | 提供 clear，但旧 cancel 不调用它；未改变 |
-| PestLoadoutTimer | FarmCommandController 创建 | 在农业队列 tick 之后推进 | 仅显式 cancelPestLoadoutTimer 取消；pause/reset 不取消 |
-
-ActionScheduler 延迟、FIFO、单 tick 最多一动作、null 步骤占位以及 clear 行为全部保留。延迟换算 `max(0,(ms+49)/50)`；当前项倒计时归零后的下一 tick 执行。回调入队不会在同 tick 执行，顺序相对于前一项完成时间。没有合并两个独立队列。**原鼠标点击队列无 tick 是按任务“改变行为则保留并报告”条款留下的明确例外，不宣称已经修复。**
-
-## 4. 用户入口与初始化状态机
-
-客户端命令：`/ultimategarden`、`help`、`helper` 输出帮助；`hotkey` 输出按键；`initialize` 调用 changeCropType；其他字符串进入 WrongCommand 提示。帮助里写有 `menu`，但命令树没有实现 menu 或 UI。
-
-| 默认热键 | 动作 | 主要限制 |
-| --- | --- | --- |
-| Num+ | 热键启动 / 暂停 | cropType 非 0 |
-| Num- | 重置 | cropType 非 0 |
-| `]` / `[` | 下一行 / 上一行 | 运行中不允许；下一行还查询作物数据 |
-| Num* | 设置出生点序列 | cropType 非 0 |
-| Num/ | warpGarden | cropType 非 0 |
-| Num7 | 启动害虫装备计时 | cropType 非 0，内部还要求 Pests 模式 |
-| Num4 | 取消害虫装备计时 | 不要求已初始化作物 |
-| Num9 | 打开 loadout | cropType 非 0 |
-| Num. | 配置作物与模式 | 宏运行中 changeCropType 会返回 |
-| U | 切换鼠标释放 | 独立于宏启停，无提示 |
-
-热键基于 KeyMapping.isDown 的上升沿，不是直接轮询 OS 键盘。多数分支使用 while(rising(...))；第一次返回 true 后同一循环再次检测将返回 false。分支中的 return 会结束整个 tick 回调，跳过后面的热键处理。
-
-初始化流程由 FarmController 的三个 waiting 标记控制：
-
-1. changeCropType 把运行时 cropType、modType 设为 0，等待作物输入，打开空 ChatScreen。
-2. `ClientSendMessageEvents.ALLOW_CHAT` 经 CommandListener → MacroManager 将普通聊天传给农业模块的 handleInitializeInput；处于选择过程时返回已处理并阻止发送到服务器。
-3. 作物输入 1～8，写 state 与 config，清理路线计数，设置 TimeTester 标记，然后等待模式并重新打开聊天框。
-4. 模式只接受 0=Farm、1=Pests。普通作物至此完成；TimeTester 继续要求输入模拟作物 1～7。
-5. TimeTester 的模拟作物写入运行时 state，但 config.cropType 仍保留 TIMETESTER。测试模式使路线阈值改为 99999，暂停时打印当前 tick。
-
-非法输入或解析异常被吞掉并继续拦截，不给出错误提示；常规聊天在无 waiting 标记时正常通过。ConfigManager 加载后，FarmController 恢复合法作物与模式；首次默认 cropType 为 0，需要交互初始化。新 FarmState 始终未运行。
-
-## 5. 宏状态、路线和作物参数
-
-FarmState 包含 running、eventChange、eventSelect（初始 true）、commandRunning、cropType（初始 0）、modType（初始 0）、tick、eventCount。`resetRoute()` 仅重置 tick、行数、方向与换行标记；`reset()` 还清 running/commandRunning，**保留作物与模式**。
-
-启动：热键包装先释放光标并提示，再 startMacro；startMacro 标记 running，启用实体输入拦截，按住攻击，选择栏位 1 并按当前作物方向移动。直接 startMacro 不更改光标释放状态。
-
-暂停：热键包装先恢复光标，再 pauseMacro；pauseMacro 清 running、关闭输入拦截、松 W/S/A/D 和攻击、清理命令队列。重置类似，额外重置路线状态。两者都没有取消 PestLoadoutTimer，普通 pause/reset 也不直接恢复光标。
-
-路线执行已提取到 RouteController；运行中每 tick 增加 tick；阈值为作物 tickLimit 加随机 0～9，**每 tick 重新抽样**。到达阈值后清 tick、停止移动、翻转 eventSelect、增加 eventCount，并提示。仙人掌额外安排前进再继续换行；其他作物直接继续。未到总行数时重新移动，甘蔗/蘑菇还调用 SetLineYP。到总行数时：Pests 恢复光标并 reset；Farm 停止键鼠，延迟后 `/warp garden`，回调 resetRoute 并重新攻击/移动。
-
-移动数组顺序固定为 `[W,S,A,D]`。下表角度只是数据库数据；当前主控制器不直接用这些值设置玩家旋转。
-
-| ID | 作物 | 基础 tickLimit | 总行数 | eventSelect=true / false | yaw,pitch A / B |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 胡萝卜/小麦/马铃薯/地狱疣 | 806 | 15 | W+D / W+A | -90,-3 / -90,-3 |
-| 2 | 花 | 544 | 16 | W+A / W+D | 90,-3 / 90,-3 |
-| 3 | 可可 | 797 | 45 | W+D / S+D | 0,-45 / 0,-45 |
-| 4 | 西瓜/南瓜 | 560 | 23 | W+A / W+D | 90,-61 / 90,-61 |
-| 5 | 甘蔗 | 475 | 30 | W / W | 45,-3 / 135,-3 |
-| 6 | 蘑菇 | 800 | 15 | W / W | -65,-3 / -115,-3 |
-| 7 | 仙人掌 | 272 | 30 | D / A | -90,0 / -90,0 |
-| 8 | TimeTester | 99999 | 99999 | W+A / W+D | 66.66,66.66 / 同左 |
-
-SetLineYP：偶数 eventCount 选择栏位 3，奇数选择 4；随后队列依次安排攻击按下、松开、栏位 1、再次攻击，各延迟 100～249ms。running 参数当前未使用。普通作物 setNormal 的调用、手动换行 changeManualLineView 的调用均被注释。实际视角调整依赖栏位物品行为，代码没有直接写玩家 yaw/pitch。
-
-## 6. 命令动作、出生点和害虫流程
-
-FarmCommandController 通过 `client.player.connection.sendCommand` 直接向服务器发送不带 `/` 的命令，不走逐字符输入；无 player/connection 时直接返回。多数序列在自身队列非空时直接返回，不会排队接受新的高级命令，也不反馈拒绝原因。
-
-- **warpGarden(after)**：发送 `warp garden`，串行等待 800～1599ms 后回调。FarmController 的公开 warpGarden 先松键鼠并选栏位 1；Pests 回调释放光标并 startMacro，Farm 回调不主动 startMacro；该公开方法不统一暂停或 resetRoute，不能与“整条农场路线完成后”的包装逻辑混为一谈。
-- **spawn()**：宏运行则先暂停，延迟 200ms 后开始。蘑菇先短暂按 S 与 A/D，之后发送 `spawnlocation`；完成后恢复光标，Pests 模式继续 spawnPests。当前蘑菇方向条件为 `eventCount / 2 != 0`，不是奇偶判断，且代码条件未限制 Pests 模式。
-- **仙人掌换行**：串行等待 100ms 按 W，再等待 500～649ms 松 W，再等待 100ms 回调。
-- **loadout()**：外层宏运行则先暂停；内部发送 `loadout`，按当前 mouseReleased 状态调用同方向 release/restore，400ms 后回调。因为焦点方法有提前返回，这段调用不保证重新应用真实光标模式。
-- **pestLoadout(after)**：队列发送 `loadout`；轮询任意 screen 非空后，选择栏位 4；随后等待/主动关闭 screen，按当前焦点标记调用 release/restore，延迟后完成回调。
-- **spawnPests(after)**：依次选择栏位 7、发送 `loadout`，等待任意 screen 打开后选择栏位 5，再等待/关闭 screen；处理焦点标记，最后点击 E 并执行回调。
-
-GUI 打开轮询最多 40 次（每项延迟 50ms），关闭轮询最多 20 次（每项延迟 100ms）；考虑调度器额外执行 tick，真实耗时比注释中的约 2 秒更长。超限时直接返回，没有失败回调；判断仅为 screen 是否存在，不核验装备页面类型。
-
-害虫监听接收 `ClientReceiveMessageEvents.GAME`，调用 automateTaskByMonitorMessage 去除 `§[0-9a-fk-or]` 格式码，匹配大小写敏感的字面串 `Pest have spawned in Plot`；匹配后通过命令队列延迟 100ms 尝试启动计时。未监听独立 CHAT 事件。
-
-PestLoadoutTimer 仅在 Pests 模式由 FarmCommandController 启动；已运行时重复 start 不重置。计时为 125×20=2500 个客户端 tick，不使用墙钟。结束时先消费 finished，再记录宏原来是否运行；必要时 pauseMacro 清队列，然后 pestLoadout，成功回调中按原状态恢复宏，最后调用可选外部回调。未找到 setPestLoadoutTimerFinished 的外部接入。若装备流程超时或被取消，恢复回调不会自然执行。
-
-## 7. 输入、鼠标释放和 Mixin 协作
-
-VirtualKeyboard 的按住操作直接修改 KeyMapping.down，并用 IdentityHashMap 支撑的 Set 跟踪。支持的逻辑键只有 W/S/A/D、SPACE、SHIFT、E；按逻辑动作名称找到映射，因此可以跟随玩家重绑。`slot(1..9)` 独立查 hotbar 映射：无 GUI 时 KeyMapping.click，有 GUI 时通过 KeyboardHandlerAccessor 注入按下/抬起。
-
-typeCharacter 虽然分支覆盖字母、数字及部分符号，但底层 findKeyMapping 只支持上述少量动作键，不是通用字符输入。FarmCommandInput 中 TAB/ENTER、逐字符命令等接口也未接入主流程，不应视为已经完成的聊天输入系统。
-
-VirtualMouse.mouseDown/up 设置 `options.keyAttack`；mouseUp 依据本地 leftDown 决定是否操作。releaseAll 强制清攻击；名字为 restoreState 的方法实际也清攻击。mouseMove 为空实现。
-
-WindowsFocusController 的准确行为：
-
-1. releaseFocus：若状态已释放则返回，否则将 GLFW_CURSOR 设为 NORMAL，再设 mouseReleased=true。
-2. restoreFocus：若状态未释放则返回，否则设 GLFW_CURSOR_DISABLED，设 mouseReleased=false，再调用初始化时注入的恢复回调，经 MacroManager 分发到 FarmController.restoreInputState；该方法仅在宏 running 时恢复攻击和当前方向移动。
-3. WithHint 方法先提示、再执行上述操作；即使因状态守卫没有实际切换，提示也会出现。toggle 不提示；isReleased 只读取自定义状态。
-4. `MouseHandler.releaseMouse/grabMouse` 两个调用被注释，当前不直接同步原版鼠标抓取内部状态，也不主动修改操作系统前台焦点。WindowsNativeBridge 未实现且未使用。
-
-`mouseReleased` 与 `inputIntercepting` 独立：释放光标不会自动阻止实体输入，恢复光标也不自动关闭宏输入拦截。
-
-| Mixin | 条件及影响 |
-| --- | --- |
-| WindowsFocusMixin | 有状态且 mouseReleased 时强制 isWindowActive=true |
-| WindowsPauseMixin | mouseReleased 时取消 pauseIfInactive；当前没有 state 空检查 |
-| WindowsInputMixin | inputIntercepting 时阻止物理 GLFW W/A/S/D/SPACE/SLASH，不区分 press/release；E、ESC、ENTER 未阻止 |
-| WindowsMouseMixin | inputIntercepting 时阻止按钮、滚轮、onMove 和 handleAccumulatedMovement，不区分游戏或 GUI 场景 |
-| WindowsMissTimeMixin | 只在实际执行原版 grabMouse 后且 mouseReleased=false 时清 missTime；restoreFocus 直接改 GLFW 不会直接触发此注入 |
-
-直接设置 KeyMapping 的虚拟输入绕开上述物理输入拦截；但 GUI 键盘注入会重新经过 KeyboardHandler.keyPress，若注入的键码命中拦截表，也可能被阻止。物理拦截使用固定 GLFW 键码，而移动虚拟输入按逻辑映射查找，重绑按键时需注意两者差别。
-
-## 8. 当前实现边界与后续修改注意事项
-
-以下均为迁移前已存在的行为或风险，本次保留，不与架构重构混合修复：
-
-1. **状态同步**：自定义 mouseReleased、实际 GLFW 模式、原版 MouseHandler 状态不等价。GUI 开关或原版抓取可能改变实际状态；按相同状态再次调用焦点方法会提前返回，无法强制校正。恢复输入还会重新选栏位 1，需检查是否打断装备序列或视角物品序列。
-2. **调度与取消**：暂停/reset 清 FarmCommandController 的队列，但不取消害虫计时，也不清入口处 VirtualMouse 的独立队列。清队列会丢弃其中的结束回调；取消发生在键按下后时，应检查是否需要额外释放非 W/S/A/D 输入。
-3. **命令运行标记未连通**：RouteController.tick 检查 FarmState.commandRunning，但项目中未发现业务调用 setCommandRunning。队列运行并不自动阻止路线 tick，因此存在动作和路线推进交叠的可能。
-4. **路线恢复**：runCurrentMovement 只按目标方向所需键，不先松掉其他方向。通常换行先 stopMovement，但从其他路径恢复时不能假定旧键状态已清理。
-5. **视角序列交叠**：changeLineView 选择 3/4 后，同步 runCurrentMovement 又选择 1，而后续攻击操作仍在队列；这些点击由 Minecraft.execute 安排，需运行验证物品实际生效顺序。
-6. **初始化边界**：部分热键仅检查 cropType!=0，而 cropType 在选择模式完成前已经设置；下一行分支没有 cropType=0 守卫，查询 CropDatabase.get(0) 会抛异常。直接 startMacro 也无初始化/世界存在校验。changeCropType 未清 waitingSimulateCropSelect，重复进入初始化需留意残留等待状态。
-7. **空值与生命周期**：automateTaskByMonitorMessage 在判断 message!=null 前先调用 replaceAll；WindowsPauseMixin 无共享状态空判断；未发现断线、退出世界时统一停止/释放的监听。
-8. **出生点语义**：主命令使用 `spawnlocation`，未接入的旧 FarmCommandInput 使用 `/spawnpoint`。蘑菇方向逻辑是整数除法条件，不要根据注释当作奇偶交替。
-9. **界面自动化**：只判断任意 screen 是否存在，并可能主动关闭任意 screen；超时会无声中断，且可能跳过宏恢复。无 server 命令成功确认，传送完成依赖固定等待。
-10. **双份数据与占位**：实际路线使用 CropDatabase；RouteDatabase 是平行但未接入的数据表。FarmConfig 持久化、WindowsNativeBridge、mouseMove、FarmCommandInput/InputScheduler、SlotSelector、KeyNameMap、MacroConstants（已迁入 macro/farm）、两个 Example Mixin 不能误判为已生效能力。
-11. **提示与数据差异**：类型 1 的提示对部分作物说明 pitch=+3，但 CropDatabase 固定为 -3；提示列出 menu，但未实现命令。提示为 Component.literal 英文文本，不通过语言资源本地化。
-
-## 9. 后续开发入口与验证结论
-
-新增其他自动化功能：在 `macro/新模块名称/` 放业务控制器，实现 `MacroManager.Module`；在初始化阶段显式创建并 `register(id, module)`。输入、调度、提示、窗口继续复用一级模块。模块必须自行持有业务状态，并明确其队列 tick 与取消责任；不要额外注册同一模块的 tick。新增用户命令或热键时在相应一级模块分发。当前没有实现未来模块、复杂插件系统、配置持久化或 UI。
-
-| 后续需求 | 首要入口 |
-| --- | --- |
-| 模块生命周期 / 事件分发 | MacroManager、Ultimate_GardenClient、MacroKeyBindings、CommandListener |
-| 农业运行与初始化 | FarmController、FarmState、FarmConfig |
-| 路线参数 / 换行与视角 | CropDatabase、RouteController、SetLineYP；注意 RouteDatabase 仍未接入 |
-| 害虫倒计时 / 装备 GUI | FarmController 消息识别、FarmCommandController、PestLoadoutTimer |
-| 服务器命令 / 出生点 | FarmCommandController 与 FarmController 的包装流程 |
-| 光标释放 / 后台执行 | WindowsFocusController、WindowsState、窗口 Mixin、恢复回调 |
-| 动作延迟 / 取消 | ActionScheduler、FarmCommandController、调用方回调 |
-| 模拟输入 / 按键重绑 | VirtualInput、VirtualKeyboard、VirtualMouse、WindowsInputInterceptor |
-| 文案 | 通用 HintManager；农业 FarmHints；现有语言键保持不变 |
-
-已执行验证：
-
-- Java 25 下执行 `./gradlew.bat build`，结果 BUILD SUCCESSFUL。项目原有 Gradle test 为 NO-SOURCE，不能将其当作已有单元测试通过。
-- 269 项静态对照检查：作物/状态/配置等直接迁移类的代码 token、路线提取方法体、农业生命周期、服务器动作、提示方法与资源/构建参数一致；所有原有 Java 字符串字面量保留；本地 import/包路径解析与唯一 tick 注册检查通过。
-- 新旧调度器并排编译，104 组对照场景、每实现共推进 208000 tick，覆盖延迟取整、FIFO、null 动作、回调追加、clear 与回调内 clear；执行轨迹与 isRunning 状态一致。
-- FarmState 的 resetRoute/reset 行为检查通过：路线 reset 不清运行/命令状态；完整 reset 保留作物与模式。
-- 审计快照、脚本、临时测试类保存在构建产物目录 `build/refactor-audit/`，不属于业务源代码，也没有引入测试依赖。
-
-待人工验证：普通作物及 TimeTester 初始化（含非法输入）、11 个热键及上升沿行为、启动/暂停/reset、手动与自动换行、甘蔗/蘑菇视角物品、仙人掌换行、Farm/Pests 路线完成、warp/spawnlocation/loadout、害虫消息/计时/取消/装备成功与超时、GUI 开关、窗口切换与输入拦截、重绑按键、断线后的输入状态。未启动 Minecraft，本次不宣称这些交互已通过实机测试。
-
-## 10. 文件迁移与职责拆分记录
-
-下表路径相对于客户端 Java 根目录；没有改变公共源集文件。
-
-| 原路径 | 最终路径 | 类型 |
-| --- | --- | --- |
-| `Ultimate_GardenClient.java` | Ultimate_GardenClient.java | 保留（仅按需更新依赖） |
-| `hotkey/MacroKeyBindings.java` | hotkey/MacroKeyBindings.java | 保留（仅按需更新依赖） |
-| `input/InputScheduler.java` | scheduler/InputScheduler.java | 迁移 / 重命名 |
-| `input/VirtualInput.java` | input/VirtualInput.java | 保留（仅按需更新依赖） |
-| `input/VirtualKeyboard.java` | input/VirtualKeyboard.java | 保留（仅按需更新依赖） |
-| `input/VirtualMouse.java` | input/VirtualMouse.java | 保留（仅按需更新依赖） |
-| `interaction/command/CommandScheduler.java` | command/CommandListener.java | 迁移 / 重命名 |
-| `interaction/command/CommandTree.java` | command/CommandTree.java | 迁移 / 重命名 |
-| `interaction/command/Helper.java` | command/CommandHelper.java | 迁移 / 重命名 |
-| `interaction/command/Hotkey.java` | command/CommandHelper.java（showHotkeys） | 方法合并，行为保留 |
-| `interaction/command/Initialize.java` | command/CommandHelper.java（initialize） | 方法合并，行为保留 |
-| `interaction/windows/WindowsFocusController.java` | window/WindowsFocusController.java | 迁移 / 重命名 |
-| `interaction/windows/WindowsInputInterceptor.java` | window/WindowsInputInterceptor.java | 迁移 / 重命名 |
-| `interaction/windows/WindowsNativeBridge.java` | window/WindowsNativeBridge.java | 迁移 / 重命名 |
-| `interaction/windows/WindowsState.java` | window/WindowsState.java | 迁移 / 重命名 |
-| `macro/MacroConfig.java` | macro/farm/FarmConfig.java | 迁移 / 重命名 |
-| `macro/MacroConstants.java` | macro/farm/MacroConstants.java | 迁移 / 重命名 |
-| `macro/MacroController.java` | macro/farm/FarmController.java；macro/farm/route/RouteController.java | 迁移 / 职责拆分 |
-| `macro/MacroState.java` | macro/farm/FarmState.java | 迁移 / 重命名 |
-| `macro/command/CommandController.java` | macro/farm/action/FarmCommandController.java | 迁移 / 重命名 |
-| `macro/command/CommandInput.java` | macro/farm/action/FarmCommandInput.java | 迁移 / 重命名 |
-| `macro/command/CommandScheduler.java` | scheduler/ActionScheduler.java | 迁移 / 重命名 |
-| `macro/crop/CropData.java` | macro/farm/crop/CropData.java | 迁移 / 重命名 |
-| `macro/crop/CropDatabase.java` | macro/farm/crop/CropDatabase.java | 迁移 / 重命名 |
-| `macro/crop/CropType.java` | macro/farm/crop/CropType.java | 迁移 / 重命名 |
-| `macro/hint/KeyNameMap.java` | hint/KeyNameMap.java | 迁移 / 重命名 |
-| `macro/hint/MacroHint.java` | hint/HintManager.java；macro/farm/hint/FarmHints.java | 迁移 / 职责拆分 |
-| `macro/route/RouteData.java` | macro/farm/route/RouteData.java | 迁移 / 重命名 |
-| `macro/route/RouteDatabase.java` | macro/farm/route/RouteDatabase.java | 迁移 / 重命名 |
-| `macro/route/RouteKey.java` | macro/farm/route/RouteKey.java | 迁移 / 重命名 |
-| `macro/route/SetLineYP.java` | macro/farm/route/SetLineYP.java | 迁移 / 重命名 |
-| `macro/route/SlotSelector.java` | macro/farm/route/SlotSelector.java | 迁移 / 重命名 |
-| `macro/timer/PestLoadoutTimer.java` | macro/farm/pest/PestLoadoutTimer.java | 迁移 / 重命名 |
-| `mixin/ExampleClientMixin.java` | mixin/ExampleClientMixin.java | 保留（仅按需更新依赖） |
-| `mixin/KeyMappingAccessor.java` | mixin/KeyMappingAccessor.java | 保留（仅按需更新依赖） |
-| `mixin/KeyboardHandlerAccessor.java` | mixin/KeyboardHandlerAccessor.java | 保留（仅按需更新依赖） |
-| `mixin/WindowsFocusMixin.java` | mixin/WindowsFocusMixin.java | 保留（仅按需更新依赖） |
-| `mixin/WindowsInputMixin.java` | mixin/WindowsInputMixin.java | 保留（仅按需更新依赖） |
-| `mixin/WindowsMissTimeMixin.java` | mixin/WindowsMissTimeMixin.java | 保留（仅按需更新依赖） |
-| `mixin/WindowsMouseMixin.java` | mixin/WindowsMouseMixin.java | 保留（仅按需更新依赖） |
-| `mixin/WindowsPauseMixin.java` | mixin/WindowsPauseMixin.java | 保留（仅按需更新依赖） |
-| 无 | `macro/MacroManager.java` | 新增最小模块生命周期管理器 |
-
-## GUI 自动暂停范围调整（2026-11-13）
-
-- 新增 `input/PlayerGuiInput`：仅记录一个 tick 内的真实键盘 GUI 意图；`VirtualKeyboard` 注入键盘事件时使用嵌套安全的来源标记，异常时也会恢复。无界面时的虚拟 `KeyMapping.click` 不经过真实输入记录。
-- `WindowsInputMixin` 在真实 PRESS 且当前没有 Screen 时，按当前 `keyInventory`、`keyChat`、`keyCommand` 映射及 ESC 记录意图；这些打开界面的按键允许通过农业输入拦截，包括重绑定后的背包键。
-- `Ultimate_GardenClient` 注册 `ScreenEvents.AFTER_INIT`，由 `FarmController.onPlayerScreenOpened` 同时核对输入意图和实际 InventoryScreen、ChatScreen、PauseScreen。只有农业正在运行或已有暂停会话时才复用 `GuiPauseState`；未打开相应界面的意图在农业 tick 清除。虚拟背包、箱子及服务器菜单不会创建新增暂停会话。
-- `FarmController` 跟踪玩家打开的 Screen 实例，关闭或替换后结束该 GUI 原因；切换自身 UI 时保留其生命周期管理。恢复继续遵循 `autoResumeFarmAfterGuiClose`、原运行快照及用户 PAUSE/RESET 意图。世界变化清理 Screen 跟踪和未消费输入意图。
-- Num+、Num- 在暂停会话内仍可执行暂停和重置，其他业务热键维持原有会话限制。自身 UI 的 added/removed、Spawn、普通 Loadout 的入口暂停、Pest 独立计时与装备队列、Warp 均保留当前原有业务实现；没有通用 Screen 暂停检测，也没有将服务器 Loadout GUI 纳入新增暂停范围。
-- 验证：离线 Java 25 构建；GUI 回归增加真实/虚拟来源、单次消费、意图过期、嵌套与异常恢复，以及农业运行/停止两种状态下 Pest 到期任务独立排入未冻结队列的检查。真实按键重绑定、服务器装备切换与传送仍需游戏内验证。
-
-### GUI 暂停状态与 Num+ 意图同步修复
-
-- `FarmController.pauseMacro(boolean)` 提取公共暂停处理：GUI 与手动暂停均设置 `running=false`、停止键鼠、禁用农业输入拦截并输出 `Program pause`（TimeTester 计数提示也复用）。手动入口仍取消命令并记录 PAUSE；玩家 GUI 入口先建立恢复快照，再调用非用户暂停分支，保留冻结队列和恢复配置。
-- 玩家背包、聊天、ESC 暂停入口调用 `releaseFocusWithHint()`，同步 Focus Released 状态与提示。通过 `playerGuiSession` 记录该会话，在关闭后的鼠标抓取处理完成时重新应用释放光标状态；自身 UI 和工作流原有焦点入口不变。
-- `GuiPauseState.shouldPauseOnToggle` 仅将实际运行或明确的待启动 START 意图视为可暂停。`MacroKeyBindings` 在农业 tick 自动恢复前处理 Num+、Num-；暂停会话内 Num+ 调用 `startMacroByHotkey` 记录 START，第二次 Num+ 或 Num- 可以取消。Screen 仍打开时不启动农业，关闭后由既有会话完成检查执行启动，自动恢复配置不会覆盖明确用户意图。
-- `tests/gui/GuiLifecycleRegression` 增加两种自动恢复配置下的 GUI 暂停后 Num+、重复切换及重置覆盖启动意图检查；原有真实/虚拟输入来源和 Pest 独立计时检查保留。Spawn、PestLoadout、Warp 业务函数及输入来源检测未修改。
-
-### 背包输入来源与 KeyMapping 消费顺序（2026-11-13）
-
-- 实际检查本地 Minecraft 26.1.2 sources：`KeyboardHandler.keyPress` 调用 `KeyMapping.click` 排入点击；`Minecraft.tick` 中 `handleKeybinds` 消费 `keyInventory.consumeClick()`，普通分支同步创建 InventoryScreen。`setScreen` 先赋值 Screen，再 `KeyMapping.releaseAll`，最后初始化界面。Fabric END_CLIENT_TICK 位于 tick RETURN；标准同步路径不能证明 FarmController 的 tick 清除总是在背包初始化之前。
-- 新增 `InventoryInputMixin`，在当前绑定对应的 `KeyMapping.click` 记录真实/虚拟来源队列，在背包 `consumeClick` 成功时建立一次性的打开来源。`release` 清除未消费点击，但保留正在初始化界面的来源；consumeClick 返回 false 清除未打开界面的来源。检测不依赖 Tick 数或固定延迟。
-- `PlayerGuiInput` 将背包来源与 ESC/聊天瞬时标记分开；`FarmController.tick` 仅清理瞬时标记，世界清理仍完整重置。`WindowsInputMixin` 在 keyPress 返回时清理未形成点击的背包请求，避免取消的真实事件污染后续虚拟打开。ESC/聊天检测与公共暂停、Focus、提示流程保持原样。
-- `VirtualKeyboard` 无 Screen 的 KeyMapping.click 也包裹 virtualDispatch，背包与其他键共享绑定时仍可区分来源。来源队列按实际点击 FIFO 消费，不使用 InventoryScreen 类型单独推断玩家输入。
-- 验证覆盖实际源码事件顺序及背包点击跨 tick、真实/虚拟混排、重复消费、releaseAll 清理、未打开 Screen 的消费及取消请求后虚拟输入。未进行实机键盘测试，不将独立状态测试视作游戏内功能已通过。
-
-### GUI 关闭后的鼠标捕获同步（2026-11-13）
-
-- 实际检查 Minecraft 26.1.2：`setScreen(null)` 调用 `MouseHandler.grabMouse()`；grabMouse 先设置 mouseGrabbed=true，再嵌套调用 setScreen(null)。原有仅写 GLFW Cursor Mode 的 Focus 方法未同步原生 mouseGrabbed，且相同 Focus 状态提前返回，无法修正 GUI 关闭后的原生覆盖。
-- `WindowsFocusController.releaseFocus/restoreFocus/reapplyCursorMode` 现在统一按现有 WindowsState.mouseReleased 决定 GLFW 模式；有 Screen 或无游戏上下文时不捕获鼠标。restoreFocus 仅在释放状态发生转换时调用原有输入恢复回调；重复调用仅同步鼠标，不重复恢复农业输入。restoreGameMouseAfterMenu 明确切换到捕获状态，但不调用农业恢复回调。
-- `WindowsFocusMixin` 在 setScreen RETURN 且实际已返回有效游戏时重新应用记录的 Focus。自动 Loadout 保持 mouseReleased=true 时，即使原版先执行 grabMouse，也会同步回 GLFW 自由光标；未改变输入阻断标记或业务启停条件。Minecraft.handleKeybinds 的 continueAttack 条件依赖内部 mouseGrabbed，故释放 Focus 时保留原有逻辑抓取语义，仅释放实际 OS 光标，避免破坏农业持续挖掘；内部标记不能单独代表实际 GLFW 捕获模式。
-- `FarmController` 删除玩家 GUI 会话完成时再次 releaseFocus 的覆盖及仅用于该覆盖的 playerGuiSession 字段。玩家 ESC、背包、聊天关闭后的既有 restoreGameMouseAfterMenu 捕获结果得以保留；农业恢复仍由原有会话意图和配置决定。
-- 新增 `tests/focus/run.ps1`：编译真实 FocusController/WindowsState，使用模拟原版 setScreen/grabMouse 递归和 GLFW 的边界桩验证玩家 GUI、自动容器、重复开关、Focus toggle、同状态同步和输入阻断独立性。测试不创建原生窗口；实机鼠标、Hypixel Loadout 仍需验证。输入来源检测、WindowsPauseMixin、VirtualInput/VirtualKeyboard 及工作流业务函数未修改。
-
-### Cactus 换行期间冻结行 Tick（2026-11-13）
-
-- `RouteController.tick` 原有 `FarmState.commandRunning` 守卫现在由 `FarmCommandController.cactusLineChange` 接通：接受换行任务后置 true，末尾 100ms 等待完成、调用 continueLine 之前置 false。包括起始等待、按 W 移动及末尾等待的整个换行阶段不累计行 Tick；原有行结束 resetTick、移动时长、方向和按键未改。
-- `cancel`、`discardDeferredActions`、`abortWorld` 清除该标记，避免暂停取消或世界清理后无法继续行计时。GUI 冻结队列时标记保留，完成换行后在原有 command.tick → route.tick 顺序中恢复累计。未用 eventChange 作为计时条件，因为手动换行和作物初始化也设置该字段。
-- 未修改 Wheat 等普通作物、Spawn、Loadout、Warp 或 Pest 倒计时算法。新增 `tests/route/run.ps1` 执行真实 RouteController、FarmCommandController、FarmState 和 ActionScheduler，输入、配置及窗口采用边界桩；覆盖五次连续换行、保留非零行计数、GUI hold、手动取消恢复、世界清理、Wheat 和独立 Pest 倒计时。游戏内实际移动未验证。
-
-### 作物换行功能配置化（2026-11-13）
-
-- 每个作物 JSON 新增 `lineChangeMovement: {enabled, durationTicks}` 与 `lineChangeYawPitch: {enabled, slot1, slot2}`。默认仅 Cactus 开启移动，Sugarcane/Mushroom 开启视角切换；所有节点（含 Custom）默认参数为 10 Tick、槽位 3/4。按用户确认，移动改为精确按住 W 10 Tick，取消旧随机时长，保留前后 100ms 等待。
-- `CropDefinition` 提供两组不可变配置；`CropConfig` 逐字段补齐和校验（正整数时长，1～9 槽位，布尔开关），修复新增字段时保留其他作物参数及未知字段。旧 alternateSlot 仅在新视角 enabled 缺失时参与迁移，新字段优先；旧访问器转发到新开关，schemaVersion 保持 1。编辑候选整体校验后提交，非法输入不写入。
-- `RouteController` 不再按 Cactus 类型判断换行：行结束重置计数、停止移动、切换方向后，按配置执行额外移动 → 检查路线终点 → Mousemat → 下一行。保持原先路线终点前的额外移动、终点不新增 Mousemat 的顺序。两功能独立开关，已有队列任务不导致换行被直接拒绝。
-- `FarmCommandController.lineChangeMovement(durationTicks, after)` 泛化原 Cactus 序列；`ActionScheduler.scheduleAfterTicks` 提供精确回调间隔，不改变原毫秒接口。`SetLineYP.setAlternate(eventCount, slot1, slot2, after)` 保留奇数 slot2、偶数 slot1 和原攻击/松开/回槽位 1/攻击的等待，仅在最后动作完成后回调。
-- 两个异步阶段复用 commandRunning 冻结行 Tick；全部完成才恢复移动。`RouteController.runCurrentMovement` 和 `FarmController.restoreInputState` 在换行阶段阻止焦点恢复提前启动农业输入。现有取消/重置/世界清理仍清队列及标记，GUI 暂停仍保留剩余等待；独立 Pest 计时及 Spawn/Loadout/Warp 业务不变。
-- 高级作物编辑 UI 显示两组开关和参数，替换旧 alternateSlot 编辑项；中英文标签、帮助及装备栏提示同步配置槽位。Custom 只允许编辑这五项功能参数，保留路线无法执行的限制。
-- 验证新增配置迁移、局部修复、非法参数原子拒绝、Custom 保存与重载；路线测试使用真实配置、路线、命令和调度器，覆盖两项开关组合、1/10/25 Tick 实际按键间隔、交替槽位、顺序、队列已有任务、连续换行及取消。输入/窗口使用边界桩，不代表实机 Mousemat、移动或服务器工作流已通过。
-
-### 全局随机延迟与 Settings 管理（2026-11-13）
-
-- 新增 `RandomDelayConfig` 与 `ConfigManager.Module.RANDOM_DELAY`，按现有账号目录保存到 `random_delay.json`（schemaVersion 1）。每个下表字段为 `{minTicks,maxTicks}`，全作物共用；支持缺失字段补齐、非法范围恢复该项默认、原文件备份、未知字段保留、未来 schema 写保护、账号复制验证和即时加载。UI 同时校验两个整数后提交，要求 0 ≤ minTicks ≤ maxTicks，相等表示固定延迟。
-- `FarmController` 向命令控制器注入 ConfigManager 持有的配置对象；RouteController 行抖动和 SetLineYP 的四步动作均读取同一个全局对象。账号切换时该对象原地重载。已排队动作保留采样值，新配置用于后续采样；保留行抖动原先每个正常农业 tick 重新采样的方式。
-- 所有原本随机毫秒等待改用 `ActionScheduler.scheduleDelayTicks`，采样后不再乘除 50。此接口保持旧 schedule(ms) 的倒计时与执行 tick 语义（倒计时 N 加一次执行 tick）；未替换精确时长使用的 scheduleAfterTicks，也未修改固定等待、轮询超时及独立 Pest 计时。默认采样保留旧均匀毫秒值向上取整到 Tick 后的完整概率分布；其他范围按闭区间整数 Tick 均匀取样。
-- Settings 页面新增 Anti-Check（二级）→ Random Delay（三级）→ 15 个实际操作参数（四级），每项提供 Min Ticks、Max Ticks 和保存按钮。复用父子 CollapsibleSection、输入草稿、校验提示、配置保存及账号复制后的草稿刷新；没有空的“其他”分类。中英文词典与账号文件选择项已补齐。
-
-| 配置字段 | 原随机范围（含端点） | 默认 Tick 范围 |
-| --- | --- | --- |
-| FARM_ROW_JITTER | 0～9 Tick | 0～9 |
-| VIEW_ATTACK | 100～249ms | 2～5 |
-| VIEW_RELEASE | 100～249ms | 2～5 |
-| VIEW_TOOL_SLOT | 100～249ms | 2～5 |
-| VIEW_RESUME_ATTACK | 100～249ms | 2～5 |
-| WARP | 800～1599ms | 16～32 |
-| SPAWN_POINT | 300～449ms | 6～9 |
-| SPAWN_MUSHROOM | 150～299ms | 3～6 |
-| PEST_OPEN_WAIT | 50～99ms | 1～2 |
-| PEST_SELECT | 150～349ms | 3～7 |
-| PEST_SETTLE | 100～149ms | 2～3 |
-| SPAWN_LOADOUT_OPEN_WAIT | 50～99ms | 1～2 |
-| SPAWN_LOADOUT_SELECT | 150～349ms | 3～7 |
-| SPAWN_LOADOUT_SETTLE | 100～149ms | 2～3 |
-| SPAWN_INVENTORY_KEY | 150～399ms | 3～8 |
-
-- 本次未新增 Cactus 移动随机项：该动作已为每作物精确 durationTicks 配置。普通 Loadout 的 400ms、GUI 检查间隔与次数、动作固定等待均不属于随机延迟。源码随机生成只保留在 RandomDelayConfig。
-- 验证新增旧分布逐票穷举、Tick 队列与旧接口等价、范围及零延迟、JSON 重载/局部缺失/写保护；运行真实 SetLineYP、行抖动和蘑菇移动调用点验证配置生效及后续动作即时更新；新增三级折叠祖先组合检查，账号复制测试改为按 Module 数量核对。原有配置、路线、GUI、Pest 和 Focus 回归继续验证；原生 UI 交互及服务器工作流仍需实机验证。
-
-### UI 文本与中文翻译修正（2026-11-14）
-
-- `en_us.json`、`zh_cn.json` 同步修正 Pest loadout、手动计时、Farm configuration、Farm mode 和 Hotkeys 的说明。Existing farm operations 显示为 Farm macro command，Advanced crop definition 显示为 Crop route definition；保留原资源 Key。按本次要求保留英文原文中的 `yourd`，不据 UI 文案修改实际服务器命令。
-- 删除 Home 概览标题、Farm macro command 标题、Apply and save crop definition 按钮的 help Key；现有 optional/helpText 返回空串，HelpTooltip 不注册或绘制空帮助图标。Farm 的 Set spawn 使用完整坐标说明，Hotkeys 通过新增 `set_spawn.hotkey.help` 使用简短指令说明。
-- `UltimateGardenScreen.cropDefinitionSaveButton` 保留原权限检查、更新、保存、清草稿及重建回调，仅将按钮创建位置移至 tickLimit 输入之前；没有 tickLimit 的 Custom 功能编辑仍显示一个保存按钮。
-- `MacroKeyBindings.getMenuKeyName` 每次从当前 OPEN_MENU_KEY 映射读取显示名称，`UltimateGardenScreen.helpText` 将该名称填入中英文 `%s` 菜单关闭说明；getBindings 中的菜单描述也去除硬编码 M。未修改按键匹配或处理逻辑。
-- ESP 的 Silverfish 显示标签改为 Pest，帮助改为 pest(silverfish & bat)，中文为害虫（蠹虫与蝙蝠）。随机延迟视角项改用 Squeaky Mousemat 和本次指定的 use/slot/left click 文案，PestLoadout 与 SpawnLoadout 标签改用 loadout。中文保留 loadout、Squeaky Mousemat 原名；ESP 内部标识、JSON 字段、随机参数和调度逻辑均不变。
-- 验证包括离线构建、语言 Key 一致性/重复项/格式占位符/JSON 语法、移除帮助的资源与图标绘制守卫、按钮创建顺序及原保存回调，以及既有配置和 GUI 回归；实际原生窗口显示和重绑定后的悬浮提示仍需游戏内验证。
-
-### 自身菜单自动暂停开关（2026-11-14）
-
-- `GeneralConfig.autoPauseFarmWhenOpeningMenu` 默认 true，保存至现有账号 `general.json`；ConfigManager 的读取、默认值、保存和账号复制校验复用现有字段机制。缺失字段保持旧版默认暂停行为，不覆盖 autoResumeFarmAfterGuiClose。
-- Settings → Preferences 中新增 Auto-pause 开关，Auto-resume 使用同一 ToggleSwitch 组件并缩进一个层级。子开关 active 取决于 Auto-pause，禁用时使用灰色样式但保留开关位置和值；重新启用后可继续编辑。新增中英文标签及帮助。
-- `UltimateGardenScreen.added` 调用菜单专用 beginUltimateGardenMenu，根据配置决定是否建立原暂停会话；记录 menuPauseOwned，removed 仅结束本次创建/接管的暂停原因。配置改动在下次打开时决定是否暂停；本次原已暂停、随后关闭 Auto-pause 时，不自动恢复，明确 START 意图仍保留。玩家背包、ESC、聊天继续走原 beginMenuPause/endMenuPause，不受新开关控制。
-- Auto-pause 为 No 且没有继承的暂停会话时，不改变农业 running、暂停意图、动作队列暂停或 Focus 标记；Screen 初始化后只补回原版 releaseAll 清除的农业按键，不调用启动或焦点方法。命令队列及行计时继续由原 tick 驱动。
-- `WindowsInputInterceptor` 新增由客户端注入的自身 UI 放行谓词。菜单显示时实际输入拦截判定返回 false，原 WindowsState.inputIntercepting 和 mouseReleased 不变；返回游戏后恢复原判定，不影响其他 Screen。
-- 无自动暂停会话时，菜单启动按钮显示 Start farming 并调用原 startMacro；有会话时仍请求关闭后启动。编辑权限增加“自身 UI 可见且农业已停止”的分支，保留队列/计时器限制；菜单操作仍排队至关闭后执行。主动暂停和重置均清理菜单待执行操作，避免无暂停会话时遗留队列。Spawn/PestLoadout/Warp 执行函数和 Num+、Num- 分支未修改。
-- 验证增加默认值、旧 JSON、保存重载、Auto-resume 值保留、关闭时恢复与明确 START/PAUSE/RESET 意图检查；真实输入拦截器边界测试覆盖菜单放行及返回游戏恢复拦截，确认不改 Focus 或拦截标记。既有配置、语言、GUI、路线和 Focus 回归继续运行；原生菜单操作与游戏内农业效果尚需实机验证。
-
-### 子卡片 Disabled 样式与非暂停菜单实际输入（2026-11-14）
-
-- `UltimateGardenScreen.Card` 增加相对缩进和 enabled 谓词；依赖开关的卡片整体左移边界改为向右缩进，宽度同量减少、右边界不变。嵌套 section 原有深度缩进与子项 inset 叠加；顶层卡片默认 inset=0，保留原布局。Label 复用同一 enabled 谓词，背景、文字、帮助图标和 ToggleSwitch 统一使用 40% 禁用透明度；禁用帮助图标不注册交互区域，配置值仍保留。
-- 两项开关 Hint 按本次指定英文原文更新，中文对应“打开菜单时是否暂停农业 Macro；开启暂停、关闭不暂停”和“打开前正在运行则关闭后恢复”。未改变两个布尔字段及现有启停条件。
-- 实际检查 Minecraft 26.1.2 sources：setScreen 打开时 KeyMapping.releaseAll 清除底层输入；Screen 存在时 tick 将 missTime 置 10000 并跳过 handleKeybinds，所以单次重按 keyAttack 不等于继续挖掘。关闭时 MouseHandler.grabMouse 在非 macOS（含 Windows）调用 KeyMapping.setAll，以物理键覆盖虚拟移动；本次在完整生命周期之后重新应用持有输入。
-- 新增并注册 `MenuFarmInputMixin`：仅 UltimateGardenScreen.keepsFarmingInput 为真（本次无自动暂停会话、无其他暂停会话、农业 running=true）时，原版 Screen.tick 后执行已有 handleKeybinds，清除该菜单造成的 missTime；只在这次按键处理中放行 Screen 和逻辑鼠标捕获条件，不更改实际 Focus 或 GLFW 捕获。其他 Screen 不进入该路径，底层服务器交互仍走原版方法。
-- setScreen 包装器在自身非暂停菜单打开/关闭的原版处理完成后调用 FarmController.reapplyMenuInput。VirtualInput/VirtualKeyboard/VirtualMouse 重新应用当前已跟踪的 KeyMapping 持有和 leftDown，而非重新选槽、运行路线或强制攻击；主动松键、暂停、未运行、动作队列阶段均保留。删除原先 AFTER_INIT 里强制 mouseDown/runCurrentMovement 的补偿，避免覆盖换行状态。
-- VirtualKeyboard 在该菜单保持农业时把虚拟点击与槽位输入送入游戏 KeyMapping 队列，不注入到菜单文本框；真实输入隔离标记仍沿用原实现。没有修改 RouteController 行计时、任务时长、Spawn/PestLoadout/Warp 的条件或暂停会话算法。
-- 新增 `tests/menu-input/run.ps1` 编译真实 VirtualInput/VirtualMouse 与原 ActionScheduler，模拟 native releaseAll/setAll 边界，验证 20 次开关后的 WASD/左键持有、主动松键、悬挂与停止后不重放；68 项通过。原配置/语言/GUI/路线回归继续通过。边界桩和源码检查不等同实机测试，尚未验证原生窗口显示、Mixin 运行时注入和真实服务器挖掘。
-
-### 英文 Hint 拼写修正（2026-11-14）
-
-- 仅修正 `en_us.json` 的 `farm_configuration.help`（mod → mode）和 `advanced_crop_definition.help`（yourd → your）。对应中文翻译仍准确，保持原样；语言 Key、其他文案及功能逻辑未修改。
-
-### Crop Route 控件顺序与 Macro Status HUD（2026-11-14）
-
-- `UltimateGardenScreen.cropLineChangeFields` 将五项换行控件按原顺序移至 Apply And Save Crop Definition 之后、tickLimit 之前；Custom 同样先显示保存按钮再显示五项参数。保留草稿绑定、保存回调和编辑条件。
-- 新增账号模块 `HUD` / `hud.json`（schemaVersion 1）：`displayMode` 为 COMPACT/DETAIL，`compact`、`detail` 为以 HudConfig.Item 枚举名为键的布尔对象。Compact 默认开启 Macro Status、Farm Mode、Crop、Line、Total Tick、Line Tick、PestLoadout、Focus State、Input Interception 九项；Detail 默认再开启 Route Line Change Info、Squeaky Mousemat Usage。
-- `HudConfig.setCompact` 实际同步写入 Detail 对应值；Compact 为 true 时 Detail 不允许关闭，Compact 取消时 Detail 同步 false，之后可独立选择 Detail。加载也保证 Compact 开启的项在 Detail 中实际为 true。支持缺失字段默认值、非法字段恢复、未知字段保留、账号复制校验、保存重载及未来版本写保护。
-- Settings → HUD 下复用嵌套折叠组件创建 Display Mode、Compact Mode Content、Detail Mode Additional Content 三个三级组。Detail 强制项复用整卡片 Disabled 样式；ToggleSwitch 现在始终按真实值选择 accent/border 颜色和开关位置，仅在禁用时降低透明度，不再把 ON 改画成灰色。Auto-resume 使用相同修正。
-- 新增 `ui/hud/MacroStatusHud`，使用 Fabric HudElementRegistry 注册，只读农业、Pest、Focus 和输入拦截数据。在有效世界、非 F1 隐藏、未打开自身菜单时于左上角显示。Running 使用主题 accent，Paused 使用红色 UG、状态、进度条与状态行；PestLoadout 显示 tick/秒，Detail 显示配置的移动 tick、Mousemat1/2 槽位或 Disable。无作物或未实现 Custom 路线不读取不存在的行数/进度参数。
-- `FarmState.totalTicks` 随原 incrementTick 增加，统计自上次 reset 的正常农业作业 Tick；行重置、路线循环和暂停不清零，完整 reset/世界清理清零。原暂停及换行阶段不调用 incrementTick，计数自然冻结。HUD 渲染不推进计时、不写 running、不操作输入或动作队列。
-- 中英文 HUD 标题、信息项和短 Hint 同步加入；HudConfigRegression 验证 112 项默认、联动、持久化和计数重置，既有配置/账号复制/语言/路线/GUI/Focus 回归通过。游戏内 HUD 视觉、尺寸和菜单隐藏切换尚需实机验证。
-
-### HUD 模式刷新、浅色卡片与菜单恢复范围（2026-11-14）
-
-- `UltimateGardenScreen.hudSettings` 在模式选择回调中先写入 `HudConfig.mode`、保存 `HUD` 模块，再立即重建页面，消除下拉选择先关闭并重建页面导致的旧模式标签。HUD 每帧读取同一配置对象，不缓存 Compact/Detail 模式。
-- `MacroStatusHud` 改为浅色圆角卡片：Macro Status 标题、绿色 Running / 红色 Paused、左右对齐的信息行、分隔线及进度条；不显示 Compact/Detail 标签。Farm Mode 可显示在状态行右侧；较长信息分成两行，小窗口按可用尺寸缩放，打开自身 Menu 时继续隐藏。
-- `HudConfig.Item` 新增 `CURRENT_DIRECTION`、`LINE_CHANGE_STATUS`、`STOP_REASON`、`CURRENT_WORKFLOW`，复用 Compact/Detail 配置及强制同步规则；四项默认均关闭，原九项 Compact 与两项 Detail 默认内容保持不变，旧 JSON 缺失新字段时使用关闭默认值。
-- 状态来源：方向沿用 `FarmState.eventSelect` 对应 movementA/B；`FarmState.LineChangePhase` 仅记录移动 / Yaw-Pitch 阶段，`RouteController` 和 `FarmCommandController` 在原流程边界更新，取消、重置或换行完成时清除；不参与农业计时或执行决策。`FarmCommandController.Workflow` 记录 Spawn、Warp、Loadout、PestLoadout、Spawn/Loadout，完成回调先清除标记再执行原回调，失败 / 取消 / 世界清理时清除；换行与其他队列任务按现有运行状态显示。`FarmController.getHudStopReason` 从暂停会话意图、既有停止原因和工作流状态读取原因，不改变业务启停。
-- `GuiPauseState.Source` 区分 `ULTIMATE_GARDEN_MENU` 与 `PLAYER_GUI`；自动恢复资格按当前打开的界面及其打开前运行状态记录，不能继承此前其他 GUI 的资格。`FarmController.endMenuPause`（背包 / ESC / 聊天框关闭）固定关闭自动恢复，仅自身 Menu 的结束入口读取原 Auto-resume 配置。显式 START 仍可请求关闭后启动，PAUSE / RESET、失败及世界变化继续阻止自动恢复。
-- 中英文语言资源增加四项设置名称、Hint、阶段、暂停原因与工作流名称。回归覆盖模式单次写入即时可见及保存重载、扩展项默认值、普通 GUI / 自身 Menu 交叉切换、显式启动 / 暂停 / 重置、工作流清理及换行阶段；原生游戏内点击、HUD 视觉及服务器工作流仍需实机验证。
-
-### HUD Tick 单位与背景恢复（2026-11-14）
-
-- `MacroStatusHud` 的 Total Tick 和 Line Tick（含无作物 / Custom 分支）统一使用完整 `tick`；PestLoadout 和换行移动信息原已使用 `tick`，Compact / Detail 共用同一格式化入口。
-- 背景恢复为原 `0xdf142420` 深色半透明填充、8 像素圆角，移除浅色卡片阴影；边框恢复 Running 主题 accent（默认青绿色）/ Paused `0xffed6669`。保留当前标题、状态位置、双列布局、字体与文字颜色规则、行距、分隔线、进度条和模式显示逻辑。
-
-- `HudConfig.resetToDefault` 将 Compact / Detail 的 `TOTAL_TICK` 默认设为关闭；新配置、重置及缺失该字段时采用此默认值，已保存的用户选择继续保留。
-
-### HUD 文字与分割线配色（2026-11-14）
-
-- `MacroStatusHud` 的标题、Farm Mode、字段名称及普通数值统一为白色 `0xffffffff`，分割线使用原字段文字的灰绿色 `0xff626b66`。Running 状态与进度条使用主题 accent（默认青绿色），Paused 保留原红色及状态文字强调规则；Compact / Detail 共用配色，背景、边框、字体与布局不变。
-
-- HUD 数值颜色改按字段的实际状态判断：Captured / 输入拦截 ON 使用主题蓝绿色，Released / OFF 使用红色，独立于农业 running 状态。换行配置关闭时的 Disable 为红色，启用时显示的移动 tick 和 Mousemat slot 编号仍为白色；行数、所有 Tick / 秒数、普通标题与字段同样保持白色。换行阶段活动时按农业是否暂停显示主题色 / 红色，工作流活动时按队列是否挂起显示主题色 / 红色；Idle、无停止原因和等待启动使用白色，实际停止原因使用红色。上述规则仅影响 Compact / Detail 共用渲染颜色，不修改状态、计时、背景、边框、分割线或进度条结构。
-
-- HUD Focus State: `Released` uses the green/teal theme color to indicate the intended working focus state; `Captured` uses red. This supersedes the earlier Focus color mapping and changes rendering only.
-
-### HUD 位置 / 尺寸调整与 Crop Route 回车保存（2026-11-14）
-
-- `HudConfig` 在 `hud.json` 增加 `bounds: {x,y,width,height}`，均为屏幕比例；宽高为 0 时沿用自动尺寸。加载校验有限值及 0–1 范围，旧 JSON 缺失时保留原自动布局；HUD 渲染按当前窗口 / GUI Scale 夹取可见边界并保证最小内容比例，文字和进度条适配尺寸而非裁切。
-- Settings → HUD 新增 `Adjust HUD Position & Size` 按钮及中英文提示。`HudAdjustmentController` 只持有临时编辑会话、拖拽几何与 GLFW 光标资源，不创建 Screen，不写 Macro、Focus 或输入拦截持久状态。`MacroStatusHud` 在游戏画面上绘制暗色半透明蒙版、拖拽轮廓、四角手柄和操作提示；支持内部移动、四边 / 四角缩放与系统调整光标。
-- `WindowsInputMixin` 在 GUI 输入来源检测前消费调整模式的真实键盘事件；ESC 保存并返回原菜单实例，虚拟输入继续沿用 `PlayerGuiInput` 来源隔离。`WindowsMouseMixin` 转交鼠标移动 / 按钮并阻断游戏滚轮与视角处理，调整期间跳过原生 grabMouse 的物理 KeyMapping.setAll，防止重新激活真实按键。`WindowsFocusController` 仅临时应用自由鼠标，不改 WindowsState；`WindowsPauseMixin` 避免无 Screen 的编辑状态触发原生失焦暂停。
-- `UltimateGardenScreen` 临时离开菜单时保留本次菜单暂停会话，返回时不重复 beginMenuPause，继续遵守进入菜单时的 Auto-pause 设置与原恢复规则。`Ultimate_GardenClient` 注册调整模式 Tick，世界变化、失去玩家或出现其他 Screen 时取消编辑并保存；退出清理 GLFW 光标并重新应用当前 Focus 规则，不恢复过期的 Macro 状态快照。
-- Crop Route 输入框记录在 `routeInputs`，只有相关输入框活动且聚焦时 Enter / 小键盘 Enter 才保存。`applyCropDefinition` 是按钮与 Enter 的唯一实现入口，沿用校验、保存反馈与异常处理；按键释放前消费重复 Enter，其他输入框不触发路线保存。
-- `tests/hud-adjust` 执行真实调整控制器，覆盖拖动、边缘 / 四角缩放、边界限制、保存重载、光标清理与世界变化；配置回归增加 bounds 默认 / 校验 / 重载检查。原生窗口与输入由桩模拟，游戏内拖拽、GLFW 光标兼容性及路线输入框 Enter 操作仍需实机验证。
-
-- 断线、客户端退出及账号切换前也结束并保存调整会话；返回菜单保留原暂停会话，如果本次菜单原先未暂停、但用户已开启 Auto-pause，则按当前设置建立菜单暂停。
-
-### 玩家 GUI 暂停的 Focus 同步（2026-11-14）
-
-- `FarmController.onPlayerScreenOpened` 对来源验证通过的真实背包 / ESC / 聊天界面调用 `WindowsFocusController.useGameFocusForPlayerGui`，替代原 GUI 暂停分支的 `releaseFocusWithHint`。新入口结束 Mod 主动释放标记，并通过现有 `reapplyCursorMode` 保持打开 Screen 所需的原生鼠标释放；不调用农业输入恢复回调。原 GUI 暂停、输入拦截关闭和关闭后不自动恢复的规则不变。
-- `WindowsState.mouseReleased` 明确表示 Mod 的鼠标释放覆盖，不等同于原生 Screen 的自由鼠标。HUD 在 Screen 存在时以白色 `GUI Cursor` / `GUI 自由鼠标` 显示原生自由鼠标；返回无 Screen 游戏后继续显示实际使用的 Mod Released / Captured 模式，保留此前颜色规则。`setScreen(null)` 后原 Focus Mixin 重新应用当前模式，暂停会话继续通过 `restoreGameMouseAfterMenu` 恢复游戏捕获，不启动农业。
-- 自身菜单、虚拟背包输入、Loadout 和 HUD 调整不进入该真实玩家 GUI 入口，继续沿用现有 Focus 规则。Focus 回归增加打开、连续切换和关闭 GUI 时的原生 grab、GLFW mode、mouseReleased、inputIntercepting 及无输入恢复回调检查；原生窗口边界使用桩模拟，游戏内 HUD 与真实 GUI 事件顺序仍需实机验证。
-
-### HUD 显示开关与快捷键（2026-11-14）
-
-- `HudConfig.showHud` 默认 true，保存至现有 `hud.json`；旧 JSON 缺失时默认开启，非法类型按默认值修复。Settings → HUD 新增 Show HUD 开关，实时修改并保存该字段，不改位置、尺寸、模式或内容集合。
-- `MacroKeyBindings` 注册原生 `toggle_hud`（默认 GLFW_KEY_UNKNOWN，即未绑定），Hotkeys 页面通过既有 Binding 列表及 LanguageKeys 显示 Toggle HUD 和 Hint。沿用 KeyEdge 上升沿，消费点击队列防止积压；在游戏及自身菜单非文本输入状态允许切换，其他 Screen 和 HUD 调整模式不切换。该分支与 Macro / Focus 控制分离，直接修改并保存同一 showHud 字段；设置开关通过 getter 实时显示当前值。
-- `MacroStatusHud` 普通渲染在 showHud=false 时返回；调整模式仅绕过可见性检查以供预览，不修改保存值。自身菜单隐藏规则保留。同步增加英文 / 中文原生快捷键名称、UI 名称及 Hint，配置回归覆盖默认值、显示开关保存重载和其他 HUD 设置保留。
-
-### 原生快捷键翻译与 1.0.2 构建命名（2026-11-14）
-
-- `en_us.json` / `zh_cn.json` 补齐 MacroKeyBindings 当前注册的全部 13 项 `key.ultimate_garden.*`，包含 Toggle HUD。原生绑定名称与对应 Hotkeys UI 名称复用相同文案，英文名称统一 Title Case；分类 `key.category.ultimate_garden.key_category` 均为 Ultimate Garden。没有修改绑定注册、默认按键或事件逻辑。Minecraft 原生 LanguageManager 先加载 en_us 再叠加所选语言，其他无翻译语言自然回退到完整英文资源。
-- `gradle.properties` 将 Mod version 更新为 1.0.2，新增 archives_base_name=ultimate_garden，Minecraft 版本仍为 26.1.2。`build.gradle` 通过 base.archivesName 和 AbstractArchiveTask.archiveVersion 设置归档名称，正式输出 `build/libs/ultimate_garden-1.0.2+26.1.2.jar`；processResources 继续使用 project.version 展开 fabric.mod.json，Mod 元数据版本为 1.0.2。
-- 当前项目的 net.fabricmc.fabric-loom 1.17 / Minecraft 26.1.2 构建任务没有 remapJar，使用原有 jar → assemble → build 分发流程；保留插件、依赖和流程，不创建伪 remap 任务或手动重命名产物。归档命名配置也适用于后续存在的归档任务，sources JAR 仍带 sources classifier。
-
-### Bat Pest ESP 与默认开关修复（2026-11-14）
-
-- `PestESP.collect` 的实体类型筛选从仅 SILVERFISH 改为 SILVERFISH 或 BAT，保留 alive / removed 判断、位置插值和 AABB 提取。两者继续生成同一 `ESPConfig.SILVERFISH` 目标，受现有 pestESPEnabled 开关及统一边框 / 填充 / Tracer 样式控制；未修改 ESPManager、渲染器、Shader 或配置结构。
-- `PestConfig` 字段初始值及 `resetToDefault` 的 pestESPEnabled 改为 true；ConfigManager 仍按旧字段读取已有值，显式 false 不会被覆盖。其他 Pest 配置默认值保持不变。
-- 历史核对：可见提交中 `d133872` 首次新增的 PestESP 已仅匹配 SILVERFISH；后续存在 Bat 检测测试残留，但未找到可确认正常支持 Bat 的已提交实现。因此只能确认当前筛选条件会排除 Bat，无法从现有历史确定此前工作版本或具体删除提交。
-- `tests/esp/PestESPRegression` 编译并执行真实 PestESP.collect，实体 / extraction context 使用桩，验证 Bat 与 Silverfish、其他实体排除、存活 / 移除条件、统一开关及插值；ESPRegression 验证新配置默认开启与已保存关闭值保留。测试和游戏内实体高亮实测分开记录。
+### 4.4 PestLoadout 与异步等待
+
+来源：[CommandListener.register](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java) → [FarmController.automateTaskByMonitorMessage](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) → [FarmCommandController.startPestLoadoutTimer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)。
+
+1. 自动路径要求 autoPestLoadout=true，系统消息包含源码字面量 `Pest have spawned in Plot`；安排 100ms 后启动。手动计时入口不要求自动选项开启。
+2. startPestLoadoutTimer 只在 PESTS 模式启动，读取当时的 delayTicks；修改延迟不会重置正在运行的倒计时。
+3. 每次 command.tick 先推进 scheduler，再推进 PestLoadoutTimer；农业 running=false 仍可推进。
+4. 到期且不在菜单会话：保存 wasRunning；若正在运行调用 pauser；标记 businessResumePending；执行 pestLoadout。成功回调仅在 wasRunning 时调用 resumer。
+5. 到期且在菜单会话：记 pendingPestLoadout；待 holdActions=false 且队列空再执行，避免被菜单挂起的队列死锁。
+6. pestLoadout：发 `loadout` → PEST_OPEN_WAIT → Step2 等 screen 非 null → PEST_SELECT 后 slot4 → PEST_SETTLE → Step3 检查关闭；若仍有 Screen 则 setScreen(null) 再等；关闭后应用当前 Focus，固定 300ms 后回调。
+7. Step2 最多 40 次 50ms 调度，Step3 最多 20 次 100ms 调度；超限 failAction，不执行正常成功恢复。spawnPests 的对应等待结构相同，选 slot5 并执行后续 E。
+
+**实现边界：** 检查是 `screen != null` / `screen == null`，没有核验标题、菜单 ID 或服务器装备结果。轮询周期含 ActionScheduler 的执行 Tick 语义，源码注释的毫秒乘积不是严格墙钟超时。Pest ESP 不参与这些流程。
+
+### 4.5 GUI 自动暂停与恢复
+
+来源：[WindowsInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[InventoryInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java)、[PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java) → ScreenEvents.AFTER_INIT → [FarmController.onPlayerScreenOpened](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)。
+
+| GUI 来源 | 当前规则 |
+|---|---|
+| 玩家真实背包、ESC、聊天框 | 来源校验通过才自动暂停；useGameFocusForPlayerGui 结束 Mod 释放覆盖；关闭不使用菜单 Auto-resume |
+| Mod 自身 Menu | added 调用 beginUltimateGardenMenu，按 autoPauseFarmWhenOpeningMenu 决定是否建立会话；removed 仅结束本次拥有的会话 |
+| 虚拟背包 | virtualDispatch 来源不会被判为玩家背包输入 |
+| 箱子、服务器 GUI、其他 Mod Screen | 不作为新增自动暂停入口；已有活动会话可能仍因 Screen 存在而等待，不等于“完全忽略所有容器” |
+
+背包来源跟随实际绑定的 KeyMapping.click / consumeClick 队列，不依赖固定 E。clearTransient 仅清瞬时请求；inventoryOpening / inventoryClicks 按消费及 releaseAll 生命周期清理，防止跨 Tick 丢失和过期误判。
+
+GuiPauseState：
+
+- Source 为 ULTIMATE_GARDEN_MENU / PLAYER_GUI；每次 open 更新菜单自动恢复资格，已有会话保留原意图快照。
+- Intent 为 NONE / START / PAUSE / RESET；START 是明确请求，独立于自动恢复开关；PAUSE / RESET 取消恢复资格，fail 阻止恢复。
+- `endMenuPause` 固定 close(false)；`endUltimateGardenMenu` 才传入菜单 Auto-pause / Auto-resume 条件。
+- close 只记录意图；最终恢复还要等 `tickMenuSession`：无菜单 / 阻挡 Screen / Overlay，焦点可恢复，业务队列和 menuActions 已完成，finish 才可调用 startMacro。
+- 挂起业务动作恢复后，属于当前 loadout 的容器可被 ownedBusinessScreen 判为允许操作；并非允许农业在容器中继续执行。
+- Menu 的 Auto-pause=OFF 时，keepsFarmingInput 与 MenuFarmInputMixin 维持真实虚拟键位、攻击处理和计时；不能只依赖 running=true。Menu 内主动暂停、重置仍是明确用户操作。
+
+### 4.6 Focus 与 Input Interception
+
+来源：[WindowsState](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsState.java)、[WindowsFocusController](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsInputInterceptor](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java)、[WindowsFocusMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java)。
+
+| 状态 | 含义 |
+|---|---|
+| FarmState.running | 农业路线是否运行 |
+| WindowsState.inputIntercepting | Mod 是否请求阻断玩家输入；自身 Menu 通过 uiInputAllowed 放行交互 |
+| WindowsState.mouseReleased | Mod 主动释放 OS 鼠标的模式，不是“任何 GUI 存在”的标记 |
+| MouseHandler.isMouseGrabbed / GLFW cursor mode | 原生逻辑捕获与 OS 光标模式，允许为虚拟持续破坏而有意分离 |
+
+- releaseFocus：写 Mod 标记并 reapplyCursorMode；无 Screen 时可保持逻辑 grab、仅让 OS 光标自由。
+- restoreFocus：清标记、应用原生捕获；原先 Released 时调用 restoreInputState，但 Farm 有 running / menu / commandRunning 守卫。
+- useGameFocusForPlayerGui：真实 GUI 打开时清 Mod 标记，调用统一 reapply；因 Screen 存在仍 releaseMouse + GLFW_CURSOR_NORMAL，不恢复农业输入。
+- restoreGameMouseAfterMenu：只在无 Screen 且玩家 / 世界有效时恢复游戏捕获，不调用 Macro 输入恢复回调。
+- setScreen 返回后 WindowsFocusMixin 重新应用当前模式，防止原版容器关闭覆盖工作流要求的自由鼠标。
+- 普通输入拦截的键盘列表是 W/A/S/D、Space、Slash；不是所有键。鼠标按钮、移动和滚轮另行拦截。调整模式使用单独临时路由，不改上述持久状态。
+- HUD 在 Screen 存在时显示 GUI Cursor；无 Screen 才显示 Mod Released / Captured。Released 蓝绿色、Captured 红色；它不是输入拦截布尔值的别名。
+
+### 4.7 HUD 渲染与调整
+
+来源：[MacroStatusHud.render](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[UltimateGardenScreen.finishHudAdjustment](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)。
+
+- 普通 HUD：Menu 打开时隐藏；showHud=false 时隐藏；不改变计数。深色半透明背景，Running 蓝绿色 / Paused 红色边框与进度条；普通文本和数值白色，分割线灰绿色。
+- 状态颜色按具体字段读取：Released / ON 正向，Captured / OFF / Disable 反向；启用时的 duration tick 与 Mousemat slot 值仍白色。工作流挂起和活动、停止原因按原始状态分类，不按翻译后文字匹配。
+- 模式选择先改配置并保存，再 build 刷新 UI；renderer 不缓存模式。
+- 调整入口保留原 Screen 实例，置 adjustingHud 后 setScreen(null)；removed 不结束原暂停会话。背景只做半透明暗色覆盖，不执行真正的场景去色 Shader。
+- render 绘制边框 / 四角手柄和说明，并提供 layout 几何；move 将原始鼠标坐标转换为 GUI 坐标，按内部 / 四边 / 四角拖动写归一化 bounds。
+- 最小尺寸取自然布局的 65%（受窗口大小限制），矩形夹在可见区域；内容等比适配卡片，非任意字体重排。
+- 临时键盘拦截先于 GUI 来源检测；真实 ESC → finish(true)，清理标准光标、保存 HUD、回到原 Settings 页面。原有暂停会话不重复建立；若原来未暂停而当前已开启 Auto-pause，返回时按当前设置处理。
+- 无 Screen 调整期间自由 OS 光标、屏蔽真实输入与视角；不写 Focus / Macro 标志。隐藏 HUD 也可预览调整，退出不修改 showHud。
+- 世界变化、其他 Screen、断线、退出和账号切换会 finish(false) 并清理；不保证异常进程终止时还能保存。
+
+### 4.8 JSON 加载、迁移与保存
+
+[ConfigManager.activateAccount](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) → defaults / 清保护集合 → AccountDirectories.resolve 验证身份 → 逐模块 load → 校验 / 迁移 → 非 protected 文件 save。
+
+- 配置根目录为 `FabricLoader configDir/ultimategarden/<账号名>/`，不是固定共享根目录；account.json 记录 schemaVersion、uuid、name。legacy 根目录只作为已验证的导入来源。
+- ConfigIO 严格读取单个 JSON object；写入临时文件后原子移动，系统不支持时回退替换。
+- 较新 schema 使用内存默认值并禁止覆盖；I/O 不可读文件也受保护；非法 JSON / 字段先备份，备份失败不覆盖原文。
+- CropConfig 保留用户字段并补新增换行字段；旧合并作物节点拆分；旧数值作物选择要求重选，不猜测新版 ID。
+- ESP schema 1 → 2 将旧样式移入 general / targets，迁移前备份；未知字段尽量保留。
+- 账号复制验证 revision、UUID、路径和源 JSON，replaceTransaction 提供回滚；复制到当前账号时 FARM / CROPS 记 pendingRestart，其余模块可重载。不要把复制成功解释为所有模块已立即应用。
+
+### 4.9 调度和计时语义
+
+| 计时源 | 暂停 / 结束行为 |
+|---|---|
+| 农业 tick / totalTicks | RouteController 正常作业路径才增加；暂停与额外换行 commandRunning 阶段不增加 |
+| ActionScheduler | setPaused(true) 冻结 remainingTicks；clear 清队列和当前动作；每 Tick 最多执行一项，回调中新排任务以后再运行 |
+| schedule(ms) | ceil(ms/50) 转 Tick；倒计时归零后在后续执行 Tick 回调，不是精确墙钟延时 |
+| scheduleDelayTicks(n) | 与旧 schedule 的执行 Tick 语义一致；n=0 仍是队列任务 |
+| scheduleAfterTicks(n) | 内部使用 n-1，保证两个串行回调间的精确 Tick 间隔；用于移动持续时长 |
+| PestLoadoutTimer | 即使 queue held / Macro 暂停也由 command.tick 推进；手动 pause/reset 的 command.cancel 不取消计时器，显式取消或 abortWorld 才结束 |
+| Rainbow / Tooltip | 渲染时间 / UI 时间机制，不是农业行计时 |
+
+<a id="configuration-reference"></a>
+## 5. Configuration Reference
+
+### 5.1 文件与主要默认值
+
+所有模块都有 schemaVersion；ESP 为 2，其余模块为 1。类链接直接对应读取 / 校验代码。
+
+| 文件 / 类 | 主要字段与默认值 |
+|---|---|
+| general.json / [GeneralConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/GeneralConfig.java) | showModChatHints=true；hint 的 15 个子项均 true（字段见模块 3.7）；autoPauseFarmWhenOpeningMenu=true；autoResumeFarmAfterGuiClose=false（仅自身 Menu） |
+| farm.json / [FarmConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/FarmConfig.java) | selectedCropType=NONE；selectedFarmMode=FARM；selectedSimulatedCropType=WHEAT |
+| ui.json / [UIConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/UIConfig.java) | uiThemeMode=SYSTEM（当前按浅色回退）；accentColor=#1B978C；language=ENGLISH；menuTransparency=0，范围 0–100 |
+| pest.json / [PestConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/PestConfig.java) | autoPestLoadout=true；pestLoadoutDelayTicks=2500；pestESPEnabled=true；已有 false 保留 |
+| crops.json / [CropConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java) | crops.<CropType> 独立节点；内置默认来源 [default-crops.json](src/client/resources/ultimategarden/default-crops.json) |
+| esp.json / [ESPConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java) | general.throughWalls=true；general.rainbowCycleDurationMs=3000；targets.SILVERFISH 下 box / fill / tracer |
+| random_delay.json / [RandomDelayConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/RandomDelayConfig.java) | 每个 Key 为 {minTicks,maxTicks}；全作物共用，不写入 crops |
+| hud.json / [HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java) | showHud=true；displayMode=COMPACT；compact / detail 布尔集合；bounds={x:0,y:0,width:0,height:0} |
+
+ESP：box 默认 enabled=true、SOLID、#00FFAA、alpha=1、lineWidth=2；fill 为 true、RAINBOW、#00BFFF、alpha=.25；tracer 为 true、SOLID、#FFAA00、alpha=1、lineWidth=1.5。alpha 0–1，线宽 0.5–16；实体主开关在 pest，不在目标对象中新增 enabled。
+
+HUD：width / height=0 表示自动尺寸；非零 bounds 均为相对 GUI 画面比例，字段要求有限且在 0–1。compact / detail 加载会保证 Compact 已启用的项在 Detail 为 true。显示开关与计时无关联。
+
+### 5.2 作物参数
+
+`name/enabled/tickLimit/totalLines/movementA/movementB/yawA/yawB/pitchA/pitchB`，可选 hintYaw / hintPitch 字段；alternateSlot 为旧兼容字段，运行切视角以 lineChangeYawPitch 为准。
+
+| 默认作物 | tickLimit / totalLines | 额外移动 | Mousemat |
+|---|---:|---|---|
+| WHEAT | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
+| FLOWER | 544 / 16 | OFF，10 tick | OFF，3 / 4 |
+| COCOA | 797 / 45 | OFF，10 tick | OFF，3 / 4 |
+| MELON | 560 / 23 | OFF，10 tick | OFF，3 / 4 |
+| PUMPKIN | 560 / 23 | OFF，10 tick | OFF，3 / 4 |
+| SUGARCANE | 475 / 30 | OFF，10 tick | ON，3 / 4 |
+| MUSHROOM | 800 / 15 | OFF，10 tick | ON，3 / 4 |
+| CACTUS | 272 / 30 | ON，10 tick | OFF，3 / 4 |
+| CARROT | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
+| POTATO | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
+| NETHER_WART | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
+| TIMETESTER | 99999 / 99999 | OFF，10 tick | OFF，3 / 4 |
+| Custom1 / Custom2 / Custom3 | 无可执行路线 | OFF，durationTicks=10 | OFF，slot1=3 / slot2=4 |
+
+- 内置作物 enabled=true；Custom 默认 false，且 isExecutable 明确拒绝 Custom，即使编辑 JSON 开启也不能当作已完成的自定义路线功能。
+- lineChangeMovement.enabled 与 lineChangeYawPitch.enabled 相互独立；durationTicks>=1，slot1 / slot2 为 1–9。旧 JSON 缺失时按 bundled defaults 补齐有效值，不覆盖已有合法参数。
+- movement 数组只接受不重复 W/S/A/D 且非空；普通 tickLimit / totalLines 必须为正整数，yaw ±180 / pitch ±90。详见 [CropDefinition](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropDefinition.java) 与 [CropConfig.updateCrop](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)。
+
+### 5.3 随机延迟参数
+
+默认范围由源码旧毫秒离散分布转换；保留默认范围时不是简单均匀 Tick 抽样，自定义范围使用含两端的均匀整数；min=max 为固定等待。所有范围要求 0<=min<=max。
+
+| Key | 默认 tick | 位置 |
+|---|---|---|
+| FARM_ROW_JITTER | 0–9 | 正常行阈值，每 Tick 重新采样 |
+| VIEW_ATTACK / VIEW_RELEASE / VIEW_TOOL_SLOT / VIEW_RESUME_ATTACK | 各 2–5 | Mousemat 四阶段 |
+| WARP | 16–32 | warp garden 后 |
+| SPAWN_POINT | 6–9 | spawnlocation 后 |
+| SPAWN_MUSHROOM | 3–6 | Spawn 前 Mushroom 移动 |
+| PEST_OPEN_WAIT / SPAWN_LOADOUT_OPEN_WAIT | 各 1–2 | loadout 初次等待 |
+| PEST_SELECT / SPAWN_LOADOUT_SELECT | 各 3–7 | loadout 选装前 |
+| PEST_SETTLE / SPAWN_LOADOUT_SETTLE | 各 2–3 | 选装后等待 |
+| SPAWN_INVENTORY_KEY | 3–8 | spawnPests 最后虚拟背包按键 |
+
+普通 loadout 的 400ms、换行前后 100ms、Spawn 入口 200ms 和业务轮询上限都是固定业务等待，不是这些随机字段。
+
+<a id="ui-structure"></a>
+## 6. UI Structure
+
+来源为 [UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) 的构建函数；下列按当前页面层级列出。英文名称与 [语言资源](src/main/resources/assets/ultimate_garden/lang/en_us.json) 对应，动态项按字段 / 枚举展开，不把未使用资源当成菜单。
+
+```text
+Ultimate Garden Menu
+├─ 顶栏：LanguageSelector（English / Chinese）、关闭
+├─ Home
+│  └─ Your garden, at a glance
+│     ├─ 运行状态、实际作物、模式 / A-B、行数 / Tick、进度、Pest 计时、待处理任务
+│     └─ Start / Start after closing menu、Pause、Reset
+├─ Farm
+│  ├─ Farm configuration
+│  │  ├─ Selected crop、Farm mode（Farm / Pests）
+│  │  └─ Simulated crop（仅 TIMETESTER）
+│  ├─ Farm macro command
+│  │  └─ Previous Line、Next Line、Set Spawn、Warp Garden、Loadout
+│  └─ Crop route definition
+│     ├─ Crop to inspect/edit、name、enabled（Custom 为未完成提示）
+│     ├─ Apply And Save Crop Definition
+│     ├─ Line Change Movement
+│     ├─ Movement Duration (ticks)
+│     ├─ Line Change Squeaky Mousemat
+│     ├─ Squeaky Mousemat 1 slot
+│     ├─ Squeaky Mousemat 2 slot
+│     └─ tickLimit、totalLines、movementA/B、yawA/B、pitchA/B、存在的 hintYaw/Pitch
+├─ Pests
+│  └─ Pest Loadout
+│     ├─ Automatic pest loadout、当前计时 / 延迟信息
+│     ├─ Delay ticks 输入、Save delay（下次倒计时生效）
+│     └─ Start timer manually、Cancel timer
+├─ ESP
+│  ├─ General ESP settings
+│  │  └─ Through walls（box/fill）、Rainbow cycle（milliseconds）
+│  └─ Pest ESP
+│     ├─ Enable Pest ESP
+│     ├─ Box → enabled、color mode、color、alpha、line width
+│     ├─ Fill → enabled、color mode、color、alpha
+│     └─ Tracer → enabled、color mode、color、alpha、line width
+├─ Hotkeys
+│  └─ 全部 13 个 Binding 的名称 / Hint / 当前绑定（见快捷键表）
+└─ Settings
+   ├─ Preferences
+   │  └─ Auto-pause farming when opening menu
+   │     └─ Auto-resume farming after closing menu
+   ├─ Hint
+   │  ├─ Show Mod Chat Hints（总开关）
+   │  ├─ Macro Hints（默认折叠）
+   │  │  └─ Macro Start、Macro Pause、Macro Reset、Macro Initialized、Line Completed、TimeTester Ticks
+   │  ├─ PestLoadout Hints（默认折叠）
+   │  │  └─ Timer Start、Timer Reset、Timer Done、Loadout Change
+   │  ├─ Focus Hints（默认折叠）
+   │  │  └─ Focus Released、Focus Restored
+   │  ├─ Crop Selection & Initialization
+   │  ├─ Hotkey Help
+   │  └─ Command Help & Errors
+   ├─ HUD
+   │  ├─ Show HUD
+   │  ├─ Adjust HUD Position & Size
+   │  ├─ Display Mode → Compact / Detail
+   │  ├─ Compact Mode Content → 全部 HudConfig.Item
+   │  └─ Detail Mode Additional Content → 同一 Item 集合
+   ├─ Anti-Check
+   │  └─ Random Delay
+   │     └─ 每个 RandomDelayConfig.Key 独立四级分组
+   │        └─ Min Ticks、Max Ticks、Save
+   ├─ Appearance
+   │  ├─ Theme（Light/Dark/System）
+   │  ├─ Accent color、Apply accent color
+   │  └─ Menu Transparency
+   └─ Account Configuration
+      ├─ Source account、Target account
+      ├─ 八个模块文件复选框、All、None
+      └─ Copy → 确认页 → 执行 / 报告 / 必要时 restart 提示
+```
+
+附属交互：DropdownSelector 使用同 Screen 的选择列表及 Cancel；LanguageSelector 是顶栏选择层；HelpTooltip 无 Hint 时不画提示图标；复制确认页含来源、目标、文件和确认 / 取消，复制执行阶段暂时禁用导航。
+
+Crop Route 的 Enter / 小键盘 Enter 只在 routeInputs 中的可用输入框聚焦时触发；与 Apply 共用 applyCropDefinition，经 act 处理失败反馈，enterHeld 阻止长按重复保存。Custom 没有普通路线字段，保存与换行配置控件仍有显示，但不意味着能够启动。
+
+HUD 内容默认：
+
+| 类别 | Item |
+|---|---|
+| Compact 默认 ON | MACRO_STATUS、FARM_MODE、CROP、LINE、LINE_TICK、PEST_LOADOUT、FOCUS_STATE、INPUT_INTERCEPTION |
+| Detail 在以上基础默认 ON | LINE_CHANGE、MOUSEMAT |
+| 两者默认 OFF | TOTAL_TICK、CURRENT_DIRECTION、LINE_CHANGE_STATUS、STOP_REASON、CURRENT_WORKFLOW |
+
+setCompact(item,true) 实际强制 Detail=true 且 Detail 该项不可交互；Compact 取消时 Detail 同步 false，随后可独立选择。与 Preferences 不同：Auto-pause=OFF 只禁用 Auto-resume 交互，不改 Auto-resume 原值。Disabled Toggle 仍显示真实 ON 的主题颜色。Hint 总开关关闭时，六组子项均禁用：三个折叠头及其四级开关、三个独立 Toggle 都沿用 40% Disabled 样式，折叠状态及子项配置不变；重新开启立即恢复可编辑状态。
+
+<a id="hotkey-reference"></a>
+## 7. Hotkey Reference
+
+注册源 [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)；分类 `Ultimate Garden`。所有默认键由原生 KeyMapping 注册，玩家在 Minecraft Controls 修改；不要直接从固定字符推导真实键位。UI 名称映射为 [LanguageKeys.hotkey](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)，原生名称为 `key.ultimate_garden.<id>`，英文资源提供其他语言的回退。
+
+| 名称 / ID | 默认绑定 | 主要入口 |
+|---|---|---|
+| Start / Pause / macro_toggle | Num+ | FarmController.shouldPauseByHotkey → startMacroByHotkey / pauseMacroByHotkey |
+| Reset / macro_reset | Num- | resetMacroByHotkey |
+| Next Line / next_line | ] | nextLine |
+| Previous Line / previous_line | [ | previousLine |
+| Set Spawn / spawn | Num* | spawnByHotkey → spawn |
+| Warp Garden / warp | Num/ | warpGarden |
+| Pest Timer / pest_loadout | Num7 | command.startPestLoadoutTimer |
+| Cancel Pest Timer / pest_timer_cancel | Num4 | command.cancelPestLoadoutTimer |
+| Loadout / loadout | Num9 | loadout |
+| Select Crop / crop_change | Num. | changeCropType |
+| Toggle HUD / toggle_hud | None / 未绑定 | 切换 hud.showHud 并保存 HUD 模块 |
+| Mouse Focus / window_focus | U | WindowsFocusController.toggle |
+| Open Ultimate Garden Menu / open_menu | M | MenuController.open；Screen 内 matchesMenuKey 关闭 |
+
+- 多数业务键使用 KeyEdge 的 isDown 上升沿；Open Menu 消费 click 队列，自身 Screen 的菜单键在文本编辑时不关闭菜单。
+- Num+ / Num- 在 manager.tick 前处理；Toggle HUD 也位于早期分支，独立于 Macro 控制。Menu 会话 active 后返回，不再处理后续路线 / 业务 Hotkey。
+- Toggle HUD 使用自己的上升沿并清点击队列，排除其他 Screen、文本编辑和 HUD 调整模式；修改同一配置对象，所以 Settings getter 与实际渲染一致。
+- 共享按键冲突沿用 Minecraft 注册机制；代码没有实现一个保证所有冲突都只能执行一个动作的仲裁器。
+- 聊天初始化：Select Crop → changeCropType 打开 ChatScreen → ALLOW_CHAT → handleInitializeInput 依次读取作物 / 模式，TIMETESTER 还需模拟作物。程序打开的聊天不当作玩家 GUI 自动暂停来源。
+
+<a id="code-navigation-index"></a>
+## 8. Code Navigation Index
+
+| 修改目标 | 首选文件 / 函数 | 调用链 / 关键状态 |
+|---|---|---|
+| 初始化注册或生命周期 | [Ultimate_GardenClient.onInitializeClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) | 配置先于控制器；账号 / 断线清理 |
+| Macro 启停、重置 | [FarmController.startMacro](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.pauseMacro](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.resetMacro](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | running、menuPause、inputIntercepting |
+| 行 Tick / 总 Tick | [RouteController.tick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[FarmState.incrementTick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java) | tick、totalTicks、commandRunning |
+| 普通移动 / A-B | [RouteController.runCurrentMovement](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) | CropDefinition.getMovementKeys(eventSelect) |
+| 换行额外移动 | [FarmCommandController.lineChangeMovement](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | RouteController.onLineFinished → continueLine |
+| Mousemat 顺序与槽位 | [SetLineYP.setAlternate](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)、[SetLineYP.setView](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java) | continueLine → startNextLine；同一个 scheduler |
+| Spawn / Num* | [FarmController.executeSpawnSequence](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.executeSpawnPointAndPests](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | Mushroom → spawnPoint → 可选 spawnPests |
+| Warp | [FarmCommandController.warpGarden](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | 两类回调：FarmController.warpGarden 与 RouteController.finishFarmRoute |
+| 普通 Loadout | [FarmCommandController.loadout](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | 固定等待，不负责自动选装 |
+| PestLoadout | [FarmCommandController.pestLoadout](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[FarmCommandController.pestLoadoutStep2](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[FarmCommandController.pestLoadoutStep3](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | timer / pendingPestLoadout / deferredPestInFlight / businessResumePending |
+| Pest 消息触发 | [CommandListener.register](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[FarmController.automateTaskByMonitorMessage](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | GAME → MacroManager → 延迟启动计时 |
+| 自动 GUI 暂停来源 | [PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java)、[InventoryInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java)、[FarmController.onPlayerScreenOpened](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | 物理来源 → Screen 初始化 → Source.PLAYER_GUI |
+| GUI 关闭恢复资格 | [GuiPauseState.close](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java)、[FarmController.tickMenuSession](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | Intent、failed、resume、menuAutoResumeEligible、menuActions |
+| 非暂停自身 Menu 的攻击 / 移动 | [MenuFarmInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java)、[VirtualInput.reapplyHeldState](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java) | keepsFarmingInput、原版 handleKeybinds、missTime |
+| Mod 释放与原生 GUI 光标 | [WindowsFocusController.reapplyCursorMode](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsFocusController.useGameFocusForPlayerGui](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java) | mouseReleased、screen、MouseHandler、GLFW |
+| 玩家输入拦截 | [WindowsInputInterceptor](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java)、[WindowsInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[WindowsMouseMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) | uiInputAllowed；虚拟输入隔离 |
+| HUD 内容 / 颜色 / 可见性 | [MacroStatusHud.render](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java) | visible(item)、showHud、实际 Focus / 工作流 |
+| HUD 调整 | [HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java) | begin → layout/move/button → finish；bounds 与临时光标 |
+| Route Apply / Enter | [UltimateGardenScreen.applyCropDefinition](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) | routeInputs → act → updateCrop → save(CROPS) |
+| ESP 实体识别 | [PestESP.collect](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java) | BAT 或 SILVERFISH；共同 SILVERFISH 样式 ID |
+| ESP 绘制 / Tracer | [ESPRenderer.draw](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java)、[ESPTracerRenderer.draw](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java) | Frame / throughWalls；Tracer Shader 另见资源树 |
+| JSON 迁移 / 未知字段 | [ConfigManager.load](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[CropConfig.load](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[ESPConfig.load](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java) | schemaVersion、protectedFiles、原文备份 |
+| 账号隔离 / 复制 | [AccountDirectories.resolve](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[ConfigManager.copyConfiguration](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) | UUID、accountRevision、pendingRestart、回滚 |
+| 聊天 Hint 分类 / UI | [HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[GeneralConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/GeneralConfig.java)、UltimateGardenScreen.hintSettings | isEnabled → 总开关 AND 子项；hint 对象保留未知字段，沿用备份与原子保存 |
+| 修改随机参数 | [RandomDelayConfig.sample](src/client/java/com/kuangsanfeng/ultimategarden/client/config/RandomDelayConfig.java)、[UltimateGardenScreen.randomDelaySettings](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) | 全局 Key → sample → scheduleDelayTicks |
+| 快捷键 / 帮助文案 | [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[LanguageKeys](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)、[HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[FarmHints](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java) | 原生名称与 UI 名称不是同一个语言机制 |
+
+**当前限制与未完成项集中提示：**
+
+- Custom1–3 是配置占位；WindowsNativeBridge 无真实 OS 实现；旧逐字符输入 / 路线 API 不是主链路。
+- Pest 精准名称 / 标签关联没有接入当前实现。源码中的 PestDetectionRegression 引用不存在的 Detection 和 preciseDetection API，是失效测试残留，不能列为已通过或已有功能。
+- Bat 支持当前已实现，但可见历史最早的 PestESP 版本就只有 Silverfish，不能捏造一个已找到的“最后正常 Bat 提交”。
+- loadout 检查任意 Screen，服务器实际菜单、选装结果与背包响应仍依赖服务器；没有实现一般性的 GUI 白名单 / 全 Screen 自动暂停。
+- README、模板元数据和旧聊天帮助未必覆盖所有新 UI 项。本文以当前连接到注册入口的代码为依据。
+- 测试桩覆盖的输入 / Focus / GUI 顺序不代表原生 Mixin 与服务器场景均已实测。新增代码后需要实测的项目应作为待验证事项保留。
+
+<a id="testing-build"></a>
+## 9. Testing & Build
+
+本次为文档重构，不重新构建或运行会生成项目文件的测试。下表来自现有脚本与测试源码；“脚本存在”不表示本次已运行。
+
+| 入口 | 覆盖范围 / 限制 |
+|---|---|
+| [tests/hints/run.ps1](tests/hints/run.ps1) | 实际 HintManager / FarmHints 输出分发、独立消息、空行抑制、动态按键读取及 JSON 兼容；Minecraft 聊天输出使用桩 |
+| [tests/config/run.ps1](tests/config/run.ps1) | ConfigRegression、AccountRegression、LineChangeConfigRegression、RandomDelayRegression、MenuPauseConfigRegression、HudConfigRegression，以及 LanguageRegression / TransparencyRegression |
+| [tests/gui/run.ps1](tests/gui/run.ps1) | GuiPauseState、PlayerGuiInput、队列冻结、折叠层级、Tooltip 时序、Pest 菜单边界；部分原生类型用桩 |
+| [tests/gui/InventoryEventOrderRegression.py](tests/gui/InventoryEventOrderRegression.py) | 读取缓存 Minecraft sources 验证背包事件顺序与输入来源注入位置；需要先生成 sources 缓存 |
+| [tests/route/run.ps1](tests/route/run.ps1) | 真实 Route / Command / State / Scheduler 的计时、额外移动、Mousemat 串行与随机参数；输入与窗口桩 |
+| [tests/focus/run.ps1](tests/focus/run.ps1) | 真实 Focus / Interceptor 控制器；模拟原生 setScreen / grabMouse / GLFW |
+| [tests/menu-input/run.ps1](tests/menu-input/run.ps1) | 真实 VirtualInput / VirtualMouse 的 held/release 与 Screen 边界；底层键盘和窗口桩 |
+| [tests/hud-adjust/run.ps1](tests/hud-adjust/run.ps1) | 实际调整控制器的拖动、边角缩放、保存、关闭状态保留与世界清理；原生边界桩 |
+| [tests/esp/run.ps1](tests/esp/run.ps1) | ESPRegression 配置 / 样式 / 几何；PestESPRegression 实体筛选桩；TracerShaderRegression 创建真实 GLFW / OpenGL 测试上下文，需要可用图形环境 |
+
+测试通常要求设置 JAVA_HOME 为 Java 25，并先编译生产类。脚本编译结果写入 build 子目录，不修改运行账号 JSON；配置测试使用临时目录。测试目录中的 stubs 只能用于测试 Classpath，不应进入 Mod 产物。
+
+构建依据：[gradle.properties](gradle.properties)、[build.gradle](build.gradle)、[fabric.mod.json](src/main/resources/fabric.mod.json)。
+
+```powershell
+$env:JAVA_HOME = '<Java 25 JDK 路径>'
+.\gradlew.bat build
+# 依赖已缓存时可用：.\gradlew.bat build --offline
+# 然后按变更范围运行对应 tests/<module>/run.ps1
+```
+
+- 正式文件：`build/libs/ultimate_garden-1.0.2+26.1.2.jar`；sources 带 `-sources` classifier。
+- archivesName=archives_base_name=ultimate_garden，archiveVersion=project.version + Minecraft 后缀；processResources 将 `fabric.mod.json.version` 展开为 `1.0.2`。
+- 当前 26.1.2 / Loom 任务图使用 jar → assemble → build，没有 remapJar；不是靠手动改文件名，也不应为满足旧模板术语而造一个 remap 任务。
+- 验证分层：源码 / 配置校验 → 纯 Java 或桩边界 → GPU 上下文 → Minecraft 原生实测 → Hypixel 服务器实测。报告结果必须注明覆盖层级。
+
+<a id="documentation-maintenance-rules"></a>
+## 10. Documentation Maintenance Rules
+
+1. 今后每次修改代码，只增量更新本文与本次变更相关的章节，不重新生成全文。
+2. 新增模块时同步更新目录树、模块说明、可点击目录和导航索引。
+3. 修改调用链、状态机、暂停恢复或异步顺序时，更新对应 Execution Flow，并注明状态所有者。
+4. 修改 JSON 字段、默认值或迁移行为时，同步更新 Configuration Reference；不把已有用户值误写为强制默认。
+5. UI、Hotkey 与构建变更分别更新对应章节；避免把历次开发日志反复追加为互相冲突的当前行为。
+6. 不将未经验证的行为写为已实测功能；区分本地动作、Minecraft 事件、服务器响应以及预期设计。
+7. 路径与函数名优先于行号；删除 / 移动文件后同步修复引用和锚点。保留关键旧接口的真实用途，不继续记录已经失效的类或 API 为主链路。
+8. 提交前验证 UTF-8、链接与源码标识符；文档维护不应顺带修改业务源码或覆盖其他未提交工作。

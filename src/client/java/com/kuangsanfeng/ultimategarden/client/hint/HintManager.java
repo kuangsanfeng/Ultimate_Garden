@@ -14,7 +14,36 @@ public final class HintManager {
     private HintManager() {
     }
 
+    public static boolean isEnabled(String event) {
+        var configs=Ultimate_GardenClient.getConfigManager();
+        if (configs==null) return true;
+        var general=configs.getGeneralConfig();
+        if (!general.isShowModChatHints()) return false;
+        if (event.equals("PestLoadoutTimeUp")) return general.hintEnabled(com.kuangsanfeng.ultimategarden.client.config.GeneralConfig.Hint.pestTimerDone)
+                || general.hintEnabled(com.kuangsanfeng.ultimategarden.client.config.GeneralConfig.Hint.pestLoadoutChange);
+        String key=switch(event) {
+            case "MacroStart" -> "macroStart";
+            case "ProgramPause" -> "macroPause";
+            case "ProgramReset" -> "macroReset";
+            case "InitializeDone" -> "macroInitialized";
+            case "LineFinished" -> "lineCompleted";
+            case "TimeTesterCount" -> "timeTesterTicks";
+            case "PestLoadoutTimerStart" -> "pestTimerStart";
+            case "PestLoadoutTimerReset" -> "pestTimerReset";
+            case "PestTimerDone" -> "pestTimerDone";
+            case "PestLoadoutChange" -> "pestLoadoutChange";
+            case "FocusRelease" -> "focusReleased";
+            case "FocusRestore" -> "focusRestored";
+            case "CropSelect", "ModeSelect", "SimulateCropSelect", "CropInfo" -> "cropSelectionInitialization";
+            case "Hotkey" -> "hotkeyHelp";
+            case "Helper", "WrongCommand" -> "commandHelpErrors";
+            default -> null;
+        };
+        return key==null || general.hintEnabled(com.kuangsanfeng.ultimategarden.client.config.GeneralConfig.Hint.valueOf(key));
+    }
+    public static void printFor(String event, String text) { if (isEnabled(event)) print(text); }
     public static void printHint(String type) {
+        if (!isEnabled(type)) return;
         printNull();
         switch (type) {
             case "Hotkey" -> {

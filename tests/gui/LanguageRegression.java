@@ -77,7 +77,12 @@ public final class LanguageRegression {
         Path screen=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java");
         Matcher refs=Pattern.compile("\"(ui\\.ultimategarden\\.[^\"]+)\"").matcher(Files.readString(screen));
         Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.");
-        while(refs.find())if(!prefixes.contains(refs.group(1)))check(english.has(refs.group(1)));
+        while(refs.find())if(!prefixes.contains(refs.group(1)) && !refs.group(1).equals("ui.ultimategarden.hint."))check(english.has(refs.group(1)));
+        for (var hint : GeneralConfig.Hint.values()) {
+            check(english.has("ui.ultimategarden.hint." + hint.name()));
+            check(english.has("ui.ultimategarden.hint." + hint.name() + ".help"));
+        }
+        for (String group : List.of("macro","pest","focus")) check(english.has("ui.ultimategarden.hint." + group));
         for (var item : HudConfig.Item.values()) check(english.has("ui.ultimategarden.hud.item." + item.name()));
         for (var workflow : com.kuangsanfeng.ultimategarden.client.macro.farm.action.FarmCommandController.Workflow.values())
             check(english.has("ui.ultimategarden.hud.workflow." + workflow.name()));

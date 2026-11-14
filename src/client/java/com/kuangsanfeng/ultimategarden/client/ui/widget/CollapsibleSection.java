@@ -53,17 +53,18 @@ public final class CollapsibleSection extends StyledButton {
 
     @Override protected void extractContents(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         var p = palette.get();
+        float opacity=active ? 1f : .4f;
         int surface = state.depth() == 0 ? p.surface() : ThemePalette.blend(p.surface(), p.sidebar(), .55f);
-        RoundedRect.fill(g, getX(), getY(), getWidth(), getHeight(), 10, p.bg(isHoveredOrFocused() ? p.selected() : surface));
+        RoundedRect.fill(g, getX(), getY(), getWidth(), getHeight(), 10, p.bg(isHoveredOrFocused() && active ? p.selected() : surface, opacity));
         var title = getMessage().copy().withStyle(ChatFormatting.BOLD);
         int textWidth = Math.max(20, getWidth() - 40 - (description.isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP));
-        g.textWithWordWrap(Minecraft.getInstance().font, title, getX() + 10, getY() + 8, textWidth, p.fg(p.text()), false);
-        help.iconAfterText(g, Minecraft.getInstance().font, this, title, getX() + 10, getY() + 8, textWidth, description, p);
+        g.textWithWordWrap(Minecraft.getInstance().font, title, getX() + 10, getY() + 8, textWidth, p.fg(p.text(), opacity), false);
+        help.iconAfterText(g, Minecraft.getInstance().font, this, title, getX() + 10, getY() + 8, textWidth, description, p, opacity);
         int cx = getX() + getWidth() - 16, cy = getY() + getHeight() / 2;
         // Rasterized triangles, independent of the font's symbol coverage.
         for (int i = 0; i < 5; i++) {
-            if (isExpanded()) g.fill(cx - 4 + i, cy - 2 + i, cx + 5 - i, cy - 1 + i, p.fg(p.text()));
-            else g.fill(cx - 2 + i, cy - 4 + i, cx - 1 + i, cy + 5 - i, p.fg(p.text()));
+            if (isExpanded()) g.fill(cx - 4 + i, cy - 2 + i, cx + 5 - i, cy - 1 + i, p.fg(p.text(), opacity));
+            else g.fill(cx - 2 + i, cy - 4 + i, cx - 1 + i, cy + 5 - i, p.fg(p.text(), opacity));
         }
     }
 }
