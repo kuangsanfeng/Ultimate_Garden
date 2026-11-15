@@ -32,11 +32,17 @@ public final class MacroKeyBindings {
             new Binding("Cancel pest timer", "Cancel the current pest loadout timer.", PEST_TIMER_CANCEL_KEY),
             new Binding("Loadout", "Execute /loadout", LOADOUT_KEY),
             new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
+            new Binding("Toggle Zombie Shootout", "Start or stop Zombie Shootout.", SHOOTOUT_KEY),
             new Binding("Toggle HUD", "Show or hide the HUD.", HUD_TOGGLE_KEY),
             new Binding("Mouse focus", "Toggle cursor release.", WINDOW_FOCUS_KEY),
             new Binding("Open Ultimate Garden Menu", "Open menu; " + getMenuKeyName() + " closes it outside text input.", OPEN_MENU_KEY));
     }
     public static String getMenuKeyName() { return OPEN_MENU_KEY.getTranslatedKeyMessage().getString(); }
+    public static boolean matchesShootoutMouse(int button) {
+        var key=((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)SHOOTOUT_KEY).getKey();
+        return key.getType()==InputConstants.Type.MOUSE && key.getValue()==button;
+    }
+    public static boolean matchesShootoutKey(net.minecraft.client.input.KeyEvent event) { return SHOOTOUT_KEY.matches(event); }
     public static boolean matchesMenuKey(net.minecraft.client.input.KeyEvent event) { return OPEN_MENU_KEY.matches(event); }
     public static void clearMenuClicks() { while (OPEN_MENU_KEY.consumeClick()) { } }
     public static boolean isMenuKeyPhysicallyDown() {
@@ -60,6 +66,8 @@ public final class MacroKeyBindings {
     // Key Mapping
     // =========================================================
 
+    private static final KeyMapping SHOOTOUT_KEY = register("toggle_zombie_shootout", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyEdge SHOOTOUT_EDGE = new KeyEdge();
     private static final KeyMapping HUD_TOGGLE_KEY = register("toggle_hud", GLFW.GLFW_KEY_UNKNOWN);
     private static final KeyEdge HUD_TOGGLE_EDGE = new KeyEdge();
     private static final KeyMapping OPEN_MENU_KEY = register("open_menu", GLFW.GLFW_KEY_M);
@@ -357,6 +365,10 @@ public final class MacroKeyBindings {
                             configs.save(com.kuangsanfeng.ultimategarden.client.config.ConfigManager.Module.HUD);
                         }
                     }
+                    boolean shootoutToggle=SHOOTOUT_EDGE.rising(isPressed(SHOOTOUT_KEY));
+                    while(SHOOTOUT_KEY.consumeClick()){}
+                    if(shootoutToggle && hudInputAllowed && !com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive())
+                        com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.toggle();
                     // =====================================================
                     // Num+
                     // =====================================================

@@ -55,6 +55,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         espManager = new com.kuangsanfeng.ultimategarden.client.macro.esp.ESPManager(configManager);
         var pestESP = new com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestESP(configManager.getPestConfig());
         espManager.register(com.kuangsanfeng.ultimategarden.client.config.ESPConfig.SILVERFISH, pestESP::collect);
+        new com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
         espManager.initialize();
 
 
@@ -152,13 +153,22 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// =====================================================
 
         macroManager = new MacroManager(farmController);
+        com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.register();
+        windowsInputInterceptor.setExternalOwner(com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::intercepting);
+        windowsInputInterceptor.setExternalMouseOwners(
+                com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingAim,
+                com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingShoot);
+        farmController.setExternalInputOwner(com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE::enabled);
         var macroHud = new com.kuangsanfeng.ultimategarden.client.ui.hud.MacroStatusHud(configManager, farmController, windowsState);
         net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
                 com.kuangsanfeng.ultimategarden.Ultimate_Garden.id("macro_status"), (graphics, delta) -> macroHud.render(graphics));
+        var shootoutHud = new com.kuangsanfeng.ultimategarden.client.ui.hud.ZombieShootoutHud(configManager);
+        net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
+                com.kuangsanfeng.ultimategarden.Ultimate_Garden.id("zombie_shootout_status"), (graphics, delta) -> shootoutHud.render(graphics));
         net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(
                 (game, screen, width, height) -> farmController.onPlayerScreenOpened(screen));
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.tick());
-        configManager.setCurrentAccountCopyGuard(farmController::canEditRouteConfiguration);
+        configManager.setCurrentAccountCopyGuard(() -> farmController.canEditRouteConfiguration() && !com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled());
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> {
             var session = game.getUser();
             if (session == observedUser) return;

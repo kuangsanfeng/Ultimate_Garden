@@ -139,7 +139,10 @@ public final class FarmController implements MacroManager.Module {
 
         startMacro();
     }
+    private java.util.function.BooleanSupplier externalInputOwner = () -> false;
+    public void setExternalInputOwner(java.util.function.BooleanSupplier owner) { externalInputOwner=java.util.Objects.requireNonNull(owner); }
     public void startMacro() {
+        if (externalInputOwner.getAsBoolean()) return;
         if (menuPause.isActive()) return;
         if (state.getCropType() == 0 || !configManager.getCropConfig().get(state.getCropType()).isExecutable()) return;
 

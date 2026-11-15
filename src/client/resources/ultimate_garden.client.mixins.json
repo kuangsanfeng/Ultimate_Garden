@@ -12,7 +12,10 @@
 		"WindowsFocusMixin",
 		"WindowsPauseMixin",
 		"WindowsMouseMixin",
-		"WindowsMissTimeMixin"
+		"WindowsMissTimeMixin",
+		"ShootoutMouseAccessor",
+		"ShootoutAimFrameMixin",
+		"ShootoutPongMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

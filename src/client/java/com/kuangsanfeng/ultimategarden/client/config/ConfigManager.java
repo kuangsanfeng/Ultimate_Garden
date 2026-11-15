@@ -11,7 +11,7 @@ import java.util.*;
 
 /** One instance is loaded before controllers are constructed. */
 public final class ConfigManager {
-    public enum Module { GENERAL, FARM, UI, CROPS, PEST, ESP, RANDOM_DELAY, HUD }
+    public enum Module { GENERAL, FARM, UI, CROPS, PEST, ESP, RANDOM_DELAY, HUD, ZOMBIE_SHOOTOUT, ANTI_CHECK }
     private Path directory;
     private AccountDirectories accounts;
     private AccountDirectories.Profile profile;
@@ -25,6 +25,10 @@ public final class ConfigManager {
     private final UIConfig ui = new UIConfig();
     private final PestConfig pest = new PestConfig();
     private final ESPConfig esp = new ESPConfig();
+    private final ViewDeviationConfig viewDeviation=new ViewDeviationConfig();
+    public ViewDeviationConfig getViewDeviationConfig(){return viewDeviation;}
+    private final ZombieShootoutConfig shootout = new ZombieShootoutConfig();
+    public ZombieShootoutConfig getZombieShootoutConfig(){return shootout;}
     private final HudConfig hud = new HudConfig();
     private final RandomDelayConfig randomDelays = new RandomDelayConfig();
     private boolean repairedField;
@@ -134,7 +138,9 @@ public final class ConfigManager {
     }
     private void defaults(Module module) {
         if (module == Module.GENERAL) general.resetToDefault();
+        if (module == Module.ANTI_CHECK) viewDeviation.resetToDefault();
         if (module == Module.HUD) hud.resetToDefault();
+        if (module == Module.ZOMBIE_SHOOTOUT) shootout.resetToDefault();
         if (module == Module.PEST) pest.resetToDefault();
         if (module == Module.ESP) esp.resetToDefault();
         if (module == Module.RANDOM_DELAY) randomDelays.resetToDefault();
@@ -157,6 +163,10 @@ public final class ConfigManager {
                 if (module == Module.CROPS) {
                     crops.load(document);
                     if (crops.wasRepaired() && !io.backup(file(module))) protectedFiles.add(module);
+                } else if (module == Module.ANTI_CHECK) {
+                    if(viewDeviation.load(document) && !io.backup(file(module))) protectedFiles.add(module);
+                } else if (module == Module.ZOMBIE_SHOOTOUT) {
+                    if(shootout.load(document) && !io.backup(file(module))) protectedFiles.add(module);
                 } else if (module == Module.HUD) {
                     if (hud.load(document) && !io.backup(file(module))) protectedFiles.add(module);
                 } else if (module == Module.RANDOM_DELAY) {
@@ -231,6 +241,8 @@ public final class ConfigManager {
             case ESP -> document = esp.toJson(document);
             case RANDOM_DELAY -> document = randomDelays.toJson(document);
             case HUD -> document = hud.toJson(document);
+            case ANTI_CHECK -> document = viewDeviation.toJson(document);
+            case ZOMBIE_SHOOTOUT -> document = shootout.toJson(document);
             case GENERAL -> {
                 document.add("hint",general.hintsToJson(document));
                 document.addProperty("showModChatHints", general.isShowModChatHints());
@@ -286,6 +298,10 @@ public final class ConfigManager {
         if (module == Module.CROPS) {
             CropConfig candidate = new CropConfig(); candidate.load(document);
             if(candidate.wasRepaired()) throw new IOException("Source crop configuration requires repair");
+        } else if (module == Module.ANTI_CHECK) {
+            if(new ViewDeviationConfig().load(document)) throw new IOException("Invalid view check configuration");
+        } else if (module == Module.ZOMBIE_SHOOTOUT) {
+            if(new ZombieShootoutConfig().load(document)) throw new IOException("Invalid Shootout config");
         } else if (module == Module.HUD) {
             if (new HudConfig().load(document)) throw new IOException("Invalid HUD configuration");
         } else if (module == Module.RANDOM_DELAY) {

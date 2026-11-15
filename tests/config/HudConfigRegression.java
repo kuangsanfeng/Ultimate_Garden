@@ -10,6 +10,29 @@ public final class HudConfigRegression {
     public static void main(String[] args) throws Exception {
         var hud = new HudConfig();
         check(hud.isShowHud());
+        check(hud.isShowZombieShootoutHud());
+        check(!hud.isFarmOnlyWhileRunning() && !hud.isZombieOnlyWhileRunning());
+        for (boolean farmShow : new boolean[]{false,true}) for (boolean farmOnly : new boolean[]{false,true})
+            for (boolean zombieShow : new boolean[]{false,true}) for (boolean zombieOnly : new boolean[]{false,true}) {
+                hud.setShowHud(farmShow); hud.setFarmOnlyWhileRunning(farmOnly);
+                hud.setShowZombieShootoutHud(zombieShow); hud.setZombieOnlyWhileRunning(zombieOnly);
+                for (boolean farmRunning : new boolean[]{false,true}) for (boolean zombieRunning : new boolean[]{false,true}) {
+                    check(hud.showFarm(farmRunning)==(farmShow && (!farmOnly || farmRunning)));
+                    check(hud.showZombie(zombieRunning)==(zombieShow && (!zombieOnly || zombieRunning)));
+                }
+                var copy=new HudConfig(); check(!copy.load(hud.toJson(new JsonObject())));
+                check(copy.isFarmOnlyWhileRunning()==farmOnly && copy.isZombieOnlyWhileRunning()==zombieOnly);
+                check(copy.isShowHud()==farmShow && copy.isShowZombieShootoutHud()==zombieShow);
+                // Parent toggles must preserve child values in memory and in persisted JSON.
+                hud.setShowHud(!farmShow); hud.setShowZombieShootoutHud(!zombieShow);
+                check(hud.isFarmOnlyWhileRunning()==farmOnly && hud.isZombieOnlyWhileRunning()==zombieOnly);
+            }
+        hud.resetToDefault();
+        JsonObject invalidChild=new JsonObject(); invalidChild.addProperty("farmOnlyWhileRunning","true");
+        invalidChild.addProperty("showZombieShootoutHud",3); invalidChild.add("zombieOnlyWhileRunning",JsonNull.INSTANCE);
+        check(hud.load(invalidChild)); check(!hud.isFarmOnlyWhileRunning() && !hud.isZombieOnlyWhileRunning() && hud.isShowZombieShootoutHud());
+        JsonObject futureHud=new JsonObject(); futureHud.addProperty("futureHudOption","keep");
+        check(hud.toJson(futureHud).get("futureHudOption").getAsString().equals("keep"));
         hud.setBounds(.1,.2,.3,.4); hud.setMode(Mode.DETAIL); hud.setDetail(Item.CURRENT_DIRECTION,true);
         hud.setShowHud(false);
         var hidden = new HudConfig(); check(!hidden.load(hud.toJson(new JsonObject())));
@@ -43,12 +66,18 @@ public final class HudConfigRegression {
         compact.addProperty("CROP","yes"); check(hud.load(partial)); check(hud.compact(Item.CROP));
         Path root = Files.createTempDirectory("ug-hud-"); var configs = new ConfigManager(root);
         check(Files.exists(root.resolve("hud.json")));
+        configs.getHudConfig().setFarmOnlyWhileRunning(true);
+        configs.getHudConfig().setShowHud(false);
+        configs.getHudConfig().setZombieOnlyWhileRunning(true);
+        configs.getHudConfig().setShowZombieShootoutHud(false);
         configs.getHudConfig().setCompact(Item.CROP,false);
         configs.getHudConfig().setDetail(Item.CROP,true);
         configs.getHudConfig().setMode(Mode.DETAIL);
         check(configs.save(ConfigManager.Module.HUD));
         var loaded = new ConfigManager(root);
         check(loaded.getHudConfig().getMode()==Mode.DETAIL);
+        check(loaded.getHudConfig().isFarmOnlyWhileRunning() && loaded.getHudConfig().isZombieOnlyWhileRunning());
+        check(!loaded.getHudConfig().isShowHud() && !loaded.getHudConfig().isShowZombieShootoutHud());
         check(!loaded.getHudConfig().compact(Item.CROP)); check(loaded.getHudConfig().detail(Item.CROP));
         // A single mode write/save must immediately change visible items in both directions.
         var live = configs.getHudConfig();

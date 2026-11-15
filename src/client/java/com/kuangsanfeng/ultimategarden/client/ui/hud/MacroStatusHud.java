@@ -29,7 +29,7 @@ public final class MacroStatusHud {
         boolean editing = HudAdjustmentController.isActive();
         if (client.player == null || client.level == null || (!editing && client.options.hideGui) || client.screen instanceof UltimateGardenScreen) return;
         var state = farm.getState(); var hud = configs.getHudConfig();
-        if (!editing && !hud.isShowHud()) return;
+        if (!editing && !hud.showFarm(state.isRunning())) return;
         var crop = state.getCropType() == 0 ? null : configs.getCropConfig().get(state.getCropType());
         String status = text(state.isRunning() ? "running" : "paused");
         int enabledColor = ThemePalette.from(configs.getUIConfig()).accent();
@@ -80,20 +80,15 @@ public final class MacroStatusHud {
         if (editing) {
             g.fill(0,0,(int)sw,(int)sh,0x99000000);
             HudAdjustmentController.layout(x,y,bw,bh,Math.min(sw,width*.65),Math.min(sh,height*.65));
-            RoundedRect.outline(g,(int)x-2,(int)y-2,(int)bw+4,(int)bh+4,8,0xffffffff);
-            for (double hx : new double[]{x,x+bw}) for (double hy : new double[]{y,y+bh})
-                g.fill((int)hx-2,(int)hy-2,(int)hx+3,(int)hy+3,0xffffffff);
-            String instruction=client.font.plainSubstrByWidth(text("adjust.instructions"),Math.max(1,(int)sw-16));
-            g.text(client.font,instruction,8,(int)sh-12,0xffffffff,false);
+
         }
         width=(int)Math.round(bw/scale); height=(int)Math.round(bh/scale);
         g.pose().pushMatrix();
         g.pose().translate((float)x,(float)y);
         g.pose().scale(scale);
         int borderColor = state.isRunning() ? enabledColor : 0xffed6669;
-        RoundedRect.fill(g, 0, 0, width, height, 8, 0xdf142420);
-        RoundedRect.outline(g, 0, 0, width, height, 8, borderColor);
-        g.text(client.font, Component.literal(text("title")).withStyle(net.minecraft.ChatFormatting.BOLD), 11, 11, 0xffffffff, false);
+        HudPanel.background(g, width, height, borderColor);
+        HudPanel.title(g, text("title"));
         if (showStatus) {
             RoundedRect.fill(g, 11, 29, 6, 6, 3, accent);
             g.text(client.font, Component.literal(status), 23, 28, accent, false);
@@ -105,8 +100,6 @@ public final class MacroStatusHud {
         int rowY = showStatus ? 47 : 30;
         for (Row row : rows) {
             int rowHeight = rowHeight(client, row, width);
-            g.text(client.font, row.label, 11, rowY, 0xffffffff, false);
-            int valueY = rowHeight == 28 ? rowY + 11 : rowY;
             int valueColor = switch (row.item) {
                 case MACRO_STATUS -> accent;
                 case FOCUS_STATE -> client.screen != null ? 0xffffffff : window.isMouseReleased() ? enabledColor : disabledColor;
@@ -126,8 +119,7 @@ public final class MacroStatusHud {
                         ? 0xffffffff : farm.getCommand().getScheduler().isPaused() ? disabledColor : enabledColor;
                 default -> 0xffffffff;
             };
-            g.text(client.font, row.value, width - client.font.width(row.value) - 11, valueY, valueColor, false);
-            g.fill(11, rowY + rowHeight - 5, width - 11, rowY + rowHeight - 4, 0xff626b66);
+            HudPanel.row(g, row.label, row.value, width, rowY, rowHeight, valueColor);
             rowY += rowHeight;
         }
         float progress = crop == null || crop.getType().isCustom() ? 0 : Math.max(0, Math.min(1, state.getTick() / (float)crop.getTickLimit()));
@@ -136,6 +128,6 @@ public final class MacroStatusHud {
         g.pose().popMatrix();
     }
     private int rowHeight(Minecraft client, Row row, int width) {
-        return client.font.width(row.label) + client.font.width(row.value) + 32 > width ? 28 : 19;
+        return HudPanel.rowHeight(row.label, row.value, width);
     }
 }

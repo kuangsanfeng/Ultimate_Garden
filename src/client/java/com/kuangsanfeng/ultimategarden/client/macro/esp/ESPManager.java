@@ -19,6 +19,11 @@ public final class ESPManager {
     private final ConfigManager configs;
     private final ESPRenderer renderer = new ESPRenderer();
     private final Map<String, BiConsumer<LevelExtractionContext, Consumer<ESPTarget>>> modules = new LinkedHashMap<>();
+    private final Map<String,ESPTargetStyle> fixedStyles=new LinkedHashMap<>();
+    public void registerFixed(String id,ESPTargetStyle style,BiConsumer<LevelExtractionContext,Consumer<ESPTarget>> module){
+        if(registered||modules.containsKey(id))throw new IllegalStateException("ESP registration closed or duplicate");
+        fixedStyles.put(id,style);modules.put(id,module);
+    }
     private volatile long generation;
     private boolean registered;
     public ESPManager(ConfigManager configs) { this.configs = configs; }
@@ -50,7 +55,7 @@ public final class ESPManager {
         List<ESPTarget> targets = new ArrayList<>();
         Map<String, ESPTargetStyle> styles = new LinkedHashMap<>();
         for (var module : modules.entrySet()) {
-            var style = config.registerTarget(module.getKey()).snapshot();
+            var style = fixedStyles.containsKey(module.getKey())?fixedStyles.get(module.getKey()):config.registerTarget(module.getKey()).snapshot();
             if (!style.hasVisibleComponent()) continue;
             styles.put(module.getKey(), style);
             module.getValue().accept(context, target -> {

@@ -1,737 +1,846 @@
-# Ultimate Garden — Code Structure
+# Ultimate Garden 工程结构与复用导航
 
-> 以当前工作区源码为准；本文说明本地实现，不把服务器响应或测试桩结果视为实机保证。代码定位以文件与函数为主。原文备份：[Code_Structure.backup.md](Code_Structure.backup.md)。
+> 审计日期：2026-11-15（Asia/Taipei）。分支：`master`；HEAD：`9d555a5512e23135433f192b0ee1a395babc99f9`。
+> **工作区有未提交修改及未跟踪源码**。本文对应审计时整个工作区，包括尚未提交的 Carnival、Anti-Check、HUD 和采集组件，不能仅检出上述 HEAD 来复现。旧文档仅作查漏，功能判断以当前源码为准。
+> 本次只修改本文；不执行分支切换、提交、合并或业务修复。文中“已实现”指存在代码路径，不等于真实服务器验证。Hypixel 命中率、60 Hz 故障原因、服务器是否接受输入及原生探测响应均 **Not Verified In-Game**。
 
-## Table of Contents
+## 快速任务导航
 
-1. [Project Overview](#project-overview)
-2. [Project Directory Structure](#project-directory-structure)
-3. [Module Architecture](#module-architecture)
-4. [Execution Flows](#execution-flows)
-5. [Configuration Reference](#configuration-reference)
-6. [UI Structure](#ui-structure)
-7. [Hotkey Reference](#hotkey-reference)
-8. [Code Navigation Index](#code-navigation-index)
-9. [Testing & Build](#testing-build)
-10. [Documentation Maintenance Rules](#documentation-maintenance-rules)
+客户端 Java 链接均从项目根目录出发；完整文件、方法索引见[源码索引](#source-index)。
 
-<a id="project-overview"></a>
-## 1. Project Overview
-
-Ultimate Garden 是客户端农业自动化 Mod，包含路线移动、loadout 操作、Pest 倒计时、Pest ESP、设置菜单及状态 HUD。PestLoadout 是装备切换流程，不是寻路或攻击害虫的 Macro。
-
-| 项目 | 当前值 / 边界 |
+| 要实现什么 | 优先查看模块和入口 |
 |---|---|
-| Mod ID / 版本 | `ultimate_garden` / `1.0.2` |
-| Minecraft / Java | `26.1.2` / Java 25 |
-| Mod Loader | Fabric Loader `0.19.3` |
-| Fabric API | `0.155.2+26.1.2` |
-| 构建工具 | Gradle 9.5.1；Loom 声明 `1.17-SNAPSHOT` |
-| 技术架构 | Fabric 事件 + 原生 Screen / KeyMapping + Mixin + 客户端 Tick 队列 + Gson JSON |
-| 渲染 | HUD 使用 GuiGraphicsExtractor；ESP 使用 Fabric LevelRenderEvents 与统一 RenderPipeline |
-| 运行配置 | 按 Minecraft 账号隔离，选择、偏好与样式持久化；运行状态不落盘 |
+| 加一个生命周期受控的 Macro | [MacroManager.Module/register](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/MacroManager.java)（目前仅 Farm 注册）；对照 `ZombieShootoutController.register/start/stop` 的独立生命周期 |
+| 修改客户端事件或账号切换 | [Ultimate_GardenClient.onInitializeClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
+| 调整农业路线、行时间、额外换行 | [FarmController.tick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) → [RouteController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)；`CropDefinition` |
+| Spawn、Warp、Loadout、GUI 操作 | [FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) 动作入口 → [FarmCommandController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) → 自有 `ActionScheduler` |
+| 调整害虫消息或倒计时 | [CommandListener.register](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java) → [FarmController.automateTaskByMonitorMessage](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、`PestLoadoutTimer` |
+| 增加服务器消息观察 | [CommandListener](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)，复用 GAME 事件，不另读 latest.log |
+| 修改 Shootout 运动、优先级、重锁定 | [ZombieShootoutController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)、[ShootoutModel](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutModel.java) / Policy / TargetRound / CandidateSelection |
+| 修改本地视角更新 | [ShootoutAimFrameMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutAimFrameMixin.java) → aimFrame → [ShootoutMouseInput.aim](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java) |
+| 排查不发射 | [ShootoutAimDiagnostics](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)；串联 solutionSequence、inputSequence、attemptSequence |
+| 新增 ESP | [ESPManager.register/registerFixed](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java)，生产不可变 `ESPTarget`，不要另建渲染事件 |
+| 新增 HUD / 编辑布局 | [HudPanel](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudPanel.java)、[HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[HudConfig.HudId](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java) |
+| 新增菜单设置 | [UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) 的 heading/toggle/input/nestedDelaySection（私有装配助手）；`LanguageManager/HelpTooltip` |
+| 配置保存、账号隔离、迁移 | [ConfigManager](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[ConfigIO](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java)、[AccountDirectories](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)，不直接覆盖用户 JSON |
+| 输入来源、释放和失焦 | [输入与 Focus](#input)，先查各 source scope 和 owner supplier |
+| 找可直接复用或可提取的能力 | [Reusable Components](#reuse) |
 
-主入口 [Ultimate_Garden](src/main/java/com/kuangsanfeng/ultimategarden/Ultimate_Garden.java) 提供 Mod 标识等基础设施；客户端组装入口为 [Ultimate_GardenClient.onInitializeClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)。业务主要在客户端，`fabric.mod.json` 仍包含模板描述和作者信息，不能据此推导额外功能。
+## 目录
 
-**依赖方向：** 初始化器组装 Config / Input / Focus → FarmController 创建 Command / Route → MacroManager 分发 Tick；Hotkeys、聊天事件和 Menu 调用控制器。HUD 读取状态，ESP 提取实体并独立绘制。修改 HUD 不应驱动计时或 Macro；修改统一渲染器不应改动实体识别。
+- [1. 工程与构建](#project)
+- [2. 事件、线程与跨模块时序](#events)
+- [3. 输入与 Focus](#input)
+- [4. 模块职责、状态与清理](#modules)
+- [5. 业务调用链](#flows)
+- [6. 配置与状态读取](#config)
+- [7. Reusable Components](#reuse)
+- [8. 建议提取的接口边界](#extraction)
+- [9. Mixin 清单](#mixins)
+- [10. 全量源码导航索引](#source-index)
+- [11. 资源与测试索引](#assets-tests)
+- [12. 审计结果与边界](#verification)
 
-<a id="project-directory-structure"></a>
-## 2. Project Directory Structure
+<a id="project"></a>
+## 1. 工程与构建
 
-以下列出全部核心 Java 源码与运行资源；路径中的包根为 `com/kuangsanfeng/ultimategarden`。不包含缓存和生成文件。目录树用于找文件，职责与调用入口见下一节。
+- [build.gradle](build.gradle)：Fabric Loom 分离 `main/client` source set，并合并到同一个 `ultimate_garden` Mod；Java release/source/target 为 **25**，构建普通包及 sourcesJar。没有把 `tests/` 配置成 Gradle 标准 Java test source set。
+- [gradle.properties](gradle.properties)：Minecraft **26.1.2**、Fabric Loader **0.19.3**、Fabric API **0.155.2+26.1.2**、Mod **1.0.2**、Loom `1.17-SNAPSHOT`；配置缓存关闭。以这些实际声明为准，勿从旧版本映射推断 API。
+- [settings.gradle](settings.gradle)、[Gradle Wrapper](gradle/wrapper/gradle-wrapper.properties)：插件仓库及固定 Wrapper 分发来源（Gradle 9.5.1）；[CI](.github/workflows/build.yml) 用 Microsoft JDK25 执行 `./gradlew build`，没有调用独立 tests 脚本。
+- [fabric.mod.json](src/main/resources/fabric.mod.json)：公共与客户端入口，公共/客户端两套 Mixin 配置；description/contact 仍有模板内容，不代表实际业务状态。
+- `src/main/java`：公共初始化和服务器示例 Mixin；业务主要位于 `src/client/java`。
+- `src/client/resources/ultimategarden`：默认作物定义与 Shootout 静态实测模型；`src/main/resources/assets/ultimate_garden/lang`：中英文语言字典。
+- `tests/`：独立 Java main、Python 审查和 PowerShell 运行脚本，含模拟 Minecraft/GLFW 的 stubs。编译成功不能代替这些脚本，也不能代替游戏验证。
+- `docs/` 是补充文档，不是模型或配置的运行时权威来源。`build/`、`.gradle/`、`run/` 属于构建/本地实例产物，不列为源码复用入口。
+
+### 1.1 目录地图
 
 ```text
-src/
-├── client/
-│   ├── java/
-│   │   └── com/
-│   │       └── kuangsanfeng/
-│   │           └── ultimategarden/
-│   │               └── client/
-│   │                   ├── command/
-│   │                   │   ├── CommandHelper.java
-│   │                   │   ├── CommandListener.java
-│   │                   │   └── CommandTree.java
-│   │                   ├── config/
-│   │                   │   ├── AccountDirectories.java
-│   │                   │   ├── AccountIdentity.java
-│   │                   │   ├── ConfigIO.java
-│   │                   │   ├── ConfigManager.java
-│   │                   │   ├── CropConfig.java
-│   │                   │   ├── CropData.java
-│   │                   │   ├── CropDefinition.java
-│   │                   │   ├── ESPConfig.java
-│   │                   │   ├── FarmConfig.java
-│   │                   │   ├── GeneralConfig.java
-│   │                   │   ├── HudConfig.java
-│   │                   │   ├── PestConfig.java
-│   │                   │   ├── RandomDelayConfig.java
-│   │                   │   └── UIConfig.java
-│   │                   ├── hint/
-│   │                   │   ├── HintManager.java
-│   │                   │   └── KeyNameMap.java
-│   │                   ├── hotkey/
-│   │                   │   └── MacroKeyBindings.java
-│   │                   ├── input/
-│   │                   │   ├── PlayerGuiInput.java
-│   │                   │   ├── VirtualInput.java
-│   │                   │   ├── VirtualKeyboard.java
-│   │                   │   └── VirtualMouse.java
-│   │                   ├── macro/
-│   │                   │   ├── esp/
-│   │                   │   │   ├── render/
-│   │                   │   │   │   ├── ESPBoxRenderer.java
-│   │                   │   │   │   ├── ESPFillRenderer.java
-│   │                   │   │   │   └── ESPTracerRenderer.java
-│   │                   │   │   ├── style/
-│   │                   │   │   │   ├── ESPColorMode.java
-│   │                   │   │   │   ├── ESPColorProvider.java
-│   │                   │   │   │   ├── ESPStyle.java
-│   │                   │   │   │   └── ESPTargetStyle.java
-│   │                   │   │   ├── ESPManager.java
-│   │                   │   │   ├── ESPRenderer.java
-│   │                   │   │   └── ESPTarget.java
-│   │                   │   ├── farm/
-│   │                   │   │   ├── action/
-│   │                   │   │   │   ├── FarmCommandController.java
-│   │                   │   │   │   └── FarmCommandInput.java
-│   │                   │   │   ├── crop/
-│   │                   │   │   │   ├── CropDatabase.java
-│   │                   │   │   │   └── CropType.java
-│   │                   │   │   ├── hint/
-│   │                   │   │   │   └── FarmHints.java
-│   │                   │   │   ├── pest/
-│   │                   │   │   │   ├── PestESP.java
-│   │                   │   │   │   └── PestLoadoutTimer.java
-│   │                   │   │   ├── route/
-│   │                   │   │   │   ├── RouteController.java
-│   │                   │   │   │   ├── RouteData.java
-│   │                   │   │   │   ├── RouteDatabase.java
-│   │                   │   │   │   ├── RouteKey.java
-│   │                   │   │   │   ├── SetLineYP.java
-│   │                   │   │   │   └── SlotSelector.java
-│   │                   │   │   ├── FarmController.java
-│   │                   │   │   ├── FarmState.java
-│   │                   │   │   └── MacroConstants.java
-│   │                   │   ├── GuiPauseState.java
-│   │                   │   └── MacroManager.java
-│   │                   ├── mixin/
-│   │                   │   ├── ExampleClientMixin.java
-│   │                   │   ├── InventoryInputMixin.java
-│   │                   │   ├── KeyboardHandlerAccessor.java
-│   │                   │   ├── KeyMappingAccessor.java
-│   │                   │   ├── MenuFarmInputMixin.java
-│   │                   │   ├── WindowsFocusMixin.java
-│   │                   │   ├── WindowsInputMixin.java
-│   │                   │   ├── WindowsMissTimeMixin.java
-│   │                   │   ├── WindowsMouseMixin.java
-│   │                   │   └── WindowsPauseMixin.java
-│   │                   ├── scheduler/
-│   │                   │   ├── ActionScheduler.java
-│   │                   │   └── InputScheduler.java
-│   │                   ├── ui/
-│   │                   │   ├── hud/
-│   │                   │   │   ├── HudAdjustmentController.java
-│   │                   │   │   └── MacroStatusHud.java
-│   │                   │   ├── language/
-│   │                   │   │   ├── LanguageKeys.java
-│   │                   │   │   ├── LanguageManager.java
-│   │                   │   │   └── LanguageType.java
-│   │                   │   ├── render/
-│   │                   │   │   ├── MenuInputGraphics.java
-│   │                   │   │   └── RoundedRect.java
-│   │                   │   ├── screen/
-│   │                   │   │   └── UltimateGardenScreen.java
-│   │                   │   ├── theme/
-│   │                   │   │   └── ThemePalette.java
-│   │                   │   ├── widget/
-│   │                   │   │   ├── CollapsibleSection.java
-│   │                   │   │   ├── DropdownSelector.java
-│   │                   │   │   ├── HelpTooltip.java
-│   │                   │   │   ├── LanguageSelector.java
-│   │                   │   │   ├── SelectionCheckbox.java
-│   │                   │   │   ├── StyledButton.java
-│   │                   │   │   ├── ToggleSwitch.java
-│   │                   │   │   └── TransparencySlider.java
-│   │                   │   └── MenuController.java
-│   │                   ├── window/
-│   │                   │   ├── WindowsFocusController.java
-│   │                   │   ├── WindowsInputInterceptor.java
-│   │                   │   ├── WindowsNativeBridge.java
-│   │                   │   └── WindowsState.java
-│   │                   └── Ultimate_GardenClient.java
-│   └── resources/
-│       ├── assets/
-│       │   └── ultimate_garden/
-│       │       ├── shaders/
-│       │       │   └── core/
-│       │       │       └── esp_tracer.vsh
-│       │       └── textures/
-│       │           └── gui/
-│       │               └── language/
-│       │                   ├── cn.png
-│       │                   └── us.png
-│       ├── ultimategarden/
-│       │   └── default-crops.json
-│       └── ultimate_garden.client.mixins.json
-└── main/
-    ├── java/
-    │   └── com/
-    │       └── kuangsanfeng/
-    │           └── ultimategarden/
-    │               ├── mixin/
-    │               │   └── ExampleMixin.java
-    │               └── Ultimate_Garden.java
-    └── resources/
-        ├── assets/
-        │   └── ultimate_garden/
-        │       ├── lang/
-        │       │   ├── en_us.json
-        │       │   └── zh_cn.json
-        │       └── icon.png
-        ├── fabric.mod.json
-        └── ultimate_garden.mixins.json
+src/main/java/.../ultimategarden/         公共入口、模板服务端Mixin
+src/main/resources/                    Fabric元数据、公共Mixin、语言、图标
+src/client/java/.../client/
+  Ultimate_GardenClient.java            服务装配
+  command/ hotkey/ hint/                命令、消息、按键、提示
+  config/                              账号隔离与各模块配置
+  input/ window/ scheduler/            虚拟输入、窗口/拦截、Tick队列
+  anti_check/                          预期视角检测与警告
+  macro/
+    MacroManager.java GuiPauseState.java
+    farm/                              路线、作物、动作、害虫
+    esp/                               提取/绘制、样式和几何输出
+    zombie_shoot/                      Macro、模型、采样、日志和ESP适配
+  mixin/                               原生输入/帧/网络桥接
+  ui/                                  Screen、widget、render、theme、language、hud
+src/client/resources/                  模型、默认作物、shader、语言旗帜
+tests/                                 独立回归脚本和隔离stubs
+docs/                                  补充说明
+gradle/ .github/workflows/              Wrapper与CI
 ```
 
-根目录构建文件：[gradle.properties](gradle.properties)、[build.gradle](build.gradle)、[settings.gradle](settings.gradle)、[Gradle Wrapper](gradle/wrapper/gradle-wrapper.properties)。测试目录见 [Testing & Build](#testing-build)。
+<a id="events"></a>
+## 2. 事件、线程与跨模块时序
 
-<a id="module-architecture"></a>
-## 3. Module Architecture
+### 2.1 初始化顺序
 
-### 3.1 启动与 Macro
+`Ultimate_Garden.onInitialize` 提供 Mod ID、Logger 和资源 ID 工具。客户端 `Ultimate_GardenClient.onInitializeClient`：
 
-- **职责：** 创建单例控制器、注册事件、分发农业生命周期；不另建第二套农业状态机。
-- **关键文件：** [Ultimate_GardenClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[MacroManager](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/MacroManager.java)、[FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java)、[GuiPauseState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java)。
-- **入口函数：** `onInitializeClient`、`MacroManager.register/start/pause/reset/tick`；Hotkey 版本通过 Module 默认接口或 Farm 覆盖实现分发。
-- **工作流程：** Config → ESP 注册 → Window / VirtualInput → Farm → MacroManager → HUD / Screen / 生命周期 / Hotkey / Command 注册。START_CLIENT_TICK 检查 HUD 调整及账号变化；END_CLIENT_TICK 内 Hotkey 处理并调用 `manager.tick()`。
-- **相关配置：** general、farm、crops；MacroManager 当前注册 FARM 模块，接口允许扩展，但没有实现其他独立 Macro 模块。
+1. 从当前 User 建立账号身份并初始化 `ConfigManager`。
+2. 建立 ESPManager，注册 Pest 与 Shootout ESP，再关闭注册阶段并初始化渲染回调。
+3. 建立 WindowsState、独立的 legacyMouseClickScheduler、VirtualKeyboard/VirtualMouse、FocusController 和 InputInterceptor。
+4. 建立 VirtualInput、FarmController、MacroManager；MacroManager 当前只注册 Farm。
+5. 注册独立 Shootout，并用 supplier 将 Shootout 输入所有权接入共享拦截器；Farm 也通过 externalInputOwner 拒绝冲突。
+6. 注册两个 HUD、屏幕事件、账号变化、断线与退出清理，最后注册快捷键、客户端命令与聊天入口。
 
-### 3.2 Farm 与 Route
+### 2.2 驱动矩阵
 
-- **职责：** FarmController 管启动、停止意图、菜单会话与业务入口；RouteController 管方向、行完成和下一行移动。
-- **关键文件：** [FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java)、[RouteController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[SetLineYP](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)、[CropConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[CropDefinition](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropDefinition.java)。
-- **入口函数：** `startMacro/pauseMacro/resetMacro/tick`、`RouteController.tick`、`runCurrentMovement`、`nextLine/previousLine`。
-- **工作流程：** Tick 先推进命令队列，再推进正常行计时；额外移动 → 检查路线结束 → 可选 Mousemat → 下一行。暂停、取消和世界清理不由 HUD 控制。
-- **相关配置：** farm、crops、random_delay。TIMETESTER 以所选模拟作物移动，但用 TIMETESTER 的行阈值。
-
-### 3.3 Pest 与命令工作流
-
-- **职责：** 发服务器命令、串行等待和输入动作；Pest 倒计时与农业行 Tick 分离。
-- **关键文件：** [FarmCommandController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[PestLoadoutTimer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestLoadoutTimer.java)、[CommandListener](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[CommandTree](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[CommandHelper](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java)。
-- **入口函数：** `spawn/warpGarden/loadout`、`spawnPoint/spawnPests/pestLoadout`、`startPestLoadoutTimer`、`automateTaskByMonitorMessage`。
-- **工作流程：** 客户端聊天初始化走 ALLOW_CHAT；服务端 GAME 消息分发到 MacroManager，再识别 Pest 消息并安排启动计时。延迟动作都进入命令控制器拥有的 ActionScheduler。
-- **相关配置：** pest、random_delay。服务器是否接受命令、是否切换成功，不能仅由本地回调完成来证明。
-
-### 3.4 ESP
-
-- **职责：** PestESP 负责类型筛选；ESPManager 管模块提取和每帧快照；ESPRenderer 管统一绘制。
-- **关键文件：** [PestESP](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java)、[ESPManager](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java)、[ESPTarget](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPTarget.java)、[ESPRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java)、[ESPBoxRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPBoxRenderer.java)、[ESPFillRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPFillRenderer.java)、[ESPTracerRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java)、[ESPColorProvider](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorProvider.java)、[ESPStyle](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPStyle.java)、[ESPTargetStyle](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPTargetStyle.java)、[ESPColorMode](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorMode.java)。
-- **入口函数：** `PestESP.collect`、`ESPManager.register/initialize`、`ESPRenderer.draw/close`。
-- **工作流程：** END_EXTRACTION 抓取实体 AABB / 插值 / 样式 → Frame → END_MAIN 画 fill、box、tracer。generation 防止账号 / 断线后的旧帧继续绘制。
-- **相关配置：** pest 的开关 + esp 的样式。Bat 与 Silverfish 均使用内部 `SILVERFISH` 目标 ID；不按名称筛选、不区分是否真为 Hypixel 害虫，也没有独立 Bat 配置。
-
-### 3.5 HUD
-
-- **职责：** 只读状态展示；显示开关、内容及几何偏好管理。
-- **关键文件：** [MacroStatusHud](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java)。
-- **入口函数：** `MacroStatusHud.render`；调整模式 `begin/layout/move/button/tick/finish`。
-- **工作流程：** 每帧读取状态和模式；普通 HUD 受 showHud、F1、玩家 / 世界及自身 Menu 隐藏条件控制。调整模式无新 Screen，临时离开原菜单并消费原生输入，退出保存。
-- **相关配置：** hud；正向颜色沿用 UI accent。详细显示规则和几何约束见执行流程。
-
-### 3.6 UI
-
-- **职责：** 原生 Screen 的页面、草稿、校验、保存反馈及嵌套设置卡片。
-- **关键文件：** [MenuController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/MenuController.java)、[UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[CollapsibleSection](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)、[ToggleSwitch](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/ToggleSwitch.java)、[DropdownSelector](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/DropdownSelector.java)、[StyledButton](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/StyledButton.java)、[SelectionCheckbox](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/SelectionCheckbox.java)、[LanguageSelector](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/LanguageSelector.java)、[TransparencySlider](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/TransparencySlider.java)、[HelpTooltip](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/HelpTooltip.java)、[RoundedRect](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/RoundedRect.java)、[MenuInputGraphics](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/MenuInputGraphics.java)、[ThemePalette](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/theme/ThemePalette.java)。
-- **入口函数：** `MenuController.open/saveFarmSelection`；Screen 的 `added/removed/onClose/keyPressed/build` 及各页面方法。
-- **工作流程：** 选择 / Toggle 多数即时保存；作物路线使用 drafts 并统一 Apply；账号复制有确认和后续执行阶段。输入框草稿不能等同于已落盘配置。
-- **相关配置：** 各模块 JSON；UI 显示由 ui 控制。整张 Disabled 卡片不可交互，开关保留真实 ON / OFF 颜色和位置；子卡片整体缩进。
-
-### 3.7 Hotkeys、命令与提示
-
-- **职责：** 原生按键绑定与上升沿分发；客户端命令；聊天提示与菜单语言映射。
-- **关键文件：** [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[CommandTree](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[CommandListener](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[CommandHelper](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java)、[HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[FarmHints](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)、[KeyNameMap](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/KeyNameMap.java)、[LanguageManager](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageManager.java)、[LanguageType](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageType.java)、[LanguageKeys](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)。
-- **入口函数：** `MacroKeyBindings.register/getBindings/getKeyName`；`HintManager.printHint/printRequired`、`FarmHints.printHint`。
-- **工作流程：** 原生 KeyMapping 保持用户重绑；Mod UI 通过 LanguageManager 使用自身语言，不更改 Minecraft 当前语言。原生 Controls 名称则由 Minecraft 语言资源解析。普通聊天提示由 general 总开关与 hint 子项控制；必要提示逐项分类，未分类的 printRequired 保留原必要输出行为。
-- **相关配置：** general、ui；默认绑定见专节。HintManager 的聊天快捷键帮助是独立列表，当前没有把 Toggle HUD 追加到该列表；Hotkeys 页面与原生 Controls 已包含该项。
-
-聊天输出统一入口为 HintManager.isEnabled(event) / printFor(event,text)，配置在 general.json 的 hint 对象，15 个新增字段默认均为 true。FarmHints 两个分发重载和 HintManager.printHint 在分隔空行之前判定；PestLoadoutTimeUp 按两项 OR 决定是否输出组，再分别判断每条消息。showModChatHints 仍是原总开关，关闭不会改写子项。
-
-| 触发事件 / 入口 | 发送路径与原消息 | hint 字段 |
+| 阶段 | 当前驱动 | 时序约束 |
 |---|---|---|
-| startMacro | FarmHints MacroStart → Macro Start | macroStart |
-| pauseMacro | FarmHints ProgramPause → Program pause | macroPause |
-| resetMacro | FarmHints ProgramReset → Program reset | macroReset |
-| handleInitializeInput 完成 | FarmHints InitializeDone → Macro Initialized | macroInitialized |
-| Route 完成 / 手动上下行 | FarmHints LineFinished → Now done line {line} | lineCompleted |
-| TimeTester 暂停 | FarmHints TimeTesterCount → Ticks costed: {ticks} | timeTesterTicks |
-| PestLoadoutTimer.start | FarmHints PestLoadoutTimerStart → PestLoadout Ticker Start | pestTimerStart |
-| PestLoadoutTimer.cancel | FarmHints PestLoadoutTimerReset → PestLoadout Ticker Reset | pestTimerReset |
-| command.tick 倒计时结束（含延后分支） | FarmHints PestLoadoutTimeUp → printFor(PestTimerDone) → PestLoadout Ticker Done | pestTimerDone |
-| 同一到期事件的第二条输出 | printFor(PestLoadoutChange) → Run The Loadout Change Macro | pestLoadoutChange |
-| releaseFocusWithHint / restoreFocusWithHint | HintManager FocusRelease / FocusRestore → Focus Released / Focus Restored | focusReleased / focusRestored |
-| 作物 / 模式 / 模拟作物选择及 CropInfo | FarmHints 分发；两处未实现作物提示改走 printFor(CropSelect)，只改输出调用 | cropSelectionInitialization |
-| /ultimategarden hotkey | HintManager Hotkey → 原实时绑定帮助列表 | hotkeyHelp |
-| /ultimategarden help、helper、默认帮助及未知命令 | HintManager Helper / WrongCommand（含组内 printRequired） | commandHelpErrors |
+| START_CLIENT_TICK | HUD 布局编辑检查；User/账号变化检查 | 账号变更先结束编辑、abort Farm、清兼容队列、使 ESP generation 失效，再激活配置；Shootout 另在自己的 Tick 检查 accountRevision |
+| END_CLIENT_TICK：Shootout.register | `tick()` 后 `ZombieShootCollector.update(running)` | 先业务决策再被动采集；采集器不另注册第二个 END Tick |
+| END_CLIENT_TICK：MacroKeyBindings.register | 按键处理与 `manager.tick()` | MacroManager 遍历当前注册模块；Farm 暂停时仍有命令/计时逻辑需要被驱动，不要只在 running 时调用 |
+| 每个客户端帧 | `ShootoutAimFrameMixin` 在 Minecraft.runTick 调用 MouseHandler.handleAccumulatedMovement 前通知 aimFrame | 不在帧回调求解、选目标、射击或主动测 Ping；只消费 Tick 发布的解 |
+| LevelRenderEvents.END_EXTRACTION | ESPManager 收集实体和样式的不可变 Frame | 世界读取在提取阶段；Frame 附 generation |
+| LevelRenderEvents.END_MAIN | ESPRenderer.draw | 仅消费提取快照；generation 不匹配不画；不重新做业务扫描或预瞄求解 |
+| HudElementRegistry | 两个 HUD.render | 读取配置和业务快照；布局编辑时允许显示预览，不改变业务开关 |
+| GAME 消息 | CommandListener | getString 后转交 Farm/Pest 与非 overlay 的 Shootout 自动启动检测；不取消服务器消息 |
+| ScreenEvents.AFTER_INIT | FarmController.onPlayerScreenOpened | PlayerGuiInput 区分真实 GUI 操作与命令动作；不等同于所有 GUI 都主动暂停所有 Macro |
+| DISCONNECT / CLIENT_STOPPING | 各 owner 清理 | Farm abort；Shootout stop；ESP generation/allocator；HUD 编辑结束；日志及分析收尾 |
 
-动态作物信息仍从 CropConfig 现场读取；关闭选择提示不会跳过输入、改变初始化状态或默认选作物。原帮助列表不新增 / 删除条目；服务器消息监听与显示不受 Hint 配置影响。未知普通事件仍只遵守总开关；本地必要错误处理及日志不受显示开关控制。
+上述是当前注册和调用结构。事件之间的具体运行时耗时、第三方 Mixin 的干预，不能由静态源码证明。
 
-### 3.8 Config 与账号
+### 2.3 三种时间不能混用
 
-- **职责：** 默认值、字段校验、旧配置兼容、受保护文件和按账号复制事务。
-- **关键文件：** [ConfigManager](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[ConfigIO](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java)、[AccountDirectories](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[AccountIdentity](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountIdentity.java) 及各 Config 类。
-- **入口函数：** `activateAccount/load/save/reset/saveAll/copyConfiguration`、`ConfigIO.read/write/replaceTransaction`。
-- **工作流程：** 先构建默认对象，再加载 JSON；保留长期对象引用供已有控制器读取。账号目录依 UUID 元数据验证，不能只凭目录名信任路径。
-- **相关配置：** 八个模块 JSON + account.json 身份元数据；规则见 Configuration Reference。
+- ActionScheduler：FIFO，`schedule(ms)` 向上换算成 50ms 单位的 Tick 数，实际执行还受队列装载/执行 Tick 语义影响。`scheduleDelayTicks(n)` 保留同语义；`scheduleAfterTicks(n)` 内部 n-1，用于相邻回调精确间隔。clear 不代表重置 paused。
+- 农业行时间：RouteController 在 running 且非 commandRunning 时 incrementTick；totalTicks 同步增加。RandomDelay 的行抖动在当前路线 Tick 中抽样，不应假定是每行只抽一次。
+- Shootout：CD、失效宽限、自动启动、RTT 和帧步进使用单调纳秒时间；不是服务器精确 Tick 时钟。20–120 Hz 是调度目标，受 FPS 限制；卡顿跳过旧期限，dt 仍受原 50ms 上限约束。
 
-### 3.9 Input、Scheduler 与 Focus
+<a id="input"></a>
+## 3. 输入与 Focus
 
-- **职责：** 将真实玩家输入与虚拟动作隔离；为串行动作提供 Tick 队列；管理 Mod 鼠标释放和玩家输入拦截。
-- **关键文件：** [VirtualInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java)、[VirtualKeyboard](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java)、[VirtualMouse](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualMouse.java)、[PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java)、[ActionScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java)、[InputScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/InputScheduler.java)、[WindowsFocusController](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsInputInterceptor](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java)、[WindowsState](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsState.java) 及 mixin 目录。
-- **入口函数：** `keyDown/keyUp/slot/mouseDown`、`suspendForMenu/resumeAfterMenu/reapplyHeldState`；`schedule/scheduleDelayTicks/scheduleAfterTicks/tick`；`releaseFocus/restoreFocus/reapplyCursorMode`。
-- **工作流程：** actionKeys / actionAttack 用于会话内业务输入挂起和恢复；虚拟按键主要操作 KeyMapping，非调用操作系统输入模拟。Focus、输入拦截和 running 是三个独立状态。
-- **相关配置：** 调度读取 random_delay，窗口状态本身不持久化。
+### 3.1 两条虚拟输入路径
 
-### 3.10 Mixin 与兼容层边界
+**Farm 路径**：VirtualInput 组合 VirtualKeyboard 与 VirtualMouse，保存按住状态及菜单 suspend/resume 快照。键盘和动作 GUI 输入由 PlayerGuiInput.virtualDispatch 及对应 Mixin 区分来源；调用者应通过现成包装接口，不直接操作 KeyMapping 字段。
 
-| 文件 | 当前用途 |
+**Shootout 路径**：ShootoutMouseInput 使用 source-scoped dispatch 标识，保存旧 accumulatedDX/DY，提交本步相对位移，调用 ShootoutMouseAccessor 的原生 turnPlayer，再恢复旧累计值。右键为完整 Press/Release；cancel 仅清自己拥有的右键与 clickPending。不得把它与 Farm 的长按左键或 legacyMouseClickScheduler 混用。
+
+原生调用返回后读取真实视角：ViewObserver 的 before → submitted → 原生 turn → consumed 对齐；Aim & Shot Diagnostics 的 APPLIED 也在该原生调用返回后读取。现实现每帧最多一步、每次同步消费，输入范围序号的起止相同，不存在“固定等一 Tick”保证。
+
+### 3.2 阻断与来源
+
+WindowsInputInterceptor 持有 WindowsState 和外部 owner supplier：
+
+- Farm enable/disable 管理自身拦截状态。
+- Shootout 的一般 owner、鼠标移动 owner、右键 owner 分开：Auto Aim OFF 不接管鼠标移动；Auto Shoot 实际失效时不接管玩家右键。
+- 本 Mod 菜单通过 uiInputAllowed 放行 UI；HUD 布局编辑有专用输入路由。
+- 右键 release 有独立放行处理，避免真实玩家在接管前按下的右键无法释放。
+- WindowsMouseMixin 在判断 source scope 后才检查手动射击限制/真实输入拦截。Shootout 虚拟右键不再次登记成手动尝试。
+- 被手动限制拒绝的真实 Press 直接丢弃，不排队补发；仅获准输入在 onButton RETURN 通知 manualInputProcessed。
+
+### 3.3 Focus
+
+WindowsFocusController 与 WindowsState 管理 released、光标和恢复输入的回调；WindowsFocusMixin/WindowsPauseMixin 是原生窗口/暂停行为适配。Farm 的 Hotkey 包装会调用带 Hint 的恢复路径；命令工作流也可能重应用焦点状态。Shootout 并不调用 Farm 的启停状态机，且帧输出检查暂停、窗口活动及 mouse grabbed 状态。
+
+**遗留边界**：初始化创建的 legacyMouseClickScheduler 没有 Tick 驱动。当前 Farm 不靠 VirtualMouse.mouseClick 的该队列完成动作；不要把“补一个 tick”当作无行为变化的整理。
+
+<a id="modules"></a>
+## 4. 模块职责、状态与清理
+
+下表中的类均在[全量源码索引](#source-index)提供项目相对链接及公开入口。
+
+| 模块/owner | 职责、入口与调用方 | 依赖与持有状态 | 初始化/清理时机 |
+|---|---|---|---|
+| 公共入口 Ultimate_Garden | onInitialize、id；Fabric 调用 | Mod Logger/资源命名空间 | 启动；无业务任务 |
+| 客户端入口 Ultimate_GardenClient | onInitializeClient；组装所有服务和事件 | ConfigManager、Farm、MacroManager、Windows、ESP、observedUser、兼容队列 | 启动；账号变化/断线/退出通知各 owner |
+| MacroManager | register/start/pause/reset/tick；快捷键、聊天调用 | 有序模块 Map，当前 Farm | 初始化注册；实际状态与清理由 Module 自己持有；Shootout 不在此 Map |
+| FarmController / FarmState | startMacro/pauseMacro/resetMacro/tick、菜单和动作入口 | RouteController、FarmCommandController、菜单暂停快照、动作队列、选择等待、行计时 | 手动暂停取消动作；GUI 暂停保留所需快照；abortForWorldChange 清输入、命令、菜单和路线状态 |
+| RouteController | tick、nextLine/previousLine、runCurrentMovement；Farm 调用 | 作物定义、行事件、SetLineYP、命令队列 | 行结束重置行 Tick；路线 reset/abort 由 Farm 管理；不自建全局事件 |
+| FarmCommandController | spawnPoint/warpGarden/loadout/pestLoadout/spawnPests、tick/cancel/abortWorld | 自有 ActionScheduler、工作流、Loadout GUI 预期、PestLoadoutTimer、输入和 Focus | cancel 清动作；abortWorld 额外清世界相关状态/计时；GUI hold 不应偷偷推进队列动作 |
+| FarmCommandInput | 旧字符、文本、Tap/Return、WarpGarden 等适配；当前没有生产构造调用 | VirtualInput、InputScheduler、输入中间状态 | 需调用方驱动 tick/cancel；当前 FarmCommandController 直接用 VirtualInput |
+| PestLoadoutTimer | start/tick/cancel、finished 标记；FarmCommandController 调用 | 客户端 Tick 倒计数 | start 重置；业务消费 clearFinished；世界 abort/cancel 按实际路径区分 |
+| Crop/Route 数据 | CropConfig/CropDefinition 为运行作物定义；旧 CropDatabase/RouteDatabase 仍存在 | 默认资源、自定义作物、Tick/槽位/移动键/换行设置 | 配置加载/编辑；勿新写业务绕过 CropConfig 回旧静态表 |
+| 命令/聊天/Hint | CommandTree、CommandListener、CommandHelper、HintManager/FarmHints | MacroManager/Farm 引用、Hint 分类开关、聊天初始化选择 | 注册一次；不读日志文件监听服务器 |
+| 快捷键 | MacroKeyBindings.register；原生 KeyMapping | KeyEdge、重绑定及 GUI/文本输入门控 | END Tick 检查；长按的边沿状态由私有 KeyEdge 对象持有 |
+| 输入/窗口 | VirtualInput、PlayerGuiInput.virtualDispatch、Windows* | 持有键鼠、来源作用域、UI 暂态、Focus/拦截状态 | owner cancel/releaseAll；GUI 切换及世界变化清瞬态 |
+| Shootout controller | 独立 start/stop/tick/aimFrame；快捷键、菜单、聊天触发 | targets/lamps/shots/current、固定原点、账号 revision、解、CD、确认、轮次、RTT | start 新原点/基线；stop 取消输入和确认、清缓存、END 日志；无自动走回原点 |
+| Shootout 模型/采样 | ShootoutModel/Speed/BabyStall/Policy | 只读路径与弹道、每实体短窗口、固定优先级 | 模型首次加载；实体替换不继承旧身份；stop 清 targets |
+| Shootout 输入/时钟 | ShootoutMouseInput、AimClock/TanhAim/AimCorrection | source scope、last step/next deadline、单轮 R | 目标周期/暂停/失焦重置步进；R 由原修正规则清理；不因为诊断重置 |
+| Shootout 自动启动/RTT | ShootoutAutoStart、ShootoutRtt、ShootoutPongMixin | 单 pending 启动、连接上下文、单 Ping 请求与 token | 200ms 后重查；Stop/世界变化取消；迟到响应不复活 Macro |
+| Anti-Check | ViewDeviationCheckManager、ExpectedViewTracker、ViewWarningClock | 单瞄准周期 expected YP/pending、警告锁存、Toast/声音 | 首次移动启用；确认发箭/停止清空；Farm 配置预留但无检测效果 |
+| ESP | ESPManager → ESPRenderer → render/style | 提取回调注册表、不可变 Frame、generation、GPU allocator | 初始化封闭注册；断线失效；退出 close |
+| PestESP | collect；ESPManager 调用 | PestConfig，只读加载实体 | 逐帧提取，BAT/SILVERFISH 合用既有目标样式，无专用长轨迹 |
+| Shootout ESP | ZombieShootoutESP.register/collect | ESPConfig + controller InterceptDebug | 只显示 Macro 当前有效僵尸解；Macro 停止隐藏，并非独立预测器 |
+| HUD/布局 | MacroStatusHud、ZombieShootoutHud、HudPanel、HudAdjustmentController | 配置、只读快照、每 HudId 布局、选中边缘、光标句柄 | render 可预览隐藏 HUD；finish 保存；断线/世界变化取消并释放光标 |
+| 菜单/语言/主题 | UltimateGardenScreen、LanguageManager、ThemePalette、widget | 页面、sectionStates、编辑草稿、保存/复制反馈、Tooltip 时钟 | Screen init/build；关闭触发 Farm 菜单会话结束；折叠状态不等于业务开关 |
+| 配置存储 | ConfigManager/ConfigIO/AccountDirectories | 模块对象、原 JSON、保护集合、账号身份/revision、锁 | 启动/账号激活加载；保存验证路径；未来 schema/备份失败禁止覆盖 |
+| 被动采集 | ZombieShootCollector + Session/Tracker/Path/Block/Analyzer | 独立采集原点、Tag、有限缓存、单分析任务 | Macro+Logs+类别门控；停用拒收，后台排空；不会启动 Macro |
+| 诊断写入 | ShootoutAimDiagnostics、ZombieShootLogger/Snapshot | 批次序号、有限关联表、拒绝限频、有界队列/写线程 | START/END；退出等待；写入失败仅停诊断，不作为游戏控制信号 |
+
+<a id="flows"></a>
+## 5. 业务调用链
+
+### 5.1 Farm 路线、换行与菜单
+
+`MacroKeyBindings → MacroManager.startByHotkey → FarmController.startMacroByHotkey/startMacro → RouteController.runCurrentMovement`。
+
+正常 Tick：FarmController 检查世界/GUI → command.tick → route.tick。菜单会话活跃时走 tickMenuSession，不能继续照常执行路线和队列。RouteController 达行限 → stopMovement → 切 eventSelect、增加 eventCount → 可选 lineChangeMovement → continueLine → 可选 SetLineYP.setAlternate → startNextLine。额外移动阶段与视角/槽位阶段使用同一命令队列，不要在真正进入该阶段前抢先切槽。
+
+路线全部完成：Pest 模式恢复 Focus 并 reset；Farm 模式排队等待500ms → warpGarden → resetRoute → 恢复攻击/移动。**不能把所有 Warp 等待都视为 commandRunning 已冻结行计时**，以具体置位点为准。
+
+UltimateGardenScreen 的 begin/end 菜单会话与真实 Inventory/Chat/PauseScreen 来源不同；GuiPauseState 保存是否允许恢复，FarmController.menuActions（Deque）管 FIFO，手动 Pause/Reset 撤销恢复意图。关闭 GUI 不应绕过玩家明确停止操作再自动恢复。
+
+### 5.2 Spawn / Warp / Loadout / Pest
+
+动作通过 FarmController 的统一入口暂停/恢复和排队，FarmCommandController 管串行任务（其 Workflow 是状态枚举，不是独立工作流引擎）：
+
+- spawnPoint/warpGarden：原生服务器命令与排队回调；依赖连接、世界和原动作状态。
+- loadout：发送 loadout，按现有 Focus 状态重应用并等待完成。
+- pestLoadout：打开 Loadout GUI → 有限轮询 screen → 选槽4 → 等待关闭/必要时关闭 → 恢复 Focus 与回调。
+- spawnPests：先选槽7、打开 Loadout → 选槽5 → 关闭/恢复 → 模拟 Inventory 键阶段。
+- automateTaskByMonitorMessage：Pest 开关开启才处理 `Pest have spawned in Plot`；现为格式码去除后的包含判断，不是严格服务器身份认证。排队100ms后再次检查开关并启动计时。
+- Pest 倒计时是独立客户端 Tick 计时，菜单暂停/动作队列 hold 与其是否推进有不同规则；应同时检查 command.tick、timer.tick、cancel 和 abortWorld，勿将两种取消合并。
+
+### 5.3 Zombie Shootout
+
+1. 手动开关或默认未绑定的原生快捷键进入 start；自动启动复用 GAME 消息，匹配 Carnival Cowboy 的完整开场格式，单调200ms后重查上下文，再进入同一 start。
+2. start 检查世界、Farm 冲突、输入占用等，固定脚部原点；扫描30格内加载 Zombie，按头盔+胸甲与 isBaby 分类八类。
+3. 每 Tick 投影到 PATH_A/B，保留残差/局部偏移；每类速度窗口独立，默认0.30s，默认速度只在初期参与，成熟后使用实测，允许0。
+4. 幼年卡住窗口默认0.40s，累计真实 X/Z 水平位移，与类型资源速度×20×秒数×0.50比较；完整有效窗口才判定。卡住时保留当前实际位置与幼年纵向点，移动提前量/运动横向偏移为零；重力补偿仍在。
+5. 选择顺序：点亮灯 → 待补刀 → 普通僵尸按 Diamond Baby/Adult、Gold Baby/Adult、Iron Baby/Adult、Leather Baby/Adult，同类 first 顺序。锁定后不因新高优先级对象抢占当前周期。
+6. select 无常规候选则每 Tick 最多重扫一次；仍空则 Relock 保留新一轮已处理存活目标的顺序。TargetRound 给每轮一个补刀机会，旧 Attempt 的验证结果不能污染新轮；当前锁失效有100ms宽限，未锁候选无宽限直接顺延。
+7. 预瞄和发射前复算均调用同一 ShootoutModel.solve；灯为固定命中点。僵尸使用路径弧长、方向、局部偏移、未来 AABB 和既有30%/70%横向取点。原生 RTT/50 只补偿一次；没有有效 RTT 走安全等待。
+8. 帧步骤读取最新有效解，用 Tanh：v=peak×tanh(e/c)，step=min(e,v×dt)，三维角速度预算、Yaw wrap 和 Pitch 限制。默认20Hz，可配置20–120整数；不在帧中额外求解或射击。
+9. 外层容差触发修正，每轮只抽一次 R；进入 R 内结束，不制造随机目标偏移。射击阈值为外层×shootToleranceRatio，不能绕过活跃修正。Auto Aim/Auto Shoot 为独立有效门控。
+10. 自动射击：有效目标/解、修正结束、实际角差、CD、目标碰撞验证通过后完整右键。Occlusion Check 默认OFF，仅跳过障碍门槛，目标命中体积验证仍保留。
+11. Arrow Spawn Confirmation ON：新箭矢身份+出现时序确认，Owner 不参与；CD 到期可重试，自动超时安全停止。OFF：右键完成作为乐观派发。
+12. 手动 Auto Shoot OFF：真实 Press 登记，原生 onButton RETURN 通知；不施加自动 CD/自动补点。确认 ON 等新箭矢，手动超时只清尝试；OFF 乐观完成。同一攻击完成入口负责下一目标。
+13. 超过固定原点1格、断线/世界或账号变化、异常及手动操作统一 stop，清输入、解、确认、短轨迹、RTT、提示与日志；无自动返回站位或自动重启。
+
+**功能专用数据**：[zombie_shoot_theoretical_models.json](src/client/resources/ultimategarden/zombie_shoot_theoretical_models.json) 包含 PATH_A 141点、PATH_B 151点、八类速度和经验箭矢参数。它不是通用 Minecraft 物理定律。模型点按弧长插值，端点反射是观测边界近似。八类初速 block/tick 依序为0.118768、0.166667、0.135417、0.187500、0.149144、0.208307、0.164702、0.230583；钻石幼年为估计值。弹道读取资源的初速经验式、drag=.99、gravity=.05，保持先位置更新再阻力/重力的顺序；不要另维护第二份速度表。
+
+数值入口是 `ShootoutModel.solve(eye, DoubleFunction<Vec3> target)`：在0.001–40 Tick内以0.125 Tick粗分段寻找符号变化，再二分35次，返回首个有效根的 ticks/yaw/pitch/target。目标函数由 Controller 提供；灯返回固定命中点，移动僵尸按 cd/aim 等待+RTT/50+飞行Tick预测。Path.at 是相邻实测点的分段线性插值，match 对两路残差>1格或残差差<0.35格返回null；不是完美圆弧或重新拟合。collisionCheck 区分障碍和目标灯表面命中，使用局部已加载几何；与纯数值根的有效性是两道检查。
+
+### 5.4 ESP / HUD / 诊断
+
+共享渲染阶段见[事件矩阵](#events)。PestESP 检测 BAT/SILVERFISH，提取时做插值；Shootout ESP 读取当前 Macro 的 InterceptDebug，只画0.5格线框，皮革铜红、铁银白、金金、钻石青蓝，灯/未知/无解隐藏。当前实现**仍依赖 Macro 运行**，不要按旧“完全解耦”任务描述调用不存在的独立扫描器。
+
+HUD 各自总开关和 Only Show While Running 独立；布局编辑强制预览但不改显示开关。HudAdjustmentController 按 HudId 保存归一化 x/y/width/height；不是一份全局 scale。两者共用 HudPanel 样式，Shootout 快照不应推进 ready/random/求解逻辑。
+
+开发者 Logs：运行内存总开关每次启动OFF、默认折叠；账号 JSON 只存子项。17项被动采集使用独立 Session/Tag、固定原点、30格裁剪、48格/Tick的方块预算与缓存，后台分析只收不可变数据。日志分类器要求四件盔甲一致，与 Macro 的头胸规则不同；不一致进入 Diagnostics。
+
+新增 Aim & Shot Diagnostics 是第18项独立子项，默认OFF。只写 `logs/ultimategarden/zombie shoot/aim-shot-diagnostics.jsonl`：START/END带绝对时间，普通行带 elapsedMs/clientTick。REGULAR/FIRE_RECHECK 解序号 → QUEUED（包括零量化）→ 原生调用返回后的 APPLIED → SHOT_GATE → SHOT_DISPATCH/ARROW_CONFIRMATION 关联。相同拒绝250ms采样，原因变化、首次进入射击容差仍拒绝、首次放行立即记录；未执行角差检查时存null，不为日志重算。普通行无批次ID，批次外已存在的尝试序号可null。诊断不推断60Hz故障原因，未采到实机对比过程。
+
+写入器默认 Session 使用独立文件；诊断追加模式在END后关闭当前文件，后续START顺序追加。队列4096条、结构预算500000单位、批量128；诊断有固定终止槽。Stop/开关OFF拒收新样本，已接受数据后台排空；底层文件系统失败不能保证所有行落盘，不把失败写成成功。采集异常不应驱动 Macro 控制。
+
+### 5.5 Expected View Deviation Check
+
+调用链：`aimFrame → viewCheck.poll`（会话已有时检测无输入意外变化）；实际移动前 `ShootoutMouseInput → ViewObserver.before` 初始化/比较 → `submitted` 根据同一次 dx/dy、灵敏度和 invert 更新 expected → 原生 turnPlayer → `consumed` 对齐 actual。expected 从周期初始值累加，不每帧覆盖为 actual，也不与未来目标方向比较。ExpectedViewTracker 只保留当前预期值、pending 标记及异常锁存，无无限历史数组。
+
+偏差是两个方向单位向量的 acos(clamp(dot,-1,1))，单位度；默认5°警告、15°停止，配置要求 warning<stop。一次连续异常只触发一轮，恢复正常才可再触发。ViewWarningClock 用单调时间控制默认5s，400ms节拍播放 `SoundEvents.NOTE_BLOCK_BELL` 的 SimpleSoundInstance，同时显示 `Potential View Check` SystemToast；非阻塞、不每Tick新建五秒任务。严重偏差调用注入的统一stop回调，原因 VIEW_DEVIATION_EXCEEDED。
+
+resetAimCycle（目标周期变化/已确认或调试派发结束）与 stop 清 tracker、toast、sound 和 clock；等待CD/新箭矢期间保持当前检测周期。Farm 配置不调用任何该检测器。Anti-Check 本身不记录轨迹；独立开发者 Aim & Shot Diagnostics 的显式可选日志是另一条链，不将其数据作为 View Check 的控制输入。
+
+<a id="config"></a>
+## 6. 配置与状态读取
+
+### 6.1 存储流程
+
+ConfigManager 从 Fabric configDir/ultimategarden 建账号目录；AccountIdentity 校验 UUID/名称，AccountDirectories 用 account.json 验证归属、处理同 UUID 改名、拒绝不可信目录/重定向，锁保护多步存储。实际模块文件路径由 ConfigManager 的文件映射 及 AccountDirectories.file 产生，不自行拼另一套账号路径。
+
+load：先默认对象 → ConfigIO 严格单 JSON object → schema 校验/字段迁移与修复 → 需要时备份。未来 schema、身份不可信或备份失败进入受保护状态，不能覆盖原文件。save：保留原 JSON 未知字段，调用模块序列化，再原子替换；ATOMIC_MOVE 不支持时回退普通替换。账号复制先 stage/backup，再逐文件替换；失败做回滚并报告无法恢复项，不是跨文件数据库事务。
+
+菜单、HUD、业务共享 ConfigManager 持有的模块对象；运行态（Macro running、Logs master、输入所有权、待确认、实时轨迹）不等于配置开关。切账号重置/加载同一组模块对象并增加 revision；不要缓存旧账号 JSON 成为第二状态源。
+
+### 6.2 模块与权威字段
+
+| 文件 / 类 | 内容及状态边界 |
 |---|---|
-| [WindowsInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[InventoryInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java) | 真实 GUI 输入来源与背包 click 队列跟踪；调整模式键盘拦截 |
-| [WindowsMouseMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) | 普通输入拦截；调整模式拖拽转发与阻止原生 setAll 重新按下真实按键 |
-| [WindowsFocusMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java)、[WindowsPauseMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsPauseMixin.java)、[WindowsMissTimeMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMissTimeMixin.java) | Screen 关闭后重新应用鼠标模式、失焦暂停例外、抓鼠后清理 missTime |
-| [MenuFarmInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java) | 自身 Menu 不暂停时维持农业虚拟输入与原版攻击处理 |
-| [KeyMappingAccessor](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyMappingAccessor.java)、[KeyboardHandlerAccessor](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyboardHandlerAccessor.java) | 取得实际绑定及调用键盘内部入口 |
-| [ExampleMixin](src/main/java/com/kuangsanfeng/ultimategarden/mixin/ExampleMixin.java)、[ExampleClientMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ExampleClientMixin.java) | 模板注入类，保留而非业务控制器 |
-| [CropDatabase](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/CropDatabase.java)、[CropData](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropData.java) | JSON 定义的兼容访问 / 旧接口，不是另一套静态参数来源 |
-| [RouteDatabase](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteDatabase.java)、[RouteData](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteData.java)、[RouteKey](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteKey.java)、[SlotSelector](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SlotSelector.java)、[MacroConstants](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/MacroConstants.java) | 遗留路线 / 辅助 API；当前 RouteController 不依赖其构建第二套路线 |
-| [FarmCommandInput](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandInput.java)、[InputScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/InputScheduler.java) | 旧逐字符命令输入实现；主命令流实际使用 FarmCommandController.sendCommand |
-| [WindowsNativeBridge](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsNativeBridge.java) | 预留 OS 桥接；当前没有实现 Windows 前台切换 |
-| `legacyMouseClickScheduler` | 初始化器中的兼容队列，没有 Tick 驱动；不要误当成主命令队列 |
+| general.json / GeneralConfig | 菜单暂停/恢复、Hint 总开关及分类；菜单子项禁用不清保存值 |
+| farm.json / FarmConfig | 当前作物、模式、模拟作物选择，运行状态在 FarmState |
+| ui.json / UIConfig | 语言、主题、accent、透明度；LanguageManager/ThemePalette 读取 |
+| crops.json / CropConfig、CropDefinition | 作物移动键、行数、行 Tick、额外移动、换行槽位/角度相关设置；默认来自 default-crops.json |
+| pest.json / PestConfig | autoPestLoadout、pestLoadoutDelayTicks（默认2500）、pestESPEnabled |
+| esp.json / ESPConfig | general、目标 box/fill/tracer 样式和 Shootout 框开关；独立 schema/migration 方法，不假定统一版本 |
+| random_delay.json / RandomDelayConfig | 每 Key 独立 minTicks/maxTicks；sample 输出 Tick，调用点决定抽样频率 |
+| hud.json / HudConfig | Farm/Shootout 总开关与 only-running；compact/detail 内容；bounds 与 zombieShootoutBounds 独立，保留旧 Farm 布局 |
+| anti_check.json / ViewDeviationConfig | farm/zombieShootout 独立 enabled=false、warning=5°、stop=15°、duration=5s；Farm 目前仅配置 |
+| zombie_shootout.json / ZombieShootoutConfig | Setting enum 为完整字段/范围权威；Auto Aim ON、Auto Shoot OFF、Manual Restriction ON、Occlusion OFF；运行 enabled 不持久化 |
 
-<a id="execution-flows"></a>
-## 4. Execution Flows
+Shootout 当前默认：peak=300°/s、curvature=15°、aimUpdateRateHz=20（20–120整数）、aimCompletionToleranceDeg=.50°、aimCorrectionRandomRatio=.25、shootToleranceRatio=1.50 → 射击容差.75°及随机结束阈值0–.125°。八类 speedWindowsSeconds 各.30s；baby stall .40s/.50；CD .55s+jitter 0–.10s；baby顶部偏移.10格；RTT测量15s且最低.5s。snapAngleDeg 仅兼容旧配置，不再参与Tanh或菜单。以上只用于新/缺失字段，保留用户值。
 
-### 4.1 Tick、Macro 状态与生命周期
+`developerLogs` 子项可持久化；Logs 总开关仅 ZombieShootLogGate 内存持有。所有静态模型、日志数据和实时样本都不应塞进配置 JSON。
 
-`MacroKeyBindings END_CLIENT_TICK → MacroManager.tick → FarmController.tick → command.tick → route.tick`。菜单会话 active 时改为 `tickMenuSession`，不调用普通 route.tick。
+### 6.3 菜单装配与层级
 
-| 操作 | 调用链与状态 |
+入口 [MenuController.open](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/MenuController.java) 创建 [UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)。Page 枚举为 Home / Farm / Pests / ESP / Hotkeys / Settings / Misc；build 按页装配，positionContent 结合折叠区的 hiddenHeightBefore 调整滚动内容。sectionStates 保存当前屏幕的折叠状态，不是业务启用状态。
+
+| 页面/区域 | 装配方法和内容 |
 |---|---|
-| Num+ 启动 | `shouldPauseByHotkey → startMacroByHotkey → startMacro`；会话 active 时只登记 START。正常启动要求已选可执行作物；running=true、开启输入拦截、按住攻击、运行当前方向 |
-| Num+ 暂停 | `pauseMacroByHotkey → restoreFocusWithHint → pauseMacro(true)`；running=false、关闭拦截、释放农业输入并 cancel 命令队列 |
-| Num- 重置 | `resetMacroByHotkey → resetMacro`；登记 RESET、清菜单动作及运行计数、释放输入、cancel 队列 |
-| GUI 临时暂停 | `beginMenuPause` 挂起输入和队列；真实玩家 GUI 运行中另调用 `pauseMacro(false)`，不 cancel 原业务队列 |
-| 世界 / 玩家失效 | `abortForWorldChange → command.abortWorld`；清会话、GUI 来源、输入、动作与 Pest 倒计时，并按配置恢复作物 / 模式选择 |
+| Home | home；当前农业概览及状态 |
+| Farm | farm、cropLineChangeFields、applyCropDefinition；作物/模式、原有动作、作物定义编辑 |
+| Pests | pests；PestLoadout 开关、倒计时和 Pest ESP 入口 |
+| ESP | espSettings、espTarget、espComponent；general 与 Pest 样式；Carnival → Zombie Shootout ESP → Show Intercept Box |
+| Hotkeys | hotkeys；显示 MacroKeyBindings.getBindings 的原生重绑定结果 |
+| Settings | settings；General、Appearance、Hint、HUD、Anti-Check、账号配置、Developer Options |
+| Settings → HUD | hudSettings；调整布局按钮、Farm/Shootout 独立总开关及 only-running；既有 Farm Compact/Detail 内容仍存在 |
+| Settings → Anti-Check | randomDelaySettings、viewDeviationSettings；随机延迟与 Farm/Shootout 分开的视角检测参数 |
+| Settings → Developer Options | developerSettings；Carnival → Zombie Shootout → Logs 总开关/折叠及各记录类别 |
+| Misc | shootoutSettings；Carnival → Zombie Shootout 的控制与数值设置 |
 
-关键字段：
+Shootout 当前控件顺序：启停、Auto Aim（子项 Auto Shoot，再子项 Occlusion Check；Manual Shot Restriction 与 Auto Shoot 同级）、Auto Start、Arrow Spawn Confirmation、状态；peak/curvature/rate；分隔线；外层容差及内缩两个 ratio；分隔线；CD及内缩 jitter；分隔线；折叠速度采样组（八个 window + 两个 stall 参数）、组外 Baby Offset；分隔线；RTT interval、Ping、目标信息。Snap Angle 控件已移除。
 
-- FarmState：`running` 是农业开关；`commandRunning` 阻止正常农业阶段执行；`eventSelect=true` 对应 movementA，false 对应 movementB；`eventCount` 是已完成行数。
-- `tick` 是当前行正常作业累计；`totalTicks` 同时在 incrementTick 中增加。resetTick / resetRoute 不清总数，reset 清总数。
-- `LineChangePhase` 为 IDLE / MOVEMENT / YAW_PITCH，是展示阶段；`Workflow` 用于工作流观察，不作为替代业务状态机。
-- `menuActions` 是 UI 排队的业务操作；`heldActions/actionsRestored` 是挂起恢复状态；`businessResumePending` 记录 PestLoadout 后是否应恢复先前运行。
+toggle 的 value supplier 与 enabled supplier 分开：禁用只限制编辑，保留真实保存值及 ON/OFF 外观。数值框使用当前 draft，act 捕获校验错误，saved 显示保存结果；不要从显示字符串反推运行状态。HelpTooltip 按 frame/clip/hover 管理浮层，MenuInputGraphics 保留文本选中、光标与输入法预编辑的渲染路径；页面重建时应留意未保存 draft 和 focus。
 
-### 4.2 农业路线与换行
+### 6.4 快捷键、客户端命令与网络边界
 
-来源：[RouteController.tick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[RouteController.onLineFinished](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[RouteController.continueLine](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[SetLineYP.setAlternate](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)。
+[MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java) 用原生 KeyMapping 注册，实际绑定取玩家 Controls；下列只列源码初始默认值。Num2 旧采集快捷键不在当前注册表中，不应照旧分支文档假设存在。
 
-```mermaid
-flowchart TD
-    A["route.tick"] --> B{"running 且非 commandRunning?"}
-    B -- 否 --> X["不累计正常行 Tick"]
-    B -- 是 --> C["incrementTick：行与总计数 +1"]
-    C --> D{"达到 tickLimit + 本 Tick 的随机 jitter?"}
-    D -- 否 --> Z["等待下一 Tick"]
-    D -- 是 --> E["resetTick / 停移动 / 交换 A-B / 行数 +1"]
-    E --> F{"lineChangeMovement.enabled?"}
-    F -- 是 --> G["commandRunning=true；W 移动及完成等待"]
-    F -- 否 --> H{"已完成全部行?"}
-    G --> H
-    H -- 是 --> I{"PESTS?"}
-    I -- 是 --> J["恢复 Focus；resetMacro"]
-    I -- 否 --> K["停止键鼠；排队等待；warpGarden；resetRoute；恢复路线"]
-    H -- 否 --> L{"lineChangeYawPitch.enabled?"}
-    L -- 是 --> M["commandRunning=true；Mousemat 串行动作"]
-    L -- 否 --> N["startNextLine"]
-    M --> N
-    N --> O["commandRunning=false；恢复方向移动"]
-```
-
-- 额外移动：固定前等 100ms → W down → `scheduleAfterTicks(durationTicks)` → W up → 固定后等 100ms → continueLine。默认 Cactus durationTicks=10，不是 20。
-- Mousemat：完成行数偶数选 slot1，奇数选 slot2；选 Mousemat → VIEW_ATTACK 等待 → actionMouseDown → VIEW_RELEASE 等待 → actionMouseUp → VIEW_TOOL_SLOT 等待 → slot1 工具 → VIEW_RESUME_ATTACK 等待 → actionMouseDown → startNextLine。
-- 两功能串行；最后一行仍先完成额外移动，再判断路线结束，结束分支不会再执行 Mousemat。
-- yaw / pitch 配置提供路线信息与提示；实际切视角用 Mousemat 物品动作，不是直接对玩家调用 setYRot / setXRot。
-- 行阈值 jitter **每次 route.tick 都采样**，不是开行时只采样一次。
-- 已知边界：`finishFarmRoute` 的 500ms 等待及 Warp 没有像额外换行阶段那样统一设置 commandRunning；不能笼统声称所有命令等待都冻结行计时。
-
-### 4.3 Spawn、Warp 与 Loadout
-
-来源：[FarmController.spawn](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.executeSpawnSequence](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.executeSpawnPointAndPests](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmCommandController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)。
-
-| 工作流 | 实际顺序 / 结束条件 |
+| 动作 | 默认键 |
 |---|---|
-| Num* Spawn | 正在农业运行则 pauseMacro → 排队固定 200ms → Mushroom 先 S + A/D 随机移动 → spawnPoint 发送 `spawnlocation` → SPAWN_POINT 等待 → restoreFocusWithHint → PESTS 模式继续 spawnPests |
-| Spawn 的 Mushroom 方向 | `eventCount / 2 != 0` 决定 moveRight；不要误写为按奇偶交替 |
-| spawnPests | 固定 100ms 后 slot7 → 固定 250ms 后 `loadout` → 等 GUI → slot5 → 等关闭并重新应用当前 Focus → SPAWN_INVENTORY_KEY 等待后虚拟 E → 固定 300ms 后结束 |
-| Warp Garden | FarmController 先停键鼠、slot1 → command.warpGarden 发 `warp garden` → WARP 等待 → PESTS 模式回调释放 Focus 并尝试 startMacro；路线结束触发的 Warp 使用另一个复位路线回调 |
-| 手动 Loadout | 正在运行则 pauseMacro → command.loadout 发 `loadout` → 重新应用当前 Focus → 固定 400ms 后回调；此入口不负责自动选装备或可靠等待 GUI 关闭 |
+| Farm Start/Pause；Reset | Num+；Num− |
+| Next/Previous Line | ]；[ |
+| Set Spawn；Warp Garden | Num*；Num/ |
+| Pest Timer；Cancel Pest Timer | Num7；Num8 |
+| Loadout；Select Crop | Num9；NumDecimal |
+| Zombie Shootout；Toggle HUD | None；None |
+| Open Menu | M |
+| Mouse Focus | U |
 
-`warpGarden/spawnPoint/spawnMushroomMovement/loadout/pestLoadout/spawnPests` 在队列忙时可能直接 return，不是自动排入另一条并发流程。Menu 操作先放入 menuActions，等队列空后逐个执行。
+以上绑定的文本来源由 LanguageKeys/LanguageManager 和语言 JSON 共同处理；按键的 display name 使用原生翻译。START/STOP 边沿与文本输入门控见 register/WindowsInputMixin，鼠标重绑定还走 WindowsMouseMixin。
 
-### 4.4 PestLoadout 与异步等待
+[CommandTree.register](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java) 注册客户端 `/ultimategarden`，含 help/helper、hotkey、initialize、menu 及 unknown fallback。CommandHelper.initialize 进入 Farm 的聊天选择流程；CommandListener.ALLOW_CHAT 对被消费的初始化输入返回 false，不发往服务器。GAME 接收仅观察，不隐藏原消息。
 
-来源：[CommandListener.register](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java) → [FarmController.automateTaskByMonitorMessage](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) → [FarmCommandController.startPestLoadoutTimer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)。
+网络使用分两类：FarmCommandController 通过现成连接发送原有业务命令；Shootout 唯一新增探测是 ServerboundPingRequestPacket，ShootoutPongMixin 匹配 handlePongResponse。后者先判本模块 token，再将更新派发到客户端线程；无关响应交原版，属于本模块但已过期的 token 会被消费并忽略。ShootoutRtt 用固定前缀+不回绕序号、连接对象和当前 request 匹配；单请求超时5s，间隔从请求发送时间算起。当前是独立单请求跟踪器，没有构造原生 PingDebugMonitor；不改 KeepAlive、不使用外部网络服务。
 
-1. 自动路径要求 autoPestLoadout=true，系统消息包含源码字面量 `Pest have spawned in Plot`；安排 100ms 后启动。手动计时入口不要求自动选项开启。
-2. startPestLoadoutTimer 只在 PESTS 模式启动，读取当时的 delayTicks；修改延迟不会重置正在运行的倒计时。
-3. 每次 command.tick 先推进 scheduler，再推进 PestLoadoutTimer；农业 running=false 仍可推进。
-4. 到期且不在菜单会话：保存 wasRunning；若正在运行调用 pauser；标记 businessResumePending；执行 pestLoadout。成功回调仅在 wasRunning 时调用 resumer。
-5. 到期且在菜单会话：记 pendingPestLoadout；待 holdActions=false 且队列空再执行，避免被菜单挂起的队列死锁。
-6. pestLoadout：发 `loadout` → PEST_OPEN_WAIT → Step2 等 screen 非 null → PEST_SELECT 后 slot4 → PEST_SETTLE → Step3 检查关闭；若仍有 Screen 则 setScreen(null) 再等；关闭后应用当前 Focus，固定 300ms 后回调。
-7. Step2 最多 40 次 50ms 调度，Step3 最多 20 次 100ms 调度；超限 failAction，不执行正常成功恢复。spawnPests 的对应等待结构相同，选 slot5 并执行后续 E。
 
-**实现边界：** 检查是 `screen != null` / `screen == null`，没有核验标题、菜单 ID 或服务器装备结果。轮询周期含 ActionScheduler 的执行 Tick 语义，源码注释的毫秒乘积不是严格墙钟超时。Pest ESP 不参与这些流程。
+<a id="reuse"></a>
+## 7. Reusable Components
 
-### 4.5 GUI 自动暂停与恢复
+状态分类：**可直接复用**仍需遵守列出的契约；**嵌入业务**表示先适配/提取；**专用模型**不要提升成通用默认。
 
-来源：[WindowsInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[InventoryInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java)、[PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java) → ScreenEvents.AFTER_INIT → [FarmController.onPlayerScreenOpened](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)。
+| 能力与入口（相对链接见源码索引） | 实际调用方 / 相近实现 | 参数和单位 | 状态/生命周期 | 复用条件 | 当前状态 |
+|---|---|---|---|---|---|
+| [ActionScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java).schedule/scheduleDelayTicks/scheduleAfterTicks/tick/clear | FarmCommandController、SetLineYP；另有无驱动兼容实例 | ms或Tick，串行FIFO | owner持有 current/queue/remaining/paused，owner清 | 客户端Tick；取消时释放所持输入；精确间隔用AfterTicks | 可直接复用 |
+| [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java).KeyEdge.rising（私有） | MacroKeyBindings；Shootout toggle | 按下boolean | 每绑定独立边沿 | 原生重绑定、GUI文本门控 | 嵌入绑定类的私有辅助对象，非公开服务 |
+| [PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java).virtualDispatch / request / consume | Virtual输入、Keyboard/GUI Mixins、Farm | 来源作用域/GUI种类 | 暂态标记，Farm Tick/abort清 | 必须区分动作发起与真实玩家输入 | 可直接复用，先读各Mixin入口 |
+| [VirtualInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java) suspendForMenu/resumeAfterMenu/releaseAll | FarmController、命令、Route | 键名、槽位；不是服务器Tick | 自身held快照，owner释放 | 客户端线程、同一owner，不混外部输入 | 可直接复用包装，业务决策仍Farm专用 |
+| [ShootoutMouseInput](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java).aim/click/cancel | Shootout；与VirtualMouse行为不同 | yaw/pitch度、peak度/s、c度、dt秒 | dispatch、右键ownership、观察回调 | 本地线程/抓鼠标/合法视角；原生敏感度及反转 | 嵌入业务 |
+| [ShootoutTanhAim](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTanhAim.java).rotation/rawDelta、[ShootoutAimCompletion](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimCompletion.java).error | Shootout、Anti-Check/诊断 | 三维角度、raw鼠标量、灵敏度 | 纯数值，无历史 | MC坐标约定；不要把单位向量夹角当Yaw+Pitch平方和 | 可抽通用纯数学 |
+| [ShootoutAimClock](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimClock.java).step/reset | aimFrame；与ActionScheduler用途不同 | 纳秒、Hz20–120、返回秒 | next/last/rate，暂停/目标周期清 | 每帧最多调用一步，无catch-up | 嵌入业务，但时间边界清楚 |
+| [ShootoutShotClock](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutShotClock.java) / TargetLoss / AutoStart / Rtt | Shootout；各自超时语义不同 | 单调ns、s、RTT ms | CD、连续失效、pending/context、token | 不共享一份全局时钟状态；重置由业务明确调用 | 专用策略外壳，可共享计时原语 |
+| [ShootoutSpeed](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutSpeed.java).observe / BabyStall.observe | 每Target持有；Pest只有倒计时 | arc block/tick 或 X/Z+ns，窗口s→Tick | 有界样本；缺口/突变清，保留真实0 | 不能把signed均值与累计水平距离混为一谈 | 嵌入业务 |
+| [ZombieShootEntityTracker](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootEntityTracker.java).observe/identify | 被动采集；Macro另有UUID/对象跟踪 | entityID/UUID/对象/tick/世界位置 | Tag及段落，retain/missing/session结束 | 不依靠entityID永久身份；对象替换分段 | 嵌入业务，身份策略可抽 |
+| [ZombieShootSnapshot](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootSnapshot.java)、Logger.offer/endBatch/close | 被动采集与AimShot诊断 | immutable map→JSONL，结构预算而非字节数 | 队列/worker/terminal；显式close | 世界/Entity不能跨线程；不要在渲染线程直接写磁盘 | 批写可复用，路径/摘要仍嵌入业务 |
+| [ConfigIO](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java).read/write/backup/replaceTransaction | ConfigManager/AccountDirectories | UTF-8 JSON object、PathCheck | 临时文件/备份；失败回滚报告 | 上层负责schema/路径和账号校验 | 可直接复用 |
+| [ConfigManager](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、模块load/toJson | 菜单、HUD、全部业务 | 模块对象/原JSON、字段范围 | 单一共享对象、protectedFiles/revision | 不创建旁路写入；保留未知字段和保存值 | 存储框架可复用，模块映射嵌入工程 |
+| [CollapsibleSection](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)、[ToggleSwitch](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/ToggleSwitch.java)、EditBox/input、[HelpTooltip](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/HelpTooltip.java) | UltimateGardenScreen各页 | GUI缩放坐标、suppliers | sectionStates、hover时间；重建清focus | disabled不能把值强制变false；折叠不影响业务 | 控件可直接复用，Screen装配助手可抽 |
+| [LanguageManager](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageManager.java)、[ThemePalette](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/theme/ThemePalette.java)、[RoundedRect](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/RoundedRect.java) | 菜单/HUD/Tooltip | key/格式参数、ARGB/透明度 | 配置驱动；不另存第二主题状态 | en_us/zh_cn同步，动态枚举键补齐 | 可直接复用 |
+| [HudPanel](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudPanel.java)、[HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java) | 两个HUD | 归一化bounds、HudId、GUI坐标 | selected/drag/layout/cursors，finish释放 | render预览与运行显示分开；切世界取消 | 面板可复用；编辑器仍有具体HudId耦合 |
+| [ESPManager](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java).register/registerFixed、[ESPTarget](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPTarget.java)/Style | Pest与Shootout ESP | 世界AABB、颜色/alpha/线宽 | 注册一次、Frame/generation/GPU owner | 提取与绘制分离；before initialize注册 | 可直接复用 |
+| [ESPBoxRenderer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPBoxRenderer.java)/FillRenderer/TracerRenderer | ESPRenderer | 世界坐标与camera offset、timeMs | GPU buffers由上层持有 | 合法渲染阶段/匹配管线/深度状态 | 可直接复用几何输出 |
+| [ZombieShootBlockCollector](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootBlockCollector.java).boundedView/offset、OcclusionAnalyzer.intersects | 采集；Shootout.localView/碰撞循环相近 | BlockPos、局部AABB、线段 | 加载范围/缓存有效期由owner保证 | 未加载不是Air；视觉遮挡不等于物理碰撞 | 几何可抽，缓存策略业务专用 |
+| [GuiPauseState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java)、[FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java).menuActions | Farm菜单/GUI；Shootout只等待GUI不走此流程 | 会话source、恢复许可、FIFO动作 | snapshot、active/open、abort | 恢复只一次，用户stop优先 | 当前Farm适配清楚，不能直接套Shootout |
+| [HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[FarmHints](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java) | 命令、Farm、Focus | hint key/参数/分类开关 | 配置决定输出，非游戏决策 | 不用Hint文本反向判断业务状态 | 通知可复用，Farm映射专用 |
+| [ShootoutModel](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutModel.java)/Policy、[RouteData](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteData.java)/作物定义 | 各自业务 | 路线弧长、经验弹道、类别或农作物 | 只读模型/配置 | 保留场景单位与证据边界 | 专用模型 |
 
-| GUI 来源 | 当前规则 |
-|---|---|
-| 玩家真实背包、ESC、聊天框 | 来源校验通过才自动暂停；useGameFocusForPlayerGui 结束 Mod 释放覆盖；关闭不使用菜单 Auto-resume |
-| Mod 自身 Menu | added 调用 beginUltimateGardenMenu，按 autoPauseFarmWhenOpeningMenu 决定是否建立会话；removed 仅结束本次拥有的会话 |
-| 虚拟背包 | virtualDispatch 来源不会被判为玩家背包输入 |
-| 箱子、服务器 GUI、其他 Mod Screen | 不作为新增自动暂停入口；已有活动会话可能仍因 Screen 存在而等待，不等于“完全忽略所有容器” |
+<a id="extraction"></a>
+## 8. 建议提取的接口边界
 
-背包来源跟随实际绑定的 KeyMapping.click / consumeClick 队列，不依赖固定 E。clearTransient 仅清瞬时请求；inventoryOpening / inventoryClicks 按消费及 releaseAll 生命周期清理，防止跨 Tick 丢失和过期误判。
+以下均为**建议，尚未实施**，不应在调用代码中假定新服务已存在。
 
-GuiPauseState：
-
-- Source 为 ULTIMATE_GARDEN_MENU / PLAYER_GUI；每次 open 更新菜单自动恢复资格，已有会话保留原意图快照。
-- Intent 为 NONE / START / PAUSE / RESET；START 是明确请求，独立于自动恢复开关；PAUSE / RESET 取消恢复资格，fail 阻止恢复。
-- `endMenuPause` 固定 close(false)；`endUltimateGardenMenu` 才传入菜单 Auto-pause / Auto-resume 条件。
-- close 只记录意图；最终恢复还要等 `tickMenuSession`：无菜单 / 阻挡 Screen / Overlay，焦点可恢复，业务队列和 menuActions 已完成，finish 才可调用 startMacro。
-- 挂起业务动作恢复后，属于当前 loadout 的容器可被 ownedBusinessScreen 判为允许操作；并非允许农业在容器中继续执行。
-- Menu 的 Auto-pause=OFF 时，keepsFarmingInput 与 MenuFarmInputMixin 维持真实虚拟键位、攻击处理和计时；不能只依赖 running=true。Menu 内主动暂停、重置仍是明确用户操作。
-
-### 4.6 Focus 与 Input Interception
-
-来源：[WindowsState](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsState.java)、[WindowsFocusController](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsInputInterceptor](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java)、[WindowsFocusMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java)。
-
-| 状态 | 含义 |
-|---|---|
-| FarmState.running | 农业路线是否运行 |
-| WindowsState.inputIntercepting | Mod 是否请求阻断玩家输入；自身 Menu 通过 uiInputAllowed 放行交互 |
-| WindowsState.mouseReleased | Mod 主动释放 OS 鼠标的模式，不是“任何 GUI 存在”的标记 |
-| MouseHandler.isMouseGrabbed / GLFW cursor mode | 原生逻辑捕获与 OS 光标模式，允许为虚拟持续破坏而有意分离 |
-
-- releaseFocus：写 Mod 标记并 reapplyCursorMode；无 Screen 时可保持逻辑 grab、仅让 OS 光标自由。
-- restoreFocus：清标记、应用原生捕获；原先 Released 时调用 restoreInputState，但 Farm 有 running / menu / commandRunning 守卫。
-- useGameFocusForPlayerGui：真实 GUI 打开时清 Mod 标记，调用统一 reapply；因 Screen 存在仍 releaseMouse + GLFW_CURSOR_NORMAL，不恢复农业输入。
-- restoreGameMouseAfterMenu：只在无 Screen 且玩家 / 世界有效时恢复游戏捕获，不调用 Macro 输入恢复回调。
-- setScreen 返回后 WindowsFocusMixin 重新应用当前模式，防止原版容器关闭覆盖工作流要求的自由鼠标。
-- 普通输入拦截的键盘列表是 W/A/S/D、Space、Slash；不是所有键。鼠标按钮、移动和滚轮另行拦截。调整模式使用单独临时路由，不改上述持久状态。
-- HUD 在 Screen 存在时显示 GUI Cursor；无 Screen 才显示 Mod Released / Captured。Released 蓝绿色、Captured 红色；它不是输入拦截布尔值的别名。
-
-### 4.7 HUD 渲染与调整
-
-来源：[MacroStatusHud.render](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[UltimateGardenScreen.finishHudAdjustment](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)。
-
-- 普通 HUD：Menu 打开时隐藏；showHud=false 时隐藏；不改变计数。深色半透明背景，Running 蓝绿色 / Paused 红色边框与进度条；普通文本和数值白色，分割线灰绿色。
-- 状态颜色按具体字段读取：Released / ON 正向，Captured / OFF / Disable 反向；启用时的 duration tick 与 Mousemat slot 值仍白色。工作流挂起和活动、停止原因按原始状态分类，不按翻译后文字匹配。
-- 模式选择先改配置并保存，再 build 刷新 UI；renderer 不缓存模式。
-- 调整入口保留原 Screen 实例，置 adjustingHud 后 setScreen(null)；removed 不结束原暂停会话。背景只做半透明暗色覆盖，不执行真正的场景去色 Shader。
-- render 绘制边框 / 四角手柄和说明，并提供 layout 几何；move 将原始鼠标坐标转换为 GUI 坐标，按内部 / 四边 / 四角拖动写归一化 bounds。
-- 最小尺寸取自然布局的 65%（受窗口大小限制），矩形夹在可见区域；内容等比适配卡片，非任意字体重排。
-- 临时键盘拦截先于 GUI 来源检测；真实 ESC → finish(true)，清理标准光标、保存 HUD、回到原 Settings 页面。原有暂停会话不重复建立；若原来未暂停而当前已开启 Auto-pause，返回时按当前设置处理。
-- 无 Screen 调整期间自由 OS 光标、屏蔽真实输入与视角；不写 Focus / Macro 标志。隐藏 HUD 也可预览调整，退出不修改 showHud。
-- 世界变化、其他 Screen、断线、退出和账号切换会 finish(false) 并清理；不保证异常进程终止时还能保存。
-
-### 4.8 JSON 加载、迁移与保存
-
-[ConfigManager.activateAccount](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) → defaults / 清保护集合 → AccountDirectories.resolve 验证身份 → 逐模块 load → 校验 / 迁移 → 非 protected 文件 save。
-
-- 配置根目录为 `FabricLoader configDir/ultimategarden/<账号名>/`，不是固定共享根目录；account.json 记录 schemaVersion、uuid、name。legacy 根目录只作为已验证的导入来源。
-- ConfigIO 严格读取单个 JSON object；写入临时文件后原子移动，系统不支持时回退替换。
-- 较新 schema 使用内存默认值并禁止覆盖；I/O 不可读文件也受保护；非法 JSON / 字段先备份，备份失败不覆盖原文。
-- CropConfig 保留用户字段并补新增换行字段；旧合并作物节点拆分；旧数值作物选择要求重选，不猜测新版 ID。
-- ESP schema 1 → 2 将旧样式移入 general / targets，迁移前备份；未知字段尽量保留。
-- 账号复制验证 revision、UUID、路径和源 JSON，replaceTransaction 提供回滚；复制到当前账号时 FARM / CROPS 记 pendingRestart，其余模块可重载。不要把复制成功解释为所有模块已立即应用。
-
-### 4.9 调度和计时语义
-
-| 计时源 | 暂停 / 结束行为 |
-|---|---|
-| 农业 tick / totalTicks | RouteController 正常作业路径才增加；暂停与额外换行 commandRunning 阶段不增加 |
-| ActionScheduler | setPaused(true) 冻结 remainingTicks；clear 清队列和当前动作；每 Tick 最多执行一项，回调中新排任务以后再运行 |
-| schedule(ms) | ceil(ms/50) 转 Tick；倒计时归零后在后续执行 Tick 回调，不是精确墙钟延时 |
-| scheduleDelayTicks(n) | 与旧 schedule 的执行 Tick 语义一致；n=0 仍是队列任务 |
-| scheduleAfterTicks(n) | 内部使用 n-1，保证两个串行回调间的精确 Tick 间隔；用于移动持续时长 |
-| PestLoadoutTimer | 即使 queue held / Macro 暂停也由 command.tick 推进；手动 pause/reset 的 command.cancel 不取消计时器，显式取消或 abortWorld 才结束 |
-| Rainbow / Tooltip | 渲染时间 / UI 时间机制，不是农业行计时 |
-
-<a id="configuration-reference"></a>
-## 5. Configuration Reference
-
-### 5.1 文件与主要默认值
-
-所有模块都有 schemaVersion；ESP 为 2，其余模块为 1。类链接直接对应读取 / 校验代码。
-
-| 文件 / 类 | 主要字段与默认值 |
-|---|---|
-| general.json / [GeneralConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/GeneralConfig.java) | showModChatHints=true；hint 的 15 个子项均 true（字段见模块 3.7）；autoPauseFarmWhenOpeningMenu=true；autoResumeFarmAfterGuiClose=false（仅自身 Menu） |
-| farm.json / [FarmConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/FarmConfig.java) | selectedCropType=NONE；selectedFarmMode=FARM；selectedSimulatedCropType=WHEAT |
-| ui.json / [UIConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/UIConfig.java) | uiThemeMode=SYSTEM（当前按浅色回退）；accentColor=#1B978C；language=ENGLISH；menuTransparency=0，范围 0–100 |
-| pest.json / [PestConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/PestConfig.java) | autoPestLoadout=true；pestLoadoutDelayTicks=2500；pestESPEnabled=true；已有 false 保留 |
-| crops.json / [CropConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java) | crops.<CropType> 独立节点；内置默认来源 [default-crops.json](src/client/resources/ultimategarden/default-crops.json) |
-| esp.json / [ESPConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java) | general.throughWalls=true；general.rainbowCycleDurationMs=3000；targets.SILVERFISH 下 box / fill / tracer |
-| random_delay.json / [RandomDelayConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/RandomDelayConfig.java) | 每个 Key 为 {minTicks,maxTicks}；全作物共用，不写入 crops |
-| hud.json / [HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java) | showHud=true；displayMode=COMPACT；compact / detail 布尔集合；bounds={x:0,y:0,width:0,height:0} |
-
-ESP：box 默认 enabled=true、SOLID、#00FFAA、alpha=1、lineWidth=2；fill 为 true、RAINBOW、#00BFFF、alpha=.25；tracer 为 true、SOLID、#FFAA00、alpha=1、lineWidth=1.5。alpha 0–1，线宽 0.5–16；实体主开关在 pest，不在目标对象中新增 enabled。
-
-HUD：width / height=0 表示自动尺寸；非零 bounds 均为相对 GUI 画面比例，字段要求有限且在 0–1。compact / detail 加载会保证 Compact 已启用的项在 Detail 为 true。显示开关与计时无关联。
-
-### 5.2 作物参数
-
-`name/enabled/tickLimit/totalLines/movementA/movementB/yawA/yawB/pitchA/pitchB`，可选 hintYaw / hintPitch 字段；alternateSlot 为旧兼容字段，运行切视角以 lineChangeYawPitch 为准。
-
-| 默认作物 | tickLimit / totalLines | 额外移动 | Mousemat |
-|---|---:|---|---|
-| WHEAT | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
-| FLOWER | 544 / 16 | OFF，10 tick | OFF，3 / 4 |
-| COCOA | 797 / 45 | OFF，10 tick | OFF，3 / 4 |
-| MELON | 560 / 23 | OFF，10 tick | OFF，3 / 4 |
-| PUMPKIN | 560 / 23 | OFF，10 tick | OFF，3 / 4 |
-| SUGARCANE | 475 / 30 | OFF，10 tick | ON，3 / 4 |
-| MUSHROOM | 800 / 15 | OFF，10 tick | ON，3 / 4 |
-| CACTUS | 272 / 30 | ON，10 tick | OFF，3 / 4 |
-| CARROT | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
-| POTATO | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
-| NETHER_WART | 806 / 15 | OFF，10 tick | OFF，3 / 4 |
-| TIMETESTER | 99999 / 99999 | OFF，10 tick | OFF，3 / 4 |
-| Custom1 / Custom2 / Custom3 | 无可执行路线 | OFF，durationTicks=10 | OFF，slot1=3 / slot2=4 |
-
-- 内置作物 enabled=true；Custom 默认 false，且 isExecutable 明确拒绝 Custom，即使编辑 JSON 开启也不能当作已完成的自定义路线功能。
-- lineChangeMovement.enabled 与 lineChangeYawPitch.enabled 相互独立；durationTicks>=1，slot1 / slot2 为 1–9。旧 JSON 缺失时按 bundled defaults 补齐有效值，不覆盖已有合法参数。
-- movement 数组只接受不重复 W/S/A/D 且非空；普通 tickLimit / totalLines 必须为正整数，yaw ±180 / pitch ±90。详见 [CropDefinition](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropDefinition.java) 与 [CropConfig.updateCrop](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)。
-
-### 5.3 随机延迟参数
-
-默认范围由源码旧毫秒离散分布转换；保留默认范围时不是简单均匀 Tick 抽样，自定义范围使用含两端的均匀整数；min=max 为固定等待。所有范围要求 0<=min<=max。
-
-| Key | 默认 tick | 位置 |
+| 现有实现位置 | 具体潜在调用场景 | 建议接口边界与不应迁入的内容 |
 |---|---|---|
-| FARM_ROW_JITTER | 0–9 | 正常行阈值，每 Tick 重新采样 |
-| VIEW_ATTACK / VIEW_RELEASE / VIEW_TOOL_SLOT / VIEW_RESUME_ATTACK | 各 2–5 | Mousemat 四阶段 |
-| WARP | 16–32 | warp garden 后 |
-| SPAWN_POINT | 6–9 | spawnlocation 后 |
-| SPAWN_MUSHROOM | 3–6 | Spawn 前 Mushroom 移动 |
-| PEST_OPEN_WAIT / SPAWN_LOADOUT_OPEN_WAIT | 各 1–2 | loadout 初次等待 |
-| PEST_SELECT / SPAWN_LOADOUT_SELECT | 各 3–7 | loadout 选装前 |
-| PEST_SETTLE / SPAWN_LOADOUT_SETTLE | 各 2–3 | 选装后等待 |
-| SPAWN_INVENTORY_KEY | 3–8 | spawnPests 最后虚拟背包按键 |
+| [ShootoutMouseInput](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java) + [ShootoutTanhAim](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTanhAim.java) + ViewObserver | 将来其他只需本地平滑转向的客户端功能 | 输入owner、相对位移提交、敏感度映射、消费回调；纯旋转计算与提交器分离。不要迁入僵尸目标、射击ready或固定路径 |
+| [ShootoutAimClock](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimClock.java)、[ActionScheduler](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java)、[PestLoadoutTimer](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestLoadoutTimer.java)、[ViewWarningClock](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewWarningClock.java) | HUD动画采样或新的低频观测器 | 注入单调Clock、到期/跳帧策略与reset；TickFIFO保留独立类型，不统一成一个含糊delay(ms) |
+| [ShootoutSpeed](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutSpeed.java)/BabyStall、[ZombieShootEntityTracker](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootEntityTracker.java) | 新实体速度HUD或加载范围研究 | IdentityKey、连续样本判据、bounded window和聚合器；默认速度表、0.5阈值和路径投影留业务层 |
+| [ZombieShootLogger](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootLogger.java)/Snapshot + [ShootoutAimDiagnostics](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java) | Farm动作阶段诊断、Pest事件审计 | JsonlSink.offer(immutableRecord)、Batch.start/end、路径策略、失败/丢样通知；线程与队列可共用设计，勿将采集Session元数据强加所有日志 |
+| [FarmCommandController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) 的工作流/取消、[GuiPauseState](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java)/[FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java).menuActions | 新需要等待库存GUI的宏动作 | CancellableActionOwner、GuiPauseSnapshot、完成/失败回调；Loadout槽位、命令字符串和Farm恢复决策留业务 |
+| [FarmController](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)与ShootoutController的互斥supplier | 未来第三个输入Macro | InputLease(owner, keyboard/move/buttons)、释放与冲突原因；当前不是集中仲裁器，不能仅靠register就认为互斥完成 |
+| [AccountDirectories](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java) + [ConfigIO](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java) + [ConfigManager](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) | 为新的业务模块提供账号设置 | AccountStore、ModuleCodec(default/load/validate/toJson/schema)；UI复制政策与具体Module enum留集成层 |
+| [UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)装配助手/[CollapsibleSection](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java) | 新业务层级菜单及批量数值设置 | SettingBinding、父子enabled supplier、独立value supplier、Section布局模型；不把控件当作配置源 |
+| [HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)/[HudPanel](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudPanel.java) | 新增第三个HUD | HudDescriptor(id,renderPreview,bounds,minSize)、布局存储适配；编辑器不直接引用每个具体Macro |
+| [ESPManager](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java) + 两种局部BlockGetter + OcclusionAnalyzer | 其他只读实体/环境可视化 | LoadedGeometryView、ray/segment-AABB纯函数、snapshot provider；半径30/3、缓存寿命及目标选择留业务 |
+| [CommandListener](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java) + Farm消息包含判断 + [ShootoutAutoStart](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAutoStart.java).matches（含文本规范化） | 新NPC事件、Pest消息变体 | 单一消息dispatcher和格式规范化、来源上下文；不能把规范化字符串宣称服务器身份认证 |
 
-普通 loadout 的 400ms、换行前后 100ms、Spawn 入口 200ms 和业务轮询上限都是固定业务等待，不是这些随机字段。
+<a id="mixins"></a>
+## 9. Mixin 清单
 
-<a id="ui-structure"></a>
-## 6. UI Structure
+以两个实际资源配置文件为注册权威；下面按源码列出目标和注入方法字符串。Accessor/Invoker是接口，不是独立Tick服务。示例Mixin保留模板性质，不应当成业务调度入口。
 
-来源为 [UltimateGardenScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) 的构建函数；下列按当前页面层级列出。英文名称与 [语言资源](src/main/resources/assets/ultimate_garden/lang/en_us.json) 对应，动态项按字段 / 枚举展开，不把未使用资源当成菜单。
+| Mixin / Accessor | 目标 | 注入方法 / 访问字段 | 作用 |
+|---|---|---|---|
+| [ExampleClientMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ExampleClientMixin.java) | `Minecraft.class` | `run` | 模板 run HEAD，无业务实现 |
+| [InventoryInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java) | `KeyMapping.class` | `click`、`consumeClick`、`release` | 跟随原生 KeyMapping click/consume/release 保留 Inventory 来源次序 |
+| [MenuFarmInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java) | `Minecraft.class` | `setScreen`、`tick`、`handleKeybinds` | 真实 GUI 来源、菜单按键与 Farm 输入恢复的原生桥接 |
+| [ShootoutAimFrameMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutAimFrameMixin.java) | `Minecraft.class` | `runTick` | 在每帧原生累计鼠标消费前调用 aimFrame |
+| [ShootoutPongMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutPongMixin.java) | `ClientPacketListener.class` | `handlePongResponse` | 仅消费模块自有 Ping token；回到客户端线程更新 RTT |
+| [WindowsFocusMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java) | `Minecraft.class` | `setScreen`、`isWindowActive` | 释放状态下的窗口活跃/光标适配 |
+| [WindowsInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java) | `KeyboardHandler.class` | `keyPress(JILnet/minecraft/client/input/KeyEvent;)V` | 键盘物理输入、停止键及 GUI 来源通知/阻断 |
+| [WindowsMissTimeMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMissTimeMixin.java) | `MouseHandler.class` | `grabMouse` | grabMouse 后设置 missTime 的现有兼容行为 |
+| [WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) | `MouseHandler.class` | `grabMouse`、`onButton`、`onScroll`、`onMove`、`handleAccumulatedMovement` | 鼠标来源、布局编辑、手动射击门控、拦截和释放 |
+| [WindowsPauseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsPauseMixin.java) | `Minecraft.class` | `pauseIfInactive` | 释放焦点时跳过原有 inactive 暂停入口 |
+| [ExampleMixin.java](src/main/java/com/kuangsanfeng/ultimategarden/mixin/ExampleMixin.java) | `MinecraftServer.class` | `loadLevel` | 模板服务端 loadLevel HEAD，无业务实现 |
+| [KeyboardHandlerAccessor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyboardHandlerAccessor.java) | `KeyboardHandler.class` | `Invoker:keyPress` | 虚拟键盘调用原生键事件 |
+| [KeyMappingAccessor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyMappingAccessor.java) | `KeyMapping.class` | `Accessor:key` | 取得用户重绑定后的原生键 |
+| [ShootoutMouseAccessor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutMouseAccessor.java) | `MouseHandler.class` | `Accessor:accumulatedDX`、`Accessor:accumulatedDY`、`Accessor:isRightPressed`、`Invoker:turnPlayer`、`Invoker:onButton` | 保存/替换累计相对位移并调用原生 turnPlayer；原生右键状态 |
 
-```text
-Ultimate Garden Menu
-├─ 顶栏：LanguageSelector（English / Chinese）、关闭
-├─ Home
-│  └─ Your garden, at a glance
-│     ├─ 运行状态、实际作物、模式 / A-B、行数 / Tick、进度、Pest 计时、待处理任务
-│     └─ Start / Start after closing menu、Pause、Reset
-├─ Farm
-│  ├─ Farm configuration
-│  │  ├─ Selected crop、Farm mode（Farm / Pests）
-│  │  └─ Simulated crop（仅 TIMETESTER）
-│  ├─ Farm macro command
-│  │  └─ Previous Line、Next Line、Set Spawn、Warp Garden、Loadout
-│  └─ Crop route definition
-│     ├─ Crop to inspect/edit、name、enabled（Custom 为未完成提示）
-│     ├─ Apply And Save Crop Definition
-│     ├─ Line Change Movement
-│     ├─ Movement Duration (ticks)
-│     ├─ Line Change Squeaky Mousemat
-│     ├─ Squeaky Mousemat 1 slot
-│     ├─ Squeaky Mousemat 2 slot
-│     └─ tickLimit、totalLines、movementA/B、yawA/B、pitchA/B、存在的 hintYaw/Pitch
-├─ Pests
-│  └─ Pest Loadout
-│     ├─ Automatic pest loadout、当前计时 / 延迟信息
-│     ├─ Delay ticks 输入、Save delay（下次倒计时生效）
-│     └─ Start timer manually、Cancel timer
-├─ ESP
-│  ├─ General ESP settings
-│  │  └─ Through walls（box/fill）、Rainbow cycle（milliseconds）
-│  └─ Pest ESP
-│     ├─ Enable Pest ESP
-│     ├─ Box → enabled、color mode、color、alpha、line width
-│     ├─ Fill → enabled、color mode、color、alpha
-│     └─ Tracer → enabled、color mode、color、alpha、line width
-├─ Hotkeys
-│  └─ 全部 13 个 Binding 的名称 / Hint / 当前绑定（见快捷键表）
-└─ Settings
-   ├─ Preferences
-   │  └─ Auto-pause farming when opening menu
-   │     └─ Auto-resume farming after closing menu
-   ├─ Hint
-   │  ├─ Show Mod Chat Hints（总开关）
-   │  ├─ Macro Hints（默认折叠）
-   │  │  └─ Macro Start、Macro Pause、Macro Reset、Macro Initialized、Line Completed、TimeTester Ticks
-   │  ├─ PestLoadout Hints（默认折叠）
-   │  │  └─ Timer Start、Timer Reset、Timer Done、Loadout Change
-   │  ├─ Focus Hints（默认折叠）
-   │  │  └─ Focus Released、Focus Restored
-   │  ├─ Crop Selection & Initialization
-   │  ├─ Hotkey Help
-   │  └─ Command Help & Errors
-   ├─ HUD
-   │  ├─ Show HUD
-   │  ├─ Adjust HUD Position & Size
-   │  ├─ Display Mode → Compact / Detail
-   │  ├─ Compact Mode Content → 全部 HudConfig.Item
-   │  └─ Detail Mode Additional Content → 同一 Item 集合
-   ├─ Anti-Check
-   │  └─ Random Delay
-   │     └─ 每个 RandomDelayConfig.Key 独立四级分组
-   │        └─ Min Ticks、Max Ticks、Save
-   ├─ Appearance
-   │  ├─ Theme（Light/Dark/System）
-   │  ├─ Accent color、Apply accent color
-   │  └─ Menu Transparency
-   └─ Account Configuration
-      ├─ Source account、Target account
-      ├─ 八个模块文件复选框、All、None
-      └─ Copy → 确认页 → 执行 / 报告 / 必要时 restart 提示
-```
+注册资源：[公共 Mixin](src/main/resources/ultimate_garden.mixins.json)、[客户端 Mixin](src/client/resources/ultimate_garden.client.mixins.json)。两者 required=true、JAVA_25、defaultRequire=1；Minecraft 升级应同时核对注入签名与 tests 中的静态 wiring 审查。
 
-附属交互：DropdownSelector 使用同 Screen 的选择列表及 Cancel；LanguageSelector 是顶栏选择层；HelpTooltip 无 Hint 时不画提示图标；复制确认页含来源、目标、文件和确认 / 取消，复制执行阶段暂时禁用导航。
+<a id="source-index"></a>
+## 10. 全量源码导航索引
 
-Crop Route 的 Enter / 小键盘 Enter 只在 routeInputs 中的可用输入框聚焦时触发；与 Apply 共用 applyCropDefinition，经 act 处理失败反馈，enterHeld 阻止长按重复保存。Custom 没有普通路线字段，保存与换行配置控件仍有显示，但不意味着能够启动。
+覆盖本次快照全部 **133 个生产 Java 文件**。下面的“入口”由当前声明核对，包含构造器之外的 public/protected 方法（记录构造器名也可能出现在列表中）；“内部关键方法”只用于定位，不表示公开复用接口。枚举、record、接口的隐式方法、无访问修饰符的方法及重载参数请打开文件核对。
 
-HUD 内容默认：
+“类型引用方”来自生产源码对该类型名的直接静态引用（包含 import、签名与方法体），不是运行时调用图；长列表仅显示前五个，具体实际调用链以第2–5章为准。标为“无外部类型引用”不等于 Fabric/Mixin/资源不会调用。各组的状态 owner、依赖与释放规则见第4章，纯数值/record 不应自行注册事件。
 
-| 类别 | Item |
-|---|---|
-| Compact 默认 ON | MACRO_STATUS、FARM_MODE、CROP、LINE、LINE_TICK、PEST_LOADOUT、FOCUS_STATE、INPUT_INTERCEPTION |
-| Detail 在以上基础默认 ON | LINE_CHANGE、MOUSEMAT |
-| 两者默认 OFF | TOTAL_TICK、CURRENT_DIRECTION、LINE_CHANGE_STATUS、STOP_REASON、CURRENT_WORKFLOW |
+### 10.1 `client`
 
-setCompact(item,true) 实际强制 Detail=true 且 Detail 该项不可交互；Compact 取消时 Detail 同步 false，随后可独立选择。与 Preferences 不同：Auto-pause=OFF 只禁用 Auto-resume 交互，不改 Auto-resume 原值。Disabled Toggle 仍显示真实 ON 的主题颜色。Hint 总开关关闭时，六组子项均禁用：三个折叠头及其四级开关、三个独立 Toggle 都沿用 40% Disabled 样式，折叠状态及子项配置不变；重新开启立即恢复可编辑状态。
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/`。
 
-<a id="hotkey-reference"></a>
-## 7. Hotkey Reference
-
-注册源 [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)；分类 `Ultimate Garden`。所有默认键由原生 KeyMapping 注册，玩家在 Minecraft Controls 修改；不要直接从固定字符推导真实键位。UI 名称映射为 [LanguageKeys.hotkey](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)，原生名称为 `key.ultimate_garden.<id>`，英文资源提供其他语言的回退。
-
-| 名称 / ID | 默认绑定 | 主要入口 |
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
 |---|---|---|
-| Start / Pause / macro_toggle | Num+ | FarmController.shouldPauseByHotkey → startMacroByHotkey / pauseMacroByHotkey |
-| Reset / macro_reset | Num- | resetMacroByHotkey |
-| Next Line / next_line | ] | nextLine |
-| Previous Line / previous_line | [ | previousLine |
-| Set Spawn / spawn | Num* | spawnByHotkey → spawn |
-| Warp Garden / warp | Num/ | warpGarden |
-| Pest Timer / pest_loadout | Num7 | command.startPestLoadoutTimer |
-| Cancel Pest Timer / pest_timer_cancel | Num4 | command.cancelPestLoadoutTimer |
-| Loadout / loadout | Num9 | loadout |
-| Select Crop / crop_change | Num. | changeCropType |
-| Toggle HUD / toggle_hud | None / 未绑定 | 切换 hud.showHud 并保存 HUD 模块 |
-| Mouse Focus / window_focus | U | WindowsFocusController.toggle |
-| Open Ultimate Garden Menu / open_menu | M | MenuController.open；Screen 内 matchesMenuKey 关闭 |
+| [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) | `onInitializeClient`、`getConfigManager`、`getMacroManager`、`getFarmController`、`getWindowsFocusController`、`getWindowsInputInterceptor`、`getWindowsState` | [ViewDeviationCheckManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewDeviationCheckManager.java)、[HintManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[CropDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/CropDatabase.java)、[FarmHints.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)（另 10 个文件引用） |
 
-- 多数业务键使用 KeyEdge 的 isDown 上升沿；Open Menu 消费 click 队列，自身 Screen 的菜单键在文本编辑时不关闭菜单。
-- Num+ / Num- 在 manager.tick 前处理；Toggle HUD 也位于早期分支，独立于 Macro 控制。Menu 会话 active 后返回，不再处理后续路线 / 业务 Hotkey。
-- Toggle HUD 使用自己的上升沿并清点击队列，排除其他 Screen、文本编辑和 HUD 调整模式；修改同一配置对象，所以 Settings getter 与实际渲染一致。
-- 共享按键冲突沿用 Minecraft 注册机制；代码没有实现一个保证所有冲突都只能执行一个动作的仲裁器。
-- 聊天初始化：Select Crop → changeCropType 打开 ChatScreen → ALLOW_CHAT → handleInitializeInput 依次读取作物 / 模式，TIMETESTER 还需模拟作物。程序打开的聊天不当作玩家 GUI 自动暂停来源。
+### 10.2 `client/anti_check`
 
-<a id="code-navigation-index"></a>
-## 8. Code Navigation Index
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/`。
 
-| 修改目标 | 首选文件 / 函数 | 调用链 / 关键状态 |
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
 |---|---|---|
-| 初始化注册或生命周期 | [Ultimate_GardenClient.onInitializeClient](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) | 配置先于控制器；账号 / 断线清理 |
-| Macro 启停、重置 | [FarmController.startMacro](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.pauseMacro](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.resetMacro](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | running、menuPause、inputIntercepting |
-| 行 Tick / 总 Tick | [RouteController.tick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[FarmState.incrementTick](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java) | tick、totalTicks、commandRunning |
-| 普通移动 / A-B | [RouteController.runCurrentMovement](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) | CropDefinition.getMovementKeys(eventSelect) |
-| 换行额外移动 | [FarmCommandController.lineChangeMovement](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | RouteController.onLineFinished → continueLine |
-| Mousemat 顺序与槽位 | [SetLineYP.setAlternate](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)、[SetLineYP.setView](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java) | continueLine → startNextLine；同一个 scheduler |
-| Spawn / Num* | [FarmController.executeSpawnSequence](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmController.executeSpawnPointAndPests](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | Mushroom → spawnPoint → 可选 spawnPests |
-| Warp | [FarmCommandController.warpGarden](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | 两类回调：FarmController.warpGarden 与 RouteController.finishFarmRoute |
-| 普通 Loadout | [FarmCommandController.loadout](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | 固定等待，不负责自动选装 |
-| PestLoadout | [FarmCommandController.pestLoadout](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[FarmCommandController.pestLoadoutStep2](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[FarmCommandController.pestLoadoutStep3](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | timer / pendingPestLoadout / deferredPestInFlight / businessResumePending |
-| Pest 消息触发 | [CommandListener.register](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[FarmController.automateTaskByMonitorMessage](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | GAME → MacroManager → 延迟启动计时 |
-| 自动 GUI 暂停来源 | [PlayerGuiInput](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java)、[InventoryInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java)、[FarmController.onPlayerScreenOpened](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | 物理来源 → Screen 初始化 → Source.PLAYER_GUI |
-| GUI 关闭恢复资格 | [GuiPauseState.close](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java)、[FarmController.tickMenuSession](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | Intent、failed、resume、menuAutoResumeEligible、menuActions |
-| 非暂停自身 Menu 的攻击 / 移动 | [MenuFarmInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java)、[VirtualInput.reapplyHeldState](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java) | keepsFarmingInput、原版 handleKeybinds、missTime |
-| Mod 释放与原生 GUI 光标 | [WindowsFocusController.reapplyCursorMode](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsFocusController.useGameFocusForPlayerGui](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java) | mouseReleased、screen、MouseHandler、GLFW |
-| 玩家输入拦截 | [WindowsInputInterceptor](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java)、[WindowsInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[WindowsMouseMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) | uiInputAllowed；虚拟输入隔离 |
-| HUD 内容 / 颜色 / 可见性 | [MacroStatusHud.render](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java) | visible(item)、showHud、实际 Focus / 工作流 |
-| HUD 调整 | [HudAdjustmentController](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java) | begin → layout/move/button → finish；bounds 与临时光标 |
-| Route Apply / Enter | [UltimateGardenScreen.applyCropDefinition](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) | routeInputs → act → updateCrop → save(CROPS) |
-| ESP 实体识别 | [PestESP.collect](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java) | BAT 或 SILVERFISH；共同 SILVERFISH 样式 ID |
-| ESP 绘制 / Tracer | [ESPRenderer.draw](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java)、[ESPTracerRenderer.draw](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java) | Frame / throughWalls；Tracer Shader 另见资源树 |
-| JSON 迁移 / 未知字段 | [ConfigManager.load](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[CropConfig.load](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[ESPConfig.load](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java) | schemaVersion、protectedFiles、原文备份 |
-| 账号隔离 / 复制 | [AccountDirectories.resolve](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[ConfigManager.copyConfiguration](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) | UUID、accountRevision、pendingRestart、回滚 |
-| 聊天 Hint 分类 / UI | [HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[GeneralConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/config/GeneralConfig.java)、UltimateGardenScreen.hintSettings | isEnabled → 总开关 AND 子项；hint 对象保留未知字段，沿用备份与原子保存 |
-| 修改随机参数 | [RandomDelayConfig.sample](src/client/java/com/kuangsanfeng/ultimategarden/client/config/RandomDelayConfig.java)、[UltimateGardenScreen.randomDelaySettings](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) | 全局 Key → sample → scheduleDelayTicks |
-| 快捷键 / 帮助文案 | [MacroKeyBindings](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[LanguageKeys](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)、[HintManager](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[FarmHints](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java) | 原生名称与 UI 名称不是同一个语言机制 |
+| [ExpectedViewTracker.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ExpectedViewTracker.java) | `active`、`begin`、`submit`、`consumed`、`stationary`、`evaluate`、`clear` | [ViewDeviationCheckManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewDeviationCheckManager.java) |
+| [ViewDeviationCheckManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewDeviationCheckManager.java) | `clear`、`poll`、`before`、`submitted`、`consumed`、`tick` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ViewWarningClock.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewWarningClock.java) | `begin`、`active`、`pulse`、`clear` | [ViewDeviationCheckManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewDeviationCheckManager.java) |
 
-**当前限制与未完成项集中提示：**
+### 10.3 `client/command`
 
-- Custom1–3 是配置占位；WindowsNativeBridge 无真实 OS 实现；旧逐字符输入 / 路线 API 不是主链路。
-- Pest 精准名称 / 标签关联没有接入当前实现。源码中的 PestDetectionRegression 引用不存在的 Detection 和 preciseDetection API，是失效测试残留，不能列为已通过或已有功能。
-- Bat 支持当前已实现，但可见历史最早的 PestESP 版本就只有 Silverfish，不能捏造一个已找到的“最后正常 Bat 提交”。
-- loadout 检查任意 Screen，服务器实际菜单、选装结果与背包响应仍依赖服务器；没有实现一般性的 GUI 白名单 / 全 Screen 自动暂停。
-- README、模板元数据和旧聊天帮助未必覆盖所有新 UI 项。本文以当前连接到注册入口的代码为依据。
-- 测试桩覆盖的输入 / Focus / GUI 顺序不代表原生 Mixin 与服务器场景均已实测。新增代码后需要实测的项目应作为待验证事项保留。
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/command/`。
 
-<a id="testing-build"></a>
-## 9. Testing & Build
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [CommandHelper.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java) | `execute`、`showHotkeys`、`initialize` | [CommandTree.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java) |
+| [CommandListener.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java) | `register` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
+| [CommandTree.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java) | `register` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
 
-本次为文档重构，不重新构建或运行会生成项目文件的测试。下表来自现有脚本与测试源码；“脚本存在”不表示本次已运行。
+### 10.4 `client/config`
 
-| 入口 | 覆盖范围 / 限制 |
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/config/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [AccountDirectories.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java) | `Profile`、`legacy`、`lock`、`list`、`resolve`、`verified`、`file`、`hasLegacy`、`regular` | [ConfigIO.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java)、[ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [AccountIdentity.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountIdentity.java) | 以类型/字段或注入为入口 | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[AccountDirectories.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) |
+| [ConfigIO.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java) | `CopyResult`、`read`、`backup`、`backupForMigration`、`write`、`replaceTransaction` | [AccountDirectories.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) |
+| [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) | `getViewDeviationConfig`、`getZombieShootoutConfig`、`activateAccount`、`matchesAccount`、`currentAccount`、`accountRevision`、`setCurrentAccountCopyGuard`、`isPendingRestart`、`pendingRestartModules`、`accountProfiles`、`hasLegacyConfiguration`、`getHudConfig`、`getRandomDelayConfig`、`getPestConfig`、`getESPConfig`、`getGeneralConfig`、`getFarmConfig`、`getCropConfig`、`getUIConfig`、`save`、`saveFarmConfig`、`saveUIConfig`、`saveAll`、`reset`、`CopyPlan`、`CopyReport`、`copyConfiguration`<br>内部：`verifyStorage`、`load`、`readFields`、`saveUnlocked`、`copyUnlocked` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[AccountDirectories.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/AccountDirectories.java)、[CropConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[ESPManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java)（另 9 个文件引用） |
+| [CropConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java) | `load`、`getCrop`、`get`、`toJson`、`editableValues`、`updateCrop`、`wasRepaired`、`resetToDefault` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) |
+| [CropData.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropData.java) | `getCropType`、`getName`、`getTickLimit`、`getLines`、`getMovementKeys`、`getYaw`、`getPitch`、`getYawA`、`getPitchA`、`getYawB`、`getPitchB` | 无外部类型引用；核对资源或 owner 装配 |
+| [CropDefinition.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropDefinition.java) | `keys`、`getName`、`getType`、`isExecutable`、`getTickLimit`、`getLines`、`LineChangeMovement`、`LineChangeYawPitch`、`lineChangeMovement`、`lineChangeYawPitch`、`useAlternateSlot`、`getYaw`、`getPitch`、`getHintYaw`、`getHintPitch`、`getMovementKeys` | [CropConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[CropDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/CropDatabase.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) |
+| [ESPConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java) | `isShowShootoutInterceptBox`、`setShowShootoutInterceptBox`、`clearForAccount`、`hasTarget`、`registerTarget`、`getTarget`、`isThroughWalls`、`setThroughWalls`、`getCycleDurationMs`、`setCycleDurationMs`、`resetToDefault`、`getBox`、`getFill`、`getTracer`、`snapshot`、`isEnabled`、`setEnabled`、`getColorMode`、`setColorMode`、`getColor`、`setColor`、`getAlpha`、`setAlpha`、`getLineWidth`、`setLineWidth`、`load`、`requiresMigration`、`toJson` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[PestESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java)、[ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [FarmConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/FarmConfig.java) | `getSchemaVersion`、`getSelectedCropType`、`setSelectedCropType`、`getSelectedFarmMode`、`setSelectedFarmMode`、`getSelectedSimulatedCropType`、`setSelectedSimulatedCropType`、`getSelectedCropTypeId`、`getSelectedFarmModeId`、`getSelectedSimulatedCropTypeId`、`cropNameFromId`、`farmModeFromId`、`resetToDefault` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[MenuController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/MenuController.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [GeneralConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/GeneralConfig.java) | `hintEnabled`、`setHintEnabled`、`loadHints`、`hintsToJson`、`isAutoPauseFarmWhenOpeningMenu`、`setAutoPauseFarmWhenOpeningMenu`、`isAutoResumeFarmAfterGuiClose`、`setAutoResumeFarmAfterGuiClose`、`getSchemaVersion`、`isShowModChatHints`、`setShowModChatHints`、`resetToDefault` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[HintManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [HudConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/HudConfig.java) | `Bounds`、`bounds`、`setBounds`、`x`、`y`、`width`、`height`、`isFarmOnlyWhileRunning`、`setFarmOnlyWhileRunning`、`isShowZombieShootoutHud`、`setShowZombieShootoutHud`、`isZombieOnlyWhileRunning`、`setZombieOnlyWhileRunning`、`showFarm`、`showZombie`、`isShowHud`、`setShowHud`、`getMode`、`setMode`、`compact`、`detail`、`visible`、`setCompact`、`setDetail`、`resetToDefault`、`load`、`toJson` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[HudAdjustmentController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[ZombieShootoutHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/ZombieShootoutHud.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [PestConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/PestConfig.java) | `isPestESPEnabled`、`setPestESPEnabled`、`getSchemaVersion`、`isAutoPestLoadout`、`setAutoPestLoadout`、`getPestLoadoutDelayTicks`、`setPestLoadoutDelayTicks`、`resetToDefault` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[PestESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java) |
+| [RandomDelayConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/RandomDelayConfig.java) | `defaults`、`Range`、`resetToDefault`、`get`、`set`、`sample`、`load`、`toJson` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[SetLineYP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [UIConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/UIConfig.java) | `getMenuTransparency`、`setMenuTransparency`、`getLanguage`、`setLanguage`、`getSchemaVersion`、`getUiThemeMode`、`setUiThemeMode`、`getAccentColor`、`setAccentColor`、`resetToDefault` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[ThemePalette.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/theme/ThemePalette.java) |
+| [ViewDeviationConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ViewDeviationConfig.java) | `warning`、`stop`、`duration`、`farm`、`zombie`、`resetToDefault`、`load`、`toJson` | [ViewDeviationCheckManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewDeviationCheckManager.java)、[ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java) |
+| [ZombieShootLogCategory.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ZombieShootLogCategory.java) | `folder`、`zombie`、`legacy` | [ZombieShootoutConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ZombieShootoutConfig.java)、[ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java)、[ZombieShootLogGate.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootLogGate.java)、[ZombieShootSession.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootSession.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)（另 1 个文件引用） |
+| [ZombieShootoutConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ZombieShootoutConfig.java) | `window`、`isOcclusionCheckEnabled`、`setOcclusionCheckEnabled`、`setLogOptionsChanged`、`logCategories`、`logEnabled`、`setLogEnabled`、`isManualShotRestrictionEnabled`、`setManualShotRestrictionEnabled`、`manualShotRestrictionEditable`、`manualShotRestrictionEffective`、`setAutomationChangeListener`、`isAutoAimEnabled`、`isAutoShootEnabled`、`autoShootEffective`、`setAutoAimEnabled`、`setAutoShootEnabled`、`isArrowSpawnConfirmationEnabled`、`setArrowSpawnConfirmationEnabled`、`isAutoStartZombieShootout`、`setAutoStartCancellation`、`setAutoStartZombieShootout`、`resetToDefault`、`get`、`set`、`load`、`toJson` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[ZombieShootLogGate.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootLogGate.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+
+### 10.5 `client/hint`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/hint/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [HintManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java) | `isEnabled`、`printFor`、`printHint`、`print`、`printRequired`、`printNull` | [CommandHelper.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java)、[CommandTree.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmHints.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)、[WindowsFocusController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java) |
+| [KeyNameMap.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/KeyNameMap.java) | `get` | 无外部类型引用；核对资源或 owner 装配 |
+
+### 10.6 `client/hotkey`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java) | `Binding`、`getBindings`、`getMenuKeyName`、`matchesShootoutMouse`、`matchesShootoutKey`、`matchesMenuKey`、`clearMenuClicks`、`isMenuKeyPhysicallyDown`、`rising`、`getKeyName`、`register` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[HintManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[WindowsInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+
+### 10.7 `client/input`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/input/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [PlayerGuiInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/PlayerGuiInput.java) | `isVirtualDispatch`、`virtualDispatch`、`request`、`consume`、`inventoryClick`、`inventoryConsumed`、`inventoryReleased`、`clearInventoryRequest`、`clearTransient`、`clear` | [VirtualKeyboard.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[InventoryInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java)、[WindowsInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java) |
+| [VirtualInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java) | `HeldActions`、`reapplyHeldState`、`suspendForMenu`、`resumeAfterMenu`、`actionKeyDown`、`actionKeyUp`、`actionMouseDown`、`actionMouseUp`、`keyDown`、`keyUp`、`keyClick`、`slot`、`typeCharacter`、`mouseDown`、`mouseUp`、`mouseClick`、`mouseMove`、`releaseAll` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[FarmCommandInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandInput.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)（另 3 个文件引用） |
+| [VirtualKeyboard.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java) | `setInputAllowed`、`reapplyHeldState`、`keyDown`、`keyUp`、`keyClick`、`slot`、`typeCharacter`、`releaseAll` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[VirtualInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java) |
+| [VirtualMouse.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualMouse.java) | `mouseDown`、`mouseUp`、`mouseClick`、`mouseMove`、`releaseAll`、`restoreState`、`reapplyHeldState`、`isLeftDown` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[VirtualInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java)、[WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) |
+
+### 10.8 `client/macro`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [GuiPauseState.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/GuiPauseState.java) | `open`、`close`、`start`、`pause`、`fail`、`finish`、`abort`、`isActive`、`isOpen`、`hasFailed`、`wasRunningAtOpen`、`getIntent`、`shouldPauseOnToggle`、`canChangeRoute` | [FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) |
+| [MacroManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/MacroManager.java) | `register`、`getFarmController`、`start`、`pause`、`reset`、`startByHotkey`、`pauseByHotkey`、`resetByHotkey`、`tick`、`restoreInputState`、`handleInitializeInput`、`automateTaskByMonitorMessage` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[CommandListener.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) |
+
+### 10.9 `client/macro/esp`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ESPManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java) | `Frame`、`registerFixed`、`invalidateFrames`、`register`、`initialize` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[ESPRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java)、[ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java) |
+| [ESPRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java) | `draw`、`close` | [ESPManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java) |
+| [ESPTarget.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPTarget.java) | 以类型/字段或注入为入口 | [ESPManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java)、[PestESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java)、[ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java) |
+
+### 10.10 `client/macro/esp/render`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ESPBoxRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPBoxRenderer.java) | `draw`、`line` | [ESPRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java) |
+| [ESPFillRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPFillRenderer.java) | `draw` | [ESPRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java) |
+| [ESPTracerRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java) | `draw` | [ESPRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPRenderer.java) |
+
+### 10.11 `client/macro/esp/style`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ESPColorMode.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorMode.java) | 以类型/字段或注入为入口 | [ESPConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java)、[ESPColorProvider.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorProvider.java)、[ESPStyle.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPStyle.java)、[ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [ESPColorProvider.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorProvider.java) | `color` | [ESPBoxRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPBoxRenderer.java)、[ESPFillRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPFillRenderer.java)、[ESPTracerRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java) |
+| [ESPStyle.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPStyle.java) | 以类型/字段或注入为入口 | [ESPConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java)、[ESPBoxRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPBoxRenderer.java)、[ESPFillRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPFillRenderer.java)、[ESPTracerRenderer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/render/ESPTracerRenderer.java)、[ESPColorProvider.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPColorProvider.java)（另 2 个文件引用） |
+| [ESPTargetStyle.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/style/ESPTargetStyle.java) | `hasVisibleComponent` | [ESPConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java)、[ESPManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/esp/ESPManager.java)、[ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java) |
+
+### 10.12 `client/macro/farm`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) | `getState`、`getConfig`、`getCommand`、`startMacroByHotkey`、`setExternalInputOwner`、`startMacro`、`pauseMacroByHotkey`、`pauseMacro`、`resetMacroByHotkey`、`resetMacro`、`runCurrentMovement`、`stopMovement`、`restoreInputState`、`tick`、`onPlayerScreenOpened`、`reapplyMenuInput`、`beginUltimateGardenMenu`、`endUltimateGardenMenu`、`endMenuPause`、`isMenuSessionActive`、`shouldPauseByHotkey`、`isMenuOpen`、`getRunStatus`、`getHudStopReason`、`canEditRouteConfiguration`、`requestMenuStart`、`queueMenuAction`、`getQueuedMenuActions`、`applySavedSelection`、`abortForWorldChange`、`nextLine`、`previousLine`、`changeCropType`、`handleInitializeInput`、`spawnByHotkey`、`spawn`、`loadout`、`warpGarden`、`automateTaskByMonitorMessage`<br>内部：`tickMenuSession` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[CommandHelper.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandHelper.java)、[CommandTree.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[MacroManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/MacroManager.java)（另 3 个文件引用） |
+| [FarmState.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmState.java) | `getLineChangePhase`、`setLineChangePhase`、`getTotalTicks`、`isRunning`、`setRunning`、`isEventChange`、`setEventChange`、`isEventSelect`、`setEventSelect`、`isCommandRunning`、`setCommandRunning`、`getCropType`、`setCropType`、`getModType`、`setModType`、`isPestsMode`、`isFarmMode`、`getTick`、`setTick`、`incrementTick`、`resetTick`、`getEventCount`、`setEventCount`、`incrementEventCount`、`decrementEventCount`、`resetRoute`、`reset` | [FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java) |
+| [MacroConstants.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/MacroConstants.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+
+### 10.13 `client/macro/farm/action`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) | `getWorkflow`、`markSpawnScheduled`、`getRandomDelays`、`setRandomDelays`、`isExpectingLoadoutScreen`、`isBusinessResumePending`、`isPestLoadoutPending`、`discardDeferredActions`、`getPestLoadoutRemainingTicks`、`hasPendingWork`、`hasActionFailed`、`clearActionFailure`、`abortWorld`、`getScheduler`、`isRunning`、`tick`、`cancel`、`startPestLoadoutTimer`、`cancelPestLoadoutTimer`、`isPestLoadoutTimerRunning`、`setPestLoadoutTimerFinished`、`warpGarden`、`spawnPoint`、`spawnMushroomMovement`、`lineChangeMovement`、`loadout`、`pestLoadout`、`spawnPests` | [FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[ActionScheduler.java](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java)、[MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java) |
+| [FarmCommandInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandInput.java) | `isCommandRunning`、`tick`、`SendChar`、`SendText`、`Tap`、`Return`、`WarpGarden`、`SpawnPoint`、`Loadout`、`cancel` | 无外部类型引用；核对资源或 owner 装配 |
+
+### 10.14 `client/macro/farm/crop`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [CropDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/CropDatabase.java) | `get`、`exists` | [RouteDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteDatabase.java) |
+| [CropType.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/crop/CropType.java) | `getValue`、`isCustom`、`fromValue` | [CropConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[CropDefinition.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropDefinition.java)、[FarmConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/FarmConfig.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmHints.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)（另 6 个文件引用） |
+
+### 10.15 `client/macro/farm/hint`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [FarmHints.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java) | `printHint` | [FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[PestLoadoutTimer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestLoadoutTimer.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) |
+
+### 10.16 `client/macro/farm/pest`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [PestESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java) | `collect` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
+| [PestLoadoutTimer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestLoadoutTimer.java) | `start`、`tick`、`getRemainingTicks`、`isRunning`、`isFinished`、`clearFinished`、`cancel` | [FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java) |
+
+### 10.17 `client/macro/farm/route`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) | `setRouteAllowed`、`stopKeyboardMouse`、`runCurrentMovement`、`stopMovement`、`tick`、`nextLine`、`previousLine`<br>内部：`stopKeyboard`、`onLineFinished`、`continueLine`、`startNextLine`、`finishFarmRoute` | [FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java) |
+| [RouteData.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteData.java) | `getRoute`、`useAlternateSlot`、`getCropType` | [RouteDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteDatabase.java) |
+| [RouteDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteDatabase.java) | `get` | 无外部类型引用；核对资源或 owner 装配 |
+| [RouteKey.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteKey.java) | 以类型/字段或注入为入口 | [RouteData.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteData.java)、[RouteDatabase.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteDatabase.java) |
+| [SetLineYP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java) | `setNormal`、`setAlternate` | [RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java)、[ActionScheduler.java](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java) |
+| [SlotSelector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SlotSelector.java) | `getSlot` | 无外部类型引用；核对资源或 owner 装配 |
+
+### 10.18 `client/macro/zombie_shoot`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ShootoutAimClock.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimClock.java) | `reset`、`step` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutAimCompletion.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimCompletion.java) | `error`、`aligned` | [ExpectedViewTracker.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ExpectedViewTracker.java)、[ShootoutMouseInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java)、[ShootoutTanhAim.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTanhAim.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutAimCorrection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimCorrection.java) | `active`、`threshold`、`clear`、`ready` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java) | `batchGeneration`、`active`、`sync`、`tick`、`end`、`shutdown`、`solution`、`solutionId`、`inputContext`、`queued`、`applied`、`gate`、`nextAttempt`、`linkAttempt`、`dispatch`、`confirmation` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutArrowConfirmation.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutArrowConfirmation.java) | `Observation`、`Attempt`、`Confirmation`、`clearSession`、`reset`、`pending`、`detection`、`confirmation`、`rememberDispatched`、`cancel`、`attempted`、`timedOut`、`supported`、`attemptedManual`、`observe` | [ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutAutoStart.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAutoStart.java) | `Context`、`matches`、`cancel`、`pending`、`receive`、`due` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutBabyStall.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutBabyStall.java) | `stalled`、`ready`、`clear`、`observe` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutCandidateSelection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutCandidateSelection.java) | `clear`、`select`、`firstOrRescan`、`first` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutLampCollision.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutLampCollision.java) | `hits` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutModel.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutModel.java) | `Projection`、`Solution`、`at`、`tangent`、`project`、`load`、`match`、`finite`、`wrap`、`reflect`、`speed`、`sum`、`fall`、`velocity`、`arrow`、`solve` | [ShootoutAimCompletion.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimCompletion.java)、[ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)、[ShootoutLampCollision.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutLampCollision.java)、[ShootoutTanhAim.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTanhAim.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutMouseInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java) | `setDiagnosticsObserver`、`aimMode`、`setViewObserver`、`dispatching`、`clearPendingMotion`、`resetAim`、`aim`、`click`、`consumed`、`cancel` | [ViewDeviationCheckManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/anti_check/ViewDeviationCheckManager.java)、[ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)、[WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) |
+| [ShootoutPolicy.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutPolicy.java) | `Metadata`、`priority`、`retryAllowed`、`metadata` | [ShootoutModel.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutModel.java)、[ShootoutTargetRound.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTargetRound.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutRtt.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutRtt.java) | `status`、`milliseconds`、`pending`、`owns`、`stop`、`start`、`tick`、`pong` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutShotClock.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutShotClock.java) | `reset`、`ready`、`remainingTicks`、`fired` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutSpeed.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutSpeed.java) | `Estimate`、`measuredSpeed`、`observe` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutTanhAim.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTanhAim.java) | `Rotation`、`step`、`rotation`、`rawDelta` | [ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)、[ShootoutMouseInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java) |
+| [ShootoutTargetLoss.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTargetLoss.java) | `clear`、`expired` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ShootoutTargetRound.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutTargetRound.java) | `Attempt`、`handled`、`retry`、`regularEligible`、`relockEligible`、`dispatched`、`verify`、`beginRelock` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) |
+| [ZombieShootArrowAngles.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootArrowAngles.java) | `wrap`、`direction`、`sample` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootBlockCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootBlockCollector.java) | `Cell`、`offset`、`boundedView`、`getBlockState`、`getFluidState`、`getBlockEntity`、`getHeight`、`getMinY`、`request`、`tick`、`snapshot` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java)、[ZombieShootOcclusionAnalyzer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootOcclusionAnalyzer.java) |
+| [ZombieShootClassifier.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootClassifier.java) | `classify`、`items` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) | `setGateChanged`、`logsEnabled`、`setLogsEnabled`、`optionsChanged`、`update`、`enabled`、`status`、`modelStatus`、`count`、`resetCounters`、`stop`、`shutdown` | [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [ZombieShootCoordinateSystem.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCoordinateSystem.java) | `insideRelative`、`contains`、`relative`、`displacement` | [ZombieShootBlockCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootBlockCollector.java)、[ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java)、[ZombieShootPathAnalyzer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootPathAnalyzer.java)、[ZombieShootSession.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootSession.java) |
+| [ZombieShootEntityTracker.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootEntityTracker.java) | `Previous`、`Sample`、`Identity`、`identify`、`markMissing`、`identities`、`observedAt`、`observe`、`retain` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootLogGate.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootLogGate.java) | `enabled`、`setEnabled`、`categories`、`collecting` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootLogger.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootLogger.java) | `offer`、`endBatch`、`count`、`close`、`awaitClose`、`finished` | [ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)、[ZombieShootSession.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootSession.java) |
+| [ZombieShootOcclusionAnalyzer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootOcclusionAnalyzer.java) | `intersects`、`analyze` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootPathAnalyzer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootPathAnalyzer.java) | `Result`、`turnInterior`、`analyze` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootPathCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootPathCollector.java) | `Point`、`add`、`snapshot` | [ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java)、[ZombieShootPathAnalyzer.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootPathAnalyzer.java) |
+| [ZombieShootSession.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootSession.java) | `select`、`accepts`、`registerTag`、`emit`、`stop` | [ZombieShootBlockCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootBlockCollector.java)、[ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java) |
+| [ZombieShootSnapshot.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootSnapshot.java) | `map` | [ShootoutAimDiagnostics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutAimDiagnostics.java)、[ZombieShootArrowAngles.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootArrowAngles.java)、[ZombieShootBlockCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootBlockCollector.java)、[ZombieShootCollector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootCollector.java)、[ZombieShootLogger.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootLogger.java)（另 4 个文件引用） |
+| [ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java) | `InterceptDebug`、`HudSnapshot`、`hudSnapshot`、`interceptDebug`、`pingStatus`、`onRttPong`、`aimFrame`、`onManualShotBlockedByInterceptor`、`blockManualShot`、`onManualButton`、`manualInputProcessed`、`cancelAutoStart`、`onStartMessage`、`enabled`、`state`、`status`、`pingText`、`targetText`、`intercepting`、`interceptingAim`、`interceptingShoot`、`toggle`、`start`、`stop`、`register`、`classify`、`getBlockState`、`getFluidState`、`getBlockEntity`、`getHeight`、`getMinY`<br>内部：`aimReady`、`resetAimCycle`、`clearFrameAim`、`requestFrameAim`、`completeShot`、`automationChanged`、`holdInvalidTarget`、`observe`、`select`、`selectObserved`、`prediction`、`verify`、`tick`、`collisionCheck` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[CommandListener.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandListener.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java)、[ShootoutAimFrameMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutAimFrameMixin.java)（另 5 个文件引用） |
+| [ZombieShootoutESP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutESP.java) | `color`、`bounds`、`register` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
+
+### 10.19 `client/mixin`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ExampleClientMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ExampleClientMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [InventoryInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [KeyMappingAccessor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyMappingAccessor.java) | 以类型/字段或注入为入口 | [MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[VirtualKeyboard.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)、[InventoryInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/InventoryInputMixin.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [KeyboardHandlerAccessor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/KeyboardHandlerAccessor.java) | 以类型/字段或注入为入口 | [VirtualKeyboard.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java) |
+| [MenuFarmInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [ShootoutAimFrameMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutAimFrameMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [ShootoutMouseAccessor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutMouseAccessor.java) | 以类型/字段或注入为入口 | [ShootoutMouseInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java) |
+| [ShootoutPongMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/ShootoutPongMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [WindowsFocusMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [WindowsInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [WindowsMissTimeMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMissTimeMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+| [WindowsPauseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsPauseMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+
+### 10.20 `client/scheduler`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ActionScheduler.java](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/ActionScheduler.java) | `setPaused`、`isPaused`、`getRemainingTicks`、`isRunning`、`tick`、`schedule`、`scheduleDelayTicks`、`scheduleAfterTicks`、`clear` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[VirtualMouse.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualMouse.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[SetLineYP.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/SetLineYP.java) |
+| [InputScheduler.java](src/client/java/com/kuangsanfeng/ultimategarden/client/scheduler/InputScheduler.java) | `delayMillis`、`delayTicks`、`tick`、`isWaiting`、`getRemainingTicks`、`clear` | [FarmCommandInput.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandInput.java) |
+
+### 10.21 `client/ui`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [MenuController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/MenuController.java) | `open`、`saveFarmSelection` | [CommandTree.java](src/client/java/com/kuangsanfeng/ultimategarden/client/command/CommandTree.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+
+### 10.22 `client/ui/hud`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [HudAdjustmentController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java) | `Layout`、`selected`、`selectedLayout`、`isActive`、`begin`、`freeCursor`、`tick`、`layout`、`move`、`button`、`finish` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[ZombieShootoutController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ZombieShootoutController.java)、[WindowsInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java)（另 6 个文件引用） |
+| [HudPanel.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudPanel.java) | 以类型/字段或注入为入口 | [MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[ZombieShootoutHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/ZombieShootoutHud.java) |
+| [MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java) | `render` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
+| [ZombieShootoutHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/ZombieShootoutHud.java) | `render` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java) |
+
+### 10.23 `client/ui/language`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [LanguageKeys.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java) | `component`、`operation`、`hotkey` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [LanguageManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageManager.java) | `current`、`select`、`text`、`optional`、`keyName`、`translate`、`localize`、`errorKey`、`cropName` | [HudPanel.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudPanel.java)、[MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[ZombieShootoutHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/ZombieShootoutHud.java)、[LanguageKeys.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageKeys.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)（另 2 个文件引用） |
+| [LanguageType.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageType.java) | `code`、`englishName`、`optionLabel`、`flagResource` | [ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[UIConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/UIConfig.java)、[LanguageManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/language/LanguageManager.java)、[LanguageSelector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/LanguageSelector.java) |
+
+### 10.24 `client/ui/render`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [MenuInputGraphics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/MenuInputGraphics.java) | `text`、`fill`、`textHighlight`、`requestCursor`、`setPreeditOverlay` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [RoundedRect.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/RoundedRect.java) | `fill`、`outline` | [HudPanel.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudPanel.java)、[MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[ZombieShootoutHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/ZombieShootoutHud.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[CollapsibleSection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)（另 6 个文件引用） |
+
+### 10.25 `client/ui/screen`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) | `finishHudAdjustment`、`keepsFarmingInput`、`isPauseScreen`、`added`、`removed`、`onClose`、`tick`、`keyPressed`、`keyReleased`、`init`、`mouseScrolled`、`mouseClicked`、`extractBackground`、`extractRenderState`<br>内部：`Placement`、`Card`、`Label`、`Divider`、`Choice`、`palette`、`closeMenu`、`build`、`act`、`saved`、`heading`、`sectionInset`、`sectionX`、`sectionWidth`、`info`、`note`、`place`、`button`、`toggle`、`dropdown`、`input`、`divider`、`dismissChoices`、`choiceLabel`、`cropChoices`、`home`、`totalLines`、`progress`、`farm`、`cropLineChangeFields`、`cropDefinitionSaveButton`、`applyCropDefinition`、`fieldLabel`、`timerText`、`pests`、`hotkeys`、`shootoutSettings`、`shootoutInput`、`settings`、`developerSettings`、`hintSettings`、`hintToggle`、`hudSettings`、`nestedDelaySection`、`viewDeviationSettings`、`randomDelaySettings`、`canEditFarmConfiguration`、`accountName`、`fileNames`、`accountConfiguration`、`hasUnsavedDrafts`、`executeAccountCopy`、`espSettings`、`espTarget`、`espComponent`、`espInput`、`helpText`、`runStatus`、`cropName`、`statusText`、`sectionVisible`、`displayedY`、`positionContent` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[MacroKeyBindings.java](src/client/java/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[VirtualKeyboard.java](src/client/java/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[MenuFarmInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MenuFarmInputMixin.java)（另 4 个文件引用） |
+
+### 10.26 `client/ui/theme`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/theme/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ThemePalette.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/theme/ThemePalette.java) | `bg`、`fg`、`multiplyAlpha`、`from`、`blend` | [MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[ZombieShootoutHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/ZombieShootoutHud.java)、[MenuInputGraphics.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/render/MenuInputGraphics.java)、[UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[CollapsibleSection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)（另 7 个文件引用） |
+
+### 10.27 `client/ui/widget`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [CollapsibleSection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java) | `State`、`depth`、`inset`、`isExpanded`、`isContentVisible`、`toggle`、`measure`、`hiddenHeight`、`hiddenHeightBefore`、`mouseClicked`、`state`、`finishContent`、`extractContents` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [DropdownSelector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/DropdownSelector.java) | 以类型/字段或注入为入口 | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [HelpTooltip.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/HelpTooltip.java) | `alpha`、`displayed`、`clear`、`update`、`beginFrame`、`clip`、`isIconAt`、`iconAfterText`、`renderOverlay` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[CollapsibleSection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)、[StyledButton.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/StyledButton.java) |
+| [LanguageSelector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/LanguageSelector.java) | `isOpen`、`dismiss`、`onPress`、`extractContents`、`handleOverlayClick`、`renderOverlay` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [SelectionCheckbox.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/SelectionCheckbox.java) | `extractContents` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [StyledButton.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/StyledButton.java) | `onPress`、`withHelp`、`extractContents`、`updateWidgetNarration` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[CollapsibleSection.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/CollapsibleSection.java)、[DropdownSelector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/DropdownSelector.java)、[LanguageSelector.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/LanguageSelector.java)、[SelectionCheckbox.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/SelectionCheckbox.java)（另 1 个文件引用） |
+| [ToggleSwitch.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/ToggleSwitch.java) | `extractContents` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+| [TransparencySlider.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/widget/TransparencySlider.java) | `percentage`、`setValue`、`applyValue`、`updateMessage`、`keyPressed`、`extractWidgetRenderState` | [UltimateGardenScreen.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java) |
+
+### 10.28 `client/window`
+
+目录：`src/client/java/com/kuangsanfeng/ultimategarden/client/window/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [WindowsFocusController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java) | `releaseFocusWithHint`、`releaseFocus`、`restoreFocusWithHint`、`restoreFocus`、`toggle`、`useGameFocusForPlayerGui`、`restoreGameMouseAfterMenu`、`reapplyCursorMode`、`isReleased` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[FarmCommandController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/action/FarmCommandController.java)、[RouteController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/route/RouteController.java) |
+| [WindowsInputInterceptor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java) | `setExternalOwner`、`setExternalMouseOwners`、`blockMouseButton`、`setUiInputAllowed`、`enable`、`disable`、`shouldBlockInput`、`blockKeyboard`、`blockMouseScroll`、`blockMouseMove` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[FarmController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)、[WindowsInputMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsInputMixin.java)、[WindowsMouseMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsMouseMixin.java) |
+| [WindowsNativeBridge.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsNativeBridge.java) | `getWindowHandle`、`setForegroundWindow`、`releaseCursor` | 无外部类型引用；核对资源或 owner 装配 |
+| [WindowsState.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsState.java) | `isMouseReleased`、`setMouseReleased`、`isInputIntercepting`、`setInputIntercepting` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[WindowsFocusMixin.java](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WindowsFocusMixin.java)、[MacroStatusHud.java](src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/MacroStatusHud.java)、[WindowsFocusController.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)、[WindowsInputInterceptor.java](src/client/java/com/kuangsanfeng/ultimategarden/client/window/WindowsInputInterceptor.java) |
+
+### 10.29 `main`
+
+目录：`src/main/java/com/kuangsanfeng/ultimategarden/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [Ultimate_Garden.java](src/main/java/com/kuangsanfeng/ultimategarden/Ultimate_Garden.java) | `onInitialize`、`id` | [Ultimate_GardenClient.java](src/client/java/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[ConfigIO.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigIO.java)、[ConfigManager.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ConfigManager.java)、[CropConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/CropConfig.java)、[ESPConfig.java](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ESPConfig.java)（另 7 个文件引用） |
+
+### 10.30 `main/mixin`
+
+目录：`src/main/java/com/kuangsanfeng/ultimategarden/mixin/`。
+
+| 文件 | 入口 / 内部定位 | 类型引用方（静态导航） |
+|---|---|---|
+| [ExampleMixin.java](src/main/java/com/kuangsanfeng/ultimategarden/mixin/ExampleMixin.java) | 以类型/字段或注入为入口 | 无外部类型引用；核对资源或 owner 装配 |
+
+### 10.31 遗留与使用范围提醒
+
+- `InputScheduler` 是单一倒计时，delayTicks 取 max 延长等待，不是 ActionScheduler 的 FIFO。它只被旧 `FarmCommandInput` 引用；当前生产代码没有构造 FarmCommandInput。
+- `MacroConstants`、`CropDatabase`、`RouteDatabase`、`CropData`、`RouteData` 保留旧数据/接口。现有执行路线的定义来自 CropConfig/CropDefinition，新增配置应沿当前入口接入。
+- `VirtualMouse.mouseMove` 不是 Shootout 的帧级视角实现；实际移动入口是 ShootoutMouseInput，避免只凭注释或旧命名判断可复用性。
+- `WindowsNativeBridge` 是现有窗口桥接，并不代表项目安装了第二套 OS 键鼠钩子服务；实际普通输入门控见 Mixins 与 WindowsInputInterceptor。
+- 模板 ExampleMixin/ExampleClientMixin 保留注册，但没有实现新的 Macro 功能。Farm View Check 同样只保存配置，不建采样会话。
+
+<a id="assets-tests"></a>
+## 11. 资源与测试索引
+
+### 11.1 资源和模型
+
+| 文件 | 用途 |
 |---|---|
-| [tests/hints/run.ps1](tests/hints/run.ps1) | 实际 HintManager / FarmHints 输出分发、独立消息、空行抑制、动态按键读取及 JSON 兼容；Minecraft 聊天输出使用桩 |
-| [tests/config/run.ps1](tests/config/run.ps1) | ConfigRegression、AccountRegression、LineChangeConfigRegression、RandomDelayRegression、MenuPauseConfigRegression、HudConfigRegression，以及 LanguageRegression / TransparencyRegression |
-| [tests/gui/run.ps1](tests/gui/run.ps1) | GuiPauseState、PlayerGuiInput、队列冻结、折叠层级、Tooltip 时序、Pest 菜单边界；部分原生类型用桩 |
-| [tests/gui/InventoryEventOrderRegression.py](tests/gui/InventoryEventOrderRegression.py) | 读取缓存 Minecraft sources 验证背包事件顺序与输入来源注入位置；需要先生成 sources 缓存 |
-| [tests/route/run.ps1](tests/route/run.ps1) | 真实 Route / Command / State / Scheduler 的计时、额外移动、Mousemat 串行与随机参数；输入与窗口桩 |
-| [tests/focus/run.ps1](tests/focus/run.ps1) | 真实 Focus / Interceptor 控制器；模拟原生 setScreen / grabMouse / GLFW |
-| [tests/menu-input/run.ps1](tests/menu-input/run.ps1) | 真实 VirtualInput / VirtualMouse 的 held/release 与 Screen 边界；底层键盘和窗口桩 |
-| [tests/hud-adjust/run.ps1](tests/hud-adjust/run.ps1) | 实际调整控制器的拖动、边角缩放、保存、关闭状态保留与世界清理；原生边界桩 |
-| [tests/esp/run.ps1](tests/esp/run.ps1) | ESPRegression 配置 / 样式 / 几何；PestESPRegression 实体筛选桩；TracerShaderRegression 创建真实 GLFW / OpenGL 测试上下文，需要可用图形环境 |
+| [esp_tracer.vsh](src/client/resources/assets/ultimate_garden/shaders/core/esp_tracer.vsh) | Tracer 顶点着色器，配合 ESPTracerRenderer 的现有管线 |
+| [cn.png](src/client/resources/assets/ultimate_garden/textures/gui/language/cn.png) | 语言选择器中国旗帜资源 |
+| [us.png](src/client/resources/assets/ultimate_garden/textures/gui/language/us.png) | 语言选择器美国旗帜资源 |
+| [ultimate_garden.client.mixins.json](src/client/resources/ultimate_garden.client.mixins.json) | 客户端13项 Mixin/Accessor 注册 |
+| [default-crops.json](src/client/resources/ultimategarden/default-crops.json) | CropConfig 默认作物定义（并非每次路线 Tick 重新加载） |
+| [zombie_shoot_theoretical_models.json](src/client/resources/ultimategarden/zombie_shoot_theoretical_models.json) | ShootoutModel 的只读路径、速度及箭矢参数；场景专用，非日志输出 |
+| [icon.png](src/main/resources/assets/ultimate_garden/icon.png) | Mod 图标 |
+| [en_us.json](src/main/resources/assets/ultimate_garden/lang/en_us.json) | 英文翻译；动态 Setting/日志枚举/KeyMapping 键也在此维护 |
+| [zh_cn.json](src/main/resources/assets/ultimate_garden/lang/zh_cn.json) | 中文翻译；界面由 LanguageManager 选择并保留英文回退 |
+| [fabric.mod.json](src/main/resources/fabric.mod.json) | Fabric 模块元数据、入口及依赖声明 |
+| [ultimate_garden.mixins.json](src/main/resources/ultimate_garden.mixins.json) | 公共模板 Mixin 注册 |
 
-测试通常要求设置 JAVA_HOME 为 Java 25，并先编译生产类。脚本编译结果写入 build 子目录，不修改运行账号 JSON；配置测试使用临时目录。测试目录中的 stubs 只能用于测试 Classpath，不应进入 Mod 产物。
+### 11.2 被动日志类别与输出
 
-构建依据：[gradle.properties](gradle.properties)、[build.gradle](build.gradle)、[fabric.mod.json](src/main/resources/fabric.mod.json)。
+配置类别权威为 [ZombieShootLogCategory](src/client/java/com/kuangsanfeng/ultimategarden/client/config/ZombieShootLogCategory.java)。以下为实际18项；每项默认OFF，master gate 不持久化。
 
-```powershell
-$env:JAVA_HOME = '<Java 25 JDK 路径>'
-.\gradlew.bat build
-# 依赖已缓存时可用：.\gradlew.bat build --offline
-# 然后按变更范围运行对应 tests/<module>/run.ps1
-```
+| 开关类别 | 输出目录 / 文件与职责 |
+|---|---|
+| LEATHER_ADULT / LEATHER_BABY | zombies/leather_adult、zombies/leather_baby |
+| IRON_ADULT / IRON_BABY | zombies/iron_adult、zombies/iron_baby |
+| GOLD_ADULT / GOLD_BABY | zombies/gold_adult、zombies/gold_baby |
+| DIAMOND_ADULT / DIAMOND_BABY | zombies/diamond_adult、zombies/diamond_baby |
+| ARROWS | arrows；位置、速度、实体朝向、玩家方向比较分别保存 |
+| PATH_POINTS / PATH_MODELS / TURN_EVENTS | paths/raw、paths/models、paths/turns；原始轨迹不被拟合覆盖 |
+| BLOCKS / BLOCK_SCANS / OCCLUSION | environment/blocks、environment/scans、environment/occlusion；UNKNOWN 不等于 Air |
+| TAGS / DIAGNOSTICS | tags、diagnostics；Session+Tag 关联及异常信息 |
+| AIM_SHOT_DIAGNOSTICS | 根目录固定 aim-shot-diagnostics.jsonl，追加式 START/END 批次 |
 
-- 正式文件：`build/libs/ultimate_garden-1.0.2+26.1.2.jar`；sources 带 `-sources` classifier。
-- archivesName=archives_base_name=ultimate_garden，archiveVersion=project.version + Minecraft 后缀；processResources 将 `fabric.mod.json.version` 展开为 `1.0.2`。
-- 当前 26.1.2 / Loom 任务图使用 jar → assemble → build，没有 remapJar；不是靠手动改文件名，也不应为满足旧模板术语而造一个 remap 任务。
-- 验证分层：源码 / 配置校验 → 纯 Java 或桩边界 → GPU 上下文 → Minecraft 原生实测 → Hypixel 服务器实测。报告结果必须注明覆盖层级。
+普通类别文件名与 Session 元数据由 ZombieShootSession.emit/stop 生成，后台 Logger 输出 summary；不要把目录名当作实体身份。Tag 是本地8位大写十六进制递增值，实体 UUID+对象用于关联；Session 使用独立身份空间，跨 Session 必须联合 sessionId+tag。未启用的类别在 emit 接受边界过滤；内部为依赖计算读取字段并不等于写入全部类别。
 
-<a id="documentation-maintenance-rules"></a>
-## 10. Documentation Maintenance Rules
+采集坐标：原点记录脚部、眼部、originYaw/Pitch；世界轴平移为 relativeX/Y/Z，不随当前视角旋转；固定30格三维球。范围离开/缺口以轨迹段区分，不当成掉头端点。方块中心用原生 floor 的 BlockPos，7×7×7 局部范围再裁剪到固定球，未加载不当 Air。模型、遮挡和原始轨迹仅反映客户端可观测数据。
 
-1. 今后每次修改代码，只增量更新本文与本次变更相关的章节，不重新生成全文。
-2. 新增模块时同步更新目录树、模块说明、可点击目录和导航索引。
-3. 修改调用链、状态机、暂停恢复或异步顺序时，更新对应 Execution Flow，并注明状态所有者。
-4. 修改 JSON 字段、默认值或迁移行为时，同步更新 Configuration Reference；不把已有用户值误写为强制默认。
-5. UI、Hotkey 与构建变更分别更新对应章节；避免把历次开发日志反复追加为互相冲突的当前行为。
-6. 不将未经验证的行为写为已实测功能；区分本地动作、Minecraft 事件、服务器响应以及预期设计。
-7. 路径与函数名优先于行号；删除 / 移动文件后同步修复引用和锚点。保留关键旧接口的真实用途，不继续记录已经失效的类或 API 为主链路。
-8. 提交前验证 UTF-8、链接与源码标识符；文档维护不应顺带修改业务源码或覆盖其他未提交工作。
+### 11.3 测试入口与覆盖边界
+
+测试通过各目录 `run.ps1` 驱动，不是 JUnit 自动发现。部分脚本直接 javac 编译选定生产类+stubs；Shootout 脚本通过临时 Gradle init task 解析 client runtimeClasspath，再编译/执行 Java main，并运行 WiringAudit.py。必须先看脚本到底编译了哪些类，不能把 stub 的成功当作原生 Minecraft 输入/网络/渲染实测。
+
+| 测试目录/入口 | 实际覆盖主题 |
+|---|---|
+| [config](tests/config/run.ps1) | 模块读写、账号隔离/复制、默认值/修复、随机延迟、换行与 HUD、Pest 配置 |
+| [route](tests/route/run.ps1) | 行 Tick、换行阶段、随机延迟运行语义 |
+| [menu-input](tests/menu-input/run.ps1) | 虚拟按住、菜单 suspend/resume 与取消 |
+| [gui](tests/gui/run.ps1) | GUI 生命周期/来源、嵌套折叠、Hint、透明度、语言、Pest菜单及静态事件次序 |
+| [focus](tests/focus/run.ps1) | released/cursor/restore 等 Focus 状态 |
+| [hints](tests/hints/run.ps1) | Hint 分类、键名和本地化输出 |
+| [hud-adjust](tests/hud-adjust/run.ps1) | 独立 HUD bounds、选择、拖动/缩放与清理 |
+| [esp](tests/esp/run.ps1) | ESP样式/几何/Pest过滤及 tracer shader 静态审查 |
+| [shootout](tests/shootout/run.ps1) | 模型、优先级、目标轮转/重锁、速度/卡住、Tanh/Hz、双层容差、真实/虚拟输入、统一箭矢确认、开关/RTT/自动启动/View Check/日志 |
+
+测试源完整索引（stubs 是隔离依赖，不是新的生产实现）：
+
+- **config**：[AccountRegression.java](tests/config/AccountRegression.java)、[ConfigRegression.java](tests/config/ConfigRegression.java)、[HudConfigRegression.java](tests/config/HudConfigRegression.java)、[LineChangeConfigRegression.java](tests/config/LineChangeConfigRegression.java)、[MenuPauseConfigRegression.java](tests/config/MenuPauseConfigRegression.java)、[PestDetectionRegression.java](tests/config/PestDetectionRegression.java)、[RandomDelayRegression.java](tests/config/RandomDelayRegression.java)、[run.ps1](tests/config/run.ps1)。
+- **esp**：[ESPRegression.java](tests/esp/ESPRegression.java)、[PestESPRegression.java](tests/esp/PestESPRegression.java)、[run.ps1](tests/esp/run.ps1)、[TracerShaderRegression.java](tests/esp/TracerShaderRegression.java)。
+  - 隔离依赖：[LevelExtractionContext.java](tests/esp/pest-stubs/net/fabricmc/fabric/api/client/rendering/v1/level/LevelExtractionContext.java)、[EntityType.java](tests/esp/pest-stubs/net/minecraft/world/entity/EntityType.java)。
+- **focus**：[FocusRegression.java](tests/focus/FocusRegression.java)、[run.ps1](tests/focus/run.ps1)。
+  - 隔离依赖：[HintManager.java](tests/focus/stubs/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java)、[HudAdjustmentController.java](tests/focus/stubs/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java)、[Minecraft.java](tests/focus/stubs/net/minecraft/client/Minecraft.java)、[GLFW.java](tests/focus/stubs/org/lwjgl/glfw/GLFW.java)。
+- **gui**：[CollapsibleSectionRegression.java](tests/gui/CollapsibleSectionRegression.java)、[GuiLifecycleRegression.java](tests/gui/GuiLifecycleRegression.java)、[HelpTooltipRegression.java](tests/gui/HelpTooltipRegression.java)、[InventoryEventOrderRegression.py](tests/gui/InventoryEventOrderRegression.py)、[LanguageRegression.java](tests/gui/LanguageRegression.java)、[PestMenuRegression.java](tests/gui/PestMenuRegression.java)、[run.ps1](tests/gui/run.ps1)、[TransparencyRegression.java](tests/gui/TransparencyRegression.java)。
+  - 隔离依赖：[FarmHints.java](tests/gui/stubs/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)、[Minecraft.java](tests/gui/stubs/net/minecraft/client/Minecraft.java)。
+- **hints**：[HintRegression.java](tests/hints/HintRegression.java)、[run.ps1](tests/hints/run.ps1)。
+  - 隔离依赖：[MacroKeyBindings.java](tests/hints/stubs/com/kuangsanfeng/ultimategarden/client/hotkey/MacroKeyBindings.java)、[Ultimate_GardenClient.java](tests/hints/stubs/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[Minecraft.java](tests/hints/stubs/net/minecraft/client/Minecraft.java)、[Component.java](tests/hints/stubs/net/minecraft/network/chat/Component.java)。
+- **hud-adjust**：[HudAdjustmentRegression.java](tests/hud-adjust/HudAdjustmentRegression.java)、[run.ps1](tests/hud-adjust/run.ps1)。
+  - 隔离依赖：[UltimateGardenScreen.java](tests/hud-adjust/stubs/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java)、[Ultimate_GardenClient.java](tests/hud-adjust/stubs/com/kuangsanfeng/ultimategarden/client/Ultimate_GardenClient.java)、[Minecraft.java](tests/hud-adjust/stubs/net/minecraft/client/Minecraft.java)、[GLFW.java](tests/hud-adjust/stubs/org/lwjgl/glfw/GLFW.java)。
+- **menu-input**：[MenuInputRegression.java](tests/menu-input/MenuInputRegression.java)、[run.ps1](tests/menu-input/run.ps1)。
+  - 隔离依赖：[VirtualKeyboard.java](tests/menu-input/stubs/com/kuangsanfeng/ultimategarden/client/input/VirtualKeyboard.java)、[Minecraft.java](tests/menu-input/stubs/net/minecraft/client/Minecraft.java)、[MouseHandler.java](tests/menu-input/stubs/net/minecraft/client/MouseHandler.java)。
+- **route**：[RandomDelayRuntimeRegression.java](tests/route/RandomDelayRuntimeRegression.java)、[RowTimingRegression.java](tests/route/RowTimingRegression.java)、[run.ps1](tests/route/run.ps1)。
+  - 隔离依赖：[VirtualInput.java](tests/route/stubs/com/kuangsanfeng/ultimategarden/client/input/VirtualInput.java)、[FarmHints.java](tests/route/stubs/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java)、[WindowsFocusController.java](tests/route/stubs/com/kuangsanfeng/ultimategarden/client/window/WindowsFocusController.java)。
+- **shootout**：[AimCorrectionRegression.java](tests/shootout/AimCorrectionRegression.java)、[AimRateRegression.java](tests/shootout/AimRateRegression.java)、[AimShotDiagnosticsRegression.java](tests/shootout/AimShotDiagnosticsRegression.java)、[ArrowConfirmationToggleRegression.java](tests/shootout/ArrowConfirmationToggleRegression.java)、[AutoStartRegression.java](tests/shootout/AutoStartRegression.java)、[BabyStallRegression.java](tests/shootout/BabyStallRegression.java)、[DeveloperLogsRegression.java](tests/shootout/DeveloperLogsRegression.java)、[InterceptESPRegression.java](tests/shootout/InterceptESPRegression.java)、[ManualRestrictionRegression.java](tests/shootout/ManualRestrictionRegression.java)、[ManualShotRegression.java](tests/shootout/ManualShotRegression.java)、[RelockRegression.java](tests/shootout/RelockRegression.java)、[RttRegression.java](tests/shootout/RttRegression.java)、[run.ps1](tests/shootout/run.ps1)、[ShootoutControlsRegression.java](tests/shootout/ShootoutControlsRegression.java)、[ShootoutInputRegression.java](tests/shootout/ShootoutInputRegression.java)、[ShootoutRegression.java](tests/shootout/ShootoutRegression.java)、[ShootoutSettingsLayoutRegression.java](tests/shootout/ShootoutSettingsLayoutRegression.java)、[ShotConfirmationRegression.java](tests/shootout/ShotConfirmationRegression.java)、[TanhAimRegression.java](tests/shootout/TanhAimRegression.java)、[TargetRotationRegression.java](tests/shootout/TargetRotationRegression.java)、[ViewDeviationRegression.java](tests/shootout/ViewDeviationRegression.java)、[WiringAudit.py](tests/shootout/WiringAudit.py)。
+  - 隔离依赖：[Minecraft.java](tests/shootout/stubs/net/minecraft/client/Minecraft.java)。
+
+### 11.4 构建和补充资料
+
+- 本地 Java25；`JAVA_HOME` 要指向实际 JDK。完整构建命令：`.\gradlew.bat build`；依赖已缓存时可用 `.\gradlew.bat build --offline`。本文不将缓存存在与否写成已验证。
+- 业务回归命令：`powershell -File tests/<module>/run.ps1`，选择上表实际目录；独立脚本会写 build/ 测试产物，不写生产配置。
+- [gradlew.bat](gradlew.bat)、[gradlew](gradlew)、[Wrapper 配置](gradle/wrapper/gradle-wrapper.properties)、[CI build](.github/workflows/build.yml)；CI Gradle build 不会自动覆盖所有独立回归脚本。
+- [README](README.md)、[LICENSE](LICENSE)、[Zombie_Shootout.md](docs/Zombie_Shootout.md)。补充业务文档可能滞后，需按本文入口重新核对源码。
+
+<a id="verification"></a>
+## 12. 审计结果与边界
+
+### 12.1 本次核对范围
+
+- 对照当前 src/main 与 src/client 的全部生产 Java 文件，读取初始化、关键控制器、Mixin、配置、输入、日志与渲染实现，并建立全文件入口索引；资源、测试及 Gradle 以实际文件为准。
+- 核对共享事件注册、原生输入消费时序、Farm 与 Shootout 的独立 owner、账号切换/世界失效的清理入口。复用表的提取项均为建议，本次没有实施提取。
+- 核对文档所有项目相对文件链接及显式目录锚点；保存前后对 src、tests、docs 与根目录既有文件进行内容摘要比较，确认除本文外无改动。
+- 本次为文档审计，**未重跑 Gradle Build、独立回归脚本或游戏客户端**，未把旧报告的通过结果当作本次结果。可运行命令见第11章。
+
+### 12.2 必须保留的不确定性
+
+- 静态代码可确认算法、入口和清理分支存在，不能证明服务器接受输入、灯是否实际命中、卡住恢复准确率或20/60/120Hz的实机行为；这些均 **Not Verified In-Game**。
+- 未提供已登录可复现客户端，Aim & Shot Diagnostics 没有完成“20Hz能发射/60Hz卡住”的两批服务器实测；日志格式与关联入口已存在，不应先把故障归因于时序。
+- View Check 仅是本地 expected/actual 轨迹监测，不能把偏差认定为服务器反作弊证据；Farm 检测占位无效。原生RTT响应能否在实际Hypixel会话按期收到也需实测。
+- 局部遮挡是假设范围内的碰撞检查，未加载区域保留未知；采集路径端点是观测边界，不能证明真实端点。速度/箭矢模型是特定样本经验值。
+- 当前源码有若干旧接口、模板 Mixin 和未接入的兼容队列；本文如实标记，未删除或顺手启用。
+
+后续变更应先定位 owner 和更新阶段，再确认单位、取消条件及配置状态源。修改通用能力前，检查本表实际引用方与回归入口，避免把单业务政策迁成全局默认。

@@ -59,6 +59,7 @@ public final class CommandListener {
                         // 将 Text 组件转成 String，经 MacroManager 分发到各模块的消息处理函数。
                         String text = message.getString();
                         controller.automateTaskByMonitorMessage(text);
+                        if (!overlay) com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.onStartMessage(text);
                     }
                 }
         );

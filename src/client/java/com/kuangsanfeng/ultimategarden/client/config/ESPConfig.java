@@ -11,6 +11,9 @@ public final class ESPConfig {
     public static final int SCHEMA_VERSION = 2;
     public static final String SILVERFISH = "SILVERFISH";
     public static final float MIN_LINE_WIDTH = 0.5f, MAX_LINE_WIDTH = 16;
+    private boolean showShootoutInterceptBox;
+    public boolean isShowShootoutInterceptBox(){return showShootoutInterceptBox;}
+    public void setShowShootoutInterceptBox(boolean value){showShootoutInterceptBox=value;}
     private boolean throughWalls = true;
     private int cycleDurationMs = 3000;
     private final Map<String, TargetConfig> targets = new LinkedHashMap<>();
@@ -36,7 +39,7 @@ public final class ESPConfig {
         cycleDurationMs = value;
     }
     public void resetToDefault() {
-        throughWalls = true; cycleDurationMs = 3000;
+        showShootoutInterceptBox=false;throughWalls = true; cycleDurationMs = 3000;
         targets.values().forEach(TargetConfig::reset);
     }
     public static final class TargetConfig {
@@ -106,6 +109,7 @@ public final class ESPConfig {
         });
         loadTarget(document, getTarget(SILVERFISH));
         JsonObject general = section(document, "general");
+        read(general,"showShootoutInterceptBox",p -> setShowShootoutInterceptBox(bool(p)));
         read(general, "throughWalls", p -> setThroughWalls(bool(p)));
         read(general, "rainbowCycleDurationMs", p -> {
             if (!p.isNumber()) throw new IllegalArgumentException("Expected integer");
@@ -144,7 +148,7 @@ public final class ESPConfig {
         JsonObject doc = original.deepCopy();
         doc.addProperty("schemaVersion", SCHEMA_VERSION);
         JsonObject general = child(doc, "general");
-        general.addProperty("throughWalls", throughWalls); general.addProperty("rainbowCycleDurationMs", cycleDurationMs);
+        general.addProperty("throughWalls", throughWalls);general.addProperty("showShootoutInterceptBox",showShootoutInterceptBox); general.addProperty("rainbowCycleDurationMs", cycleDurationMs);
         doc.add("general", general);
         JsonObject definitions = child(doc, "targets");
         for (var entry : targets.entrySet()) {

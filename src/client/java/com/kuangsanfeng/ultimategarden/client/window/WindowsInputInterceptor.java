@@ -10,6 +10,13 @@ public final class WindowsInputInterceptor {
 
 
     private final WindowsState state;
+    private java.util.function.BooleanSupplier externalOwner = () -> false;
+    public void setExternalOwner(java.util.function.BooleanSupplier owner) { externalOwner=java.util.Objects.requireNonNull(owner); }
+    private java.util.function.BooleanSupplier externalMove=()->externalOwner.getAsBoolean(), externalRight=()->externalOwner.getAsBoolean();
+    public void setExternalMouseOwners(java.util.function.BooleanSupplier move,java.util.function.BooleanSupplier right){externalMove=java.util.Objects.requireNonNull(move);externalRight=java.util.Objects.requireNonNull(right);}
+    // A real right button held before enabling automation must still be able to release.
+    public boolean blockMouseButton(int button,int action){return button==1&&action==0&&!state.isInputIntercepting()?false:blockMouseButton(button);}
+    public boolean blockMouseButton(int button){return button==1?(state.isInputIntercepting()||externalRight.getAsBoolean())&&!uiInputAllowed.getAsBoolean():blockMouseButton();}
     private java.util.function.BooleanSupplier uiInputAllowed = () -> false;
     public void setUiInputAllowed(java.util.function.BooleanSupplier allowed) { uiInputAllowed = java.util.Objects.requireNonNull(allowed); }
 
@@ -46,7 +53,7 @@ public final class WindowsInputInterceptor {
 
     public boolean shouldBlockInput() {
 
-        return state.isInputIntercepting() && !uiInputAllowed.getAsBoolean();
+        return (state.isInputIntercepting() || externalOwner.getAsBoolean()) && !uiInputAllowed.getAsBoolean();
 
     }
 
@@ -119,7 +126,7 @@ public final class WindowsInputInterceptor {
 
     public boolean blockMouseMove() {
 
-        return shouldBlockInput();
+        return (state.isInputIntercepting()||externalMove.getAsBoolean())&&!uiInputAllowed.getAsBoolean();
 
     }
 

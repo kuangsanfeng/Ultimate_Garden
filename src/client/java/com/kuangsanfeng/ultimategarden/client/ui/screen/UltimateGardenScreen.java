@@ -21,7 +21,7 @@ import java.util.function.*;
 
 /** Native 26.1.2 screen. Draft fields never become effective until validated. */
 public final class UltimateGardenScreen extends net.minecraft.client.gui.screens.Screen {
-    private enum Page { Home, Farm, Pests, ESP, Hotkeys, Settings }
+    private enum Page { Home, Farm, Pests, ESP, Hotkeys, Settings, Misc }
     private record Placement(AbstractWidget widget, int y, BooleanSupplier enabled, CollapsibleSection section) { }
     private record Card(int y, int height, CollapsibleSection section, int inset, BooleanSupplier enabled) {
         Card(int y, int height, CollapsibleSection section) { this(y, height, section, 0, () -> true); }
@@ -29,6 +29,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     private record Label(int y, Supplier<String> text, boolean heading, CollapsibleSection section, String help, int inset, BooleanSupplier enabled) {
         Label(int y, Supplier<String> text, boolean heading, CollapsibleSection section, String help) { this(y, text, heading, section, help, 0, () -> true); }
     }
+    private record Divider(int y,CollapsibleSection section) { }
     private record Choice(String value, String label, boolean enabled) { }
     private final ConfigManager configs;
     private final FarmController farm;
@@ -43,6 +44,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     private final List<Placement> content = new ArrayList<>();
     private final List<Card> cards = new ArrayList<>();
     private final List<Label> labels = new ArrayList<>();
+    private final List<Divider> dividers = new ArrayList<>();
     private final Map<RandomDelayConfig.Key, String[]> randomDelayDrafts = new EnumMap<>(RandomDelayConfig.Key.class);
     private final List<CollapsibleSection> sections = new ArrayList<>();
     private final Map<Page, Map<String, CollapsibleSection.State>> sectionStates = new EnumMap<>(Page.class);
@@ -148,7 +150,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
     }
     private void build() {
         help.clear(); routeInputs.clear();
-        clearFocus(); clearWidgets(); fixed.clear(); content.clear(); cards.clear(); labels.clear(); cursor = 0;
+        clearFocus(); clearWidgets(); fixed.clear(); content.clear(); cards.clear(); labels.clear(); dividers.clear(); cursor = 0;
         sections.clear(); headingCounts.clear(); currentSection = null; progressSection = null;
         var close = new StyledButton(left + windowWidth - 31, top + 12, 22, 22, "×", false, this::palette, this::closeMenu);
         fixed.add(addWidget(close));
@@ -192,6 +194,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
             case ESP -> espSettings();
             case Hotkeys -> hotkeys();
             case Settings -> settings();
+            case Misc -> shootoutSettings();
         }
         if (currentSection != null) currentSection.finishContent(cursor);
         currentSection = null;
@@ -235,6 +238,12 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         int h = contentWidth < 260 ? 55 : 38;
         cards.add(new Card(cursor, h, currentSection)); labels.add(new Label(cursor + 10, value, false, currentSection, "")); cursor += h + 8;
     }
+    private void info(String label,Supplier<String> value) {
+        int h=contentWidth<260?55:38;
+        cards.add(new Card(cursor,h,currentSection));
+        labels.add(new Label(cursor+10,() -> language.text(label)+": "+value.get(),false,currentSection,helpText(label)));
+        cursor+=h+8;
+    }
     private void note(String text) {
         int lines = Math.max(1, font.split(Component.literal(language.text(text)), Math.max(40, sectionWidth(currentSection) - 20)).size());
         cards.add(new Card(cursor, 18 + lines * 11, currentSection)); labels.add(new Label(cursor + 9, () -> language.text(text), false, currentSection, "")); cursor += 26 + lines * 11;
@@ -264,13 +273,22 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         }), cursor, enabled); cursor += 34;
     }
     private EditBox input(String label, String value, Consumer<String> changed, BooleanSupplier enabled) {
-        labels.add(new Label(cursor + 5, () -> language.text(label), false, currentSection, helpText(label))); cursor += Math.max(21, font.split(Component.literal(language.text(label)), Math.max(40, sectionWidth(currentSection) - 36)).size() * 11 + 10);
-        EditBox box = new EditBox(font, sectionX(currentSection) + 6, contentTop + cursor + 4, Math.max(20, sectionWidth(currentSection) - 12), 20, Component.literal(language.text(label)));
-        box.setMaxLength(256); box.setValue(value); box.setResponder(changed);
-        box.setBordered(false); box.setTextShadow(false);
-        cards.add(new Card(cursor, 28, currentSection)); place(box, cursor + 4, enabled); cursor += 37;
+        return input(label,value,changed,enabled,"");
+    }
+    private EditBox input(String label, String value, Consumer<String> changed, BooleanSupplier enabled,String unit) {
+        return input(label,value,changed,enabled,unit,0);
+    }
+    private EditBox input(String label,String value,Consumer<String> changed,BooleanSupplier enabled,String unit,int inset) {
+        String caption=language.text(label)+(unit.isEmpty()?"":" ("+unit+")");
+        BooleanSupplier decoration=inset==0?()->true:enabled;
+        labels.add(new Label(cursor+5,()->caption,false,currentSection,helpText(label),inset,decoration));
+        cursor+=Math.max(21,font.split(Component.literal(caption),Math.max(40,sectionWidth(currentSection)-36-inset)).size()*11+10);
+        EditBox box=new EditBox(font,sectionX(currentSection)+6+inset,contentTop+cursor+4,Math.max(20,sectionWidth(currentSection)-12-inset),20,Component.literal(caption));
+        box.setMaxLength(256);box.setValue(value);box.setResponder(changed);box.setBordered(false);box.setTextShadow(false);
+        cards.add(new Card(cursor,28,currentSection,inset,decoration));place(box,cursor+4,enabled);cursor+=37;
         return box;
     }
+    private void divider(){dividers.add(new Divider(cursor+6,currentSection));cursor+=14;}
     private void dismissChoices() { choices = null; scroll = savedScroll; build(); }
     private String choiceLabel(Choice choice) {
         if (choice.value().equals("legacy-root")) return language.text("ui.ultimategarden.account.legacy");
@@ -382,6 +400,64 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
                     binding.mapping().getTranslatedKeyMessage().getString())));
         }
     }
+    private void shootoutSettings() {
+        heading("ui.ultimategarden.carnival");
+        var parent=currentSection;
+        var section=nestedDelaySection("ui.ultimategarden.shootout.title",parent);
+        var controller=com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE;
+        toggle("ui.ultimategarden.shootout.enabled",controller::enabled,controller::toggle,() -> true);
+        var automation=configs.getZombieShootoutConfig();
+        toggle("ui.ultimategarden.shootout.auto_aim",automation::isAutoAimEnabled,()->{
+            automation.setAutoAimEnabled(!automation.isAutoAimEnabled());saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        },()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        toggle("ui.ultimategarden.shootout.auto_shoot",automation::isAutoShootEnabled,()->{
+            automation.setAutoShootEnabled(!automation.isAutoShootEnabled());saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        },()->automation.isAutoAimEnabled()&&!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT),CollapsibleSection.NESTED_INDENT);
+        toggle("ui.ultimategarden.shootout.occlusion_check",automation::isOcclusionCheckEnabled,()->{
+            automation.setOcclusionCheckEnabled(!automation.isOcclusionCheckEnabled());saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        },()->automation.autoShootEffective()&&!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT),2*CollapsibleSection.NESTED_INDENT);
+        toggle("ui.ultimategarden.shootout.manual_shot_restriction",automation::isManualShotRestrictionEnabled,()->{
+            automation.setManualShotRestrictionEnabled(!automation.isManualShotRestrictionEnabled());saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        },()->automation.manualShotRestrictionEditable()&&!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT),CollapsibleSection.NESTED_INDENT);
+        toggle("ui.ultimategarden.shootout.auto_start",configs.getZombieShootoutConfig()::isAutoStartZombieShootout,() -> {
+            var setting=configs.getZombieShootoutConfig();setting.setAutoStartZombieShootout(!setting.isAutoStartZombieShootout());
+            saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        },() -> !configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        toggle("ui.ultimategarden.shootout.arrow_confirmation",configs.getZombieShootoutConfig()::isArrowSpawnConfirmationEnabled,()->{
+            var setting=configs.getZombieShootoutConfig();setting.setArrowSpawnConfirmationEnabled(!setting.isArrowSpawnConfirmationEnabled());saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        },()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        info("ui.ultimategarden.shootout.status",controller::status);
+        shootoutInput(ZombieShootoutConfig.Setting.AIM_SPEED,0);
+        shootoutInput(ZombieShootoutConfig.Setting.AIM_CURVATURE,0);
+        shootoutInput(ZombieShootoutConfig.Setting.AIM_UPDATE_RATE,0);
+        divider();
+        shootoutInput(ZombieShootoutConfig.Setting.AIM_TOLERANCE,0);
+        shootoutInput(ZombieShootoutConfig.Setting.AIM_CORRECTION_RATIO,CollapsibleSection.NESTED_INDENT);
+        shootoutInput(ZombieShootoutConfig.Setting.SHOOT_RATIO,CollapsibleSection.NESTED_INDENT);
+        divider();
+        shootoutInput(ZombieShootoutConfig.Setting.COOLDOWN,0);
+        shootoutInput(ZombieShootoutConfig.Setting.JITTER_MIN,CollapsibleSection.NESTED_INDENT);
+        shootoutInput(ZombieShootoutConfig.Setting.JITTER_MAX,CollapsibleSection.NESTED_INDENT);
+        divider();
+        var sampling=nestedDelaySection("ui.ultimategarden.shootout.speed_sampling",section,
+                ()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT),CollapsibleSection.NESTED_INDENT);
+        for(var setting:ZombieShootoutConfig.Setting.values())if(setting.window())shootoutInput(setting,0);
+        shootoutInput(ZombieShootoutConfig.Setting.BABY_STALL_WINDOW,0);
+        shootoutInput(ZombieShootoutConfig.Setting.BABY_STALL_RATIO,0);
+        sampling.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;
+        shootoutInput(ZombieShootoutConfig.Setting.BABY_OFFSET,0);
+        divider();
+        shootoutInput(ZombieShootoutConfig.Setting.PING_INTERVAL,0);
+        info("ui.ultimategarden.shootout.ping",controller::pingText);
+        info("ui.ultimategarden.shootout.target",controller::targetText);
+        section.finishContent(cursor);currentSection=parent;
+    }
+    private void shootoutInput(ZombieShootoutConfig.Setting setting,int inset){
+        String unit=setting==ZombieShootoutConfig.Setting.AIM_UPDATE_RATE?"Hz":setting==ZombieShootoutConfig.Setting.AIM_TOLERANCE||setting==ZombieShootoutConfig.Setting.AIM_CURVATURE?"\u00b0":setting==ZombieShootoutConfig.Setting.AIM_SPEED?"\u00b0/s":setting.window()||setting==ZombieShootoutConfig.Setting.BABY_STALL_WINDOW||setting==ZombieShootoutConfig.Setting.COOLDOWN||setting==ZombieShootoutConfig.Setting.JITTER_MIN||setting==ZombieShootoutConfig.Setting.JITTER_MAX||setting==ZombieShootoutConfig.Setting.PING_INTERVAL?"s":"";
+        input("ui.ultimategarden.shootout."+setting.name(),Double.toString(configs.getZombieShootoutConfig().get(setting)),value->act(()->{
+            configs.getZombieShootoutConfig().set(setting,Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        }),()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT),unit,inset);
+    }
     private void settings() {
         heading("ui.ultimategarden.preferences");
         var general = configs.getGeneralConfig(); var ui = configs.getUIConfig();
@@ -394,6 +470,7 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         hintSettings();
         hudSettings();
         randomDelaySettings();
+        developerSettings();
         heading("ui.ultimategarden.appearance");
         List<Choice> themes = Arrays.stream(UIConfig.Theme.values()).map(theme -> new Choice(theme.name(), "ui.ultimategarden." + theme.name().toLowerCase(Locale.ROOT), true)).toList();
         dropdown("ui.ultimategarden.theme", ui.getUiThemeMode().name(), themes, value -> { ui.setUiThemeMode(UIConfig.Theme.valueOf(value)); saved(configs.saveUIConfig()); build(); }, () -> true);
@@ -407,6 +484,30 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         }), cursor, () -> true);
         cursor += 42;
         accountConfiguration();
+    }
+    private void developerSettings(){
+        heading("ui.ultimategarden.developer_options");var developer=currentSection;
+        var carnival=nestedDelaySection("ui.ultimategarden.developer.carnival",developer);
+        var shootout=nestedDelaySection("ui.ultimategarden.developer.shootout",carnival);
+        String title="ui.ultimategarden.developer.shootout.logs";
+        var state=sectionStates.computeIfAbsent(page,ignored->new HashMap<>()).computeIfAbsent(title,ignored->new CollapsibleSection.State(shootout.state()));
+        var logs=new CollapsibleSection(contentX,contentTop+cursor,contentWidth,cursor,language.text(title),state,this::palette,help,helpText(title),()->{
+            help.clear();clearFocus();setDragging(false);positionContent();
+        },58);
+        var collector=com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootCollector.INSTANCE;
+        currentSection=shootout;place(logs,cursor,()->true);sections.add(logs);
+        place(new ToggleSwitch(contentX+contentWidth-54,contentTop+cursor+(logs.getHeight()-24)/2,language.text(title),this::palette,collector::logsEnabled,()->act(()->collector.setLogsEnabled(!collector.logsEnabled()))),cursor+(logs.getHeight()-24)/2,()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        currentSection=logs;cursor+=logs.getHeight()+CollapsibleSection.CONTENT_GAP;
+        var config=configs.getZombieShootoutConfig();
+        for(var category:com.kuangsanfeng.ultimategarden.client.config.ZombieShootLogCategory.values()){
+            toggle("ui.ultimategarden.developer.shootout.log."+category.name(),()->config.logEnabled(category),()->{
+                config.setLogEnabled(category,!config.logEnabled(category));saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+            },()->collector.logsEnabled()&&!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        }
+        logs.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=shootout;
+        shootout.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=carnival;
+        carnival.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=developer;
+        developer.finishContent(cursor);
     }
     private void hintSettings() {
         heading("ui.ultimategarden.hint");
@@ -441,13 +542,22 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         heading("ui.ultimategarden.hud");
         var parent = currentSection;
         var hud = configs.getHudConfig();
-        toggle("ui.ultimategarden.hud.show", hud::isShowHud, () -> {
-            hud.setShowHud(!hud.isShowHud()); saved(configs.save(ConfigManager.Module.HUD));
-        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
         button("ui.ultimategarden.hud.adjust", false, () -> {
             adjustingHud=true;
             com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.begin(this);
         }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
+        toggle("ui.ultimategarden.hud.show", hud::isShowHud, () -> {
+            hud.setShowHud(!hud.isShowHud()); saved(configs.save(ConfigManager.Module.HUD));
+        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
+        toggle("ui.ultimategarden.hud.only_running", hud::isFarmOnlyWhileRunning, () -> {
+            hud.setFarmOnlyWhileRunning(!hud.isFarmOnlyWhileRunning()); saved(configs.save(ConfigManager.Module.HUD));
+        }, () -> hud.isShowHud() && !configs.isPendingRestart(ConfigManager.Module.HUD), CollapsibleSection.NESTED_INDENT);
+        toggle("ui.ultimategarden.hud.show_zombie", hud::isShowZombieShootoutHud, () -> {
+            hud.setShowZombieShootoutHud(!hud.isShowZombieShootoutHud()); saved(configs.save(ConfigManager.Module.HUD));
+        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
+        toggle("ui.ultimategarden.hud.only_running", hud::isZombieOnlyWhileRunning, () -> {
+            hud.setZombieOnlyWhileRunning(!hud.isZombieOnlyWhileRunning()); saved(configs.save(ConfigManager.Module.HUD));
+        }, () -> hud.isShowZombieShootoutHud() && !configs.isPendingRestart(ConfigManager.Module.HUD), CollapsibleSection.NESTED_INDENT);
         var display = nestedDelaySection("ui.ultimategarden.hud.display_mode", parent);
         dropdown("ui.ultimategarden.hud.mode", hud.getMode().name(), Arrays.stream(HudConfig.Mode.values())
                 .map(mode -> new Choice(mode.name(), "ui.ultimategarden.hud.mode." + mode.name(), true)).toList(),
@@ -468,9 +578,12 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         return nestedDelaySection(title,parent,() -> true);
     }
     private CollapsibleSection nestedDelaySection(String title, CollapsibleSection parent,BooleanSupplier enabled) {
+        return nestedDelaySection(title,parent,enabled,0);
+    }
+    private CollapsibleSection nestedDelaySection(String title,CollapsibleSection parent,BooleanSupplier enabled,int headerOutset){
         var state = sectionStates.computeIfAbsent(page, ignored -> new HashMap<>())
                 .computeIfAbsent(title, ignored -> new CollapsibleSection.State(parent.state()));
-        var section = new CollapsibleSection(contentX, contentTop + cursor, contentWidth, cursor,
+        var section = new CollapsibleSection(contentX-headerOutset, contentTop + cursor, contentWidth+headerOutset, cursor,
                 language.text(title), state, this::palette, help, helpText(title), () -> {
             help.clear(); clearFocus(); setDragging(false); positionContent();
         });
@@ -480,9 +593,25 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         cursor += section.getHeight() + CollapsibleSection.CONTENT_GAP;
         return section;
     }
+    private void viewDeviationSettings(CollapsibleSection antiCheck) {
+        var group=nestedDelaySection("ui.ultimategarden.view_check.title",antiCheck);
+        for(boolean farmCheck:new boolean[]{true,false}) {
+            String type=farmCheck?"farm":"zombie";
+            var section=nestedDelaySection("ui.ultimategarden.view_check."+type,group);
+            var config=farmCheck?configs.getViewDeviationConfig().farm():configs.getViewDeviationConfig().zombie();
+            BooleanSupplier editable=()->!configs.isPendingRestart(ConfigManager.Module.ANTI_CHECK);
+            toggle("ui.ultimategarden.view_check."+type+".enabled",()->config.enabled,()->{config.enabled=!config.enabled;saved(configs.save(ConfigManager.Module.ANTI_CHECK));},editable);
+            input("ui.ultimategarden.view_check.warning",Double.toString(config.warning()),value->act(()->{config.warning(Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ANTI_CHECK));}),editable,"°");
+            input("ui.ultimategarden.view_check.stop",Double.toString(config.stop()),value->act(()->{config.stop(Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ANTI_CHECK));}),editable,"°");
+            input("ui.ultimategarden.view_check.duration",Double.toString(config.duration()),value->act(()->{config.duration(Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ANTI_CHECK));}),editable,"s");
+            section.finishContent(cursor);currentSection=group;
+        }
+        group.finishContent(cursor);currentSection=antiCheck;
+    }
     private void randomDelaySettings() {
         heading("ui.ultimategarden.anti_check");
         var antiCheck = currentSection;
+        viewDeviationSettings(antiCheck);
         var random = nestedDelaySection("ui.ultimategarden.random_delay", antiCheck);
         for (RandomDelayConfig.Key key : RandomDelayConfig.Key.values()) {
             var parameter = nestedDelaySection("ui.ultimategarden.random_delay." + key.name(), random);
@@ -611,6 +740,11 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         espTarget(ESPConfig.SILVERFISH, "ui.ultimategarden.silverfish_esp", pest::isPestESPEnabled, () -> {
             pest.setPestESPEnabled(!pest.isPestESPEnabled()); saved(configs.save(ConfigManager.Module.PEST));
         });
+        heading("ui.ultimategarden.carnival");
+        var carnival=currentSection;
+        var shootout=nestedDelaySection("ui.ultimategarden.shootout_esp",carnival);
+        toggle("ui.ultimategarden.show_intercept_box",esp::isShowShootoutInterceptBox,()->{esp.setShowShootoutInterceptBox(!esp.isShowShootoutInterceptBox());saved(configs.save(ConfigManager.Module.ESP));},()->true);
+        shootout.finishContent(cursor);currentSection=carnival;
     }
     private void espTarget(String id, String title, BooleanSupplier enabled, Runnable toggleEnabled) {
         heading(title);
@@ -728,6 +862,10 @@ public final class UltimateGardenScreen extends net.minecraft.client.gui.screens
         g.text(font, Component.literal(choices != null ? language.text("ui.ultimategarden.choose_an_option") : language.text("ui.ultimategarden." + page.name().toLowerCase(Locale.ROOT))).withStyle(ChatFormatting.BOLD), contentX, top + 40, p.fg(p.text()), false);
         for (AbstractWidget widget : fixed) widget.extractRenderState(g, mouseX, mouseY, delta);
         g.enableScissor(contentX - 1, contentTop, contentX + contentWidth + 1, contentBottom);
+        for(var divider:dividers)if(sectionVisible(divider.section())){
+            int y=displayedY(divider.y());
+            g.fill(sectionX(divider.section())+8,y,sectionX(divider.section())+sectionWidth(divider.section())-8,y+1,p.bg(ThemePalette.blend(p.background(),0xff000000,.18f)));
+        }
         for (Card card : cards) if (sectionVisible(card.section())) RoundedRect.fill(g, sectionX(card.section()) + card.inset(), displayedY(card.y()), Math.max(40, sectionWidth(card.section()) - card.inset()), card.height(), 10, p.bg(p.surface(), card.enabled().getAsBoolean() ? 1f : .4f));
         for (Label label : labels) {
             if (!sectionVisible(label.section())) continue;

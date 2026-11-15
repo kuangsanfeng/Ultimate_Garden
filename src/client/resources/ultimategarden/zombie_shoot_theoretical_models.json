@@ -1,0 +1,2759 @@
+{
+  "source": "zombie shoot.zip",
+  "sessionLengthStationaryTicks": 1976,
+  "discardedAfterRelocationTicks": 41,
+  "sessionOriginWorldXYZ": [
+    -100.5,
+    71,
+    44.5
+  ],
+  "sessionOriginEyeWorldXYZ": [
+    -100.5,
+    72.62000000476837,
+    44.5
+  ],
+  "coordinates": "X,Y,Z translated by player foot origin; paths param by polar angle thetaDeg=atan2(z,x) in [0,360) and accumulated arc length sBlocks",
+  "paths": [
+    {
+      "pathId": "PATH_A",
+      "heightRelativeToPlayerFeet": 1.0,
+      "minThetaDeg": 63,
+      "maxThetaDeg": 203,
+      "totalObservedModelArcLengthBlocks": 40.4843,
+      "pointSpacingDeg": 1,
+      "fitMethod": "theta-indexed radial median (|Δtheta|<1.25 deg) + Savitzky-Golay 11-point cubic smoothing",
+      "pathOrigin": "session player foot position [-100.5,71,44.5]",
+      "observationsUsed": 5700,
+      "uniqueEntities": 67,
+      "absoluteRadialResidualMedianBlocks": 0.0701,
+      "absoluteRadialResidualP90Blocks": 0.4551,
+      "radialResidualRMSEBlocks": 0.2416,
+      "endpointCaveat": "angular limits are observed coverage limits, not verified physical turnaround points",
+      "points": [
+        {
+          "thetaDeg": 63,
+          "sBlocks": 0.0,
+          "x": 7.372041,
+          "y": 1.0,
+          "z": 14.468446,
+          "radiusBlocks": 16.238317,
+          "sourceSamplesNearAngle": 63
+        },
+        {
+          "thetaDeg": 64,
+          "sBlocks": 0.315793,
+          "x": 7.1784,
+          "y": 1.0,
+          "z": 14.717902,
+          "radiusBlocks": 16.375166,
+          "sourceSamplesNearAngle": 69
+        },
+        {
+          "thetaDeg": 65,
+          "sBlocks": 0.61699,
+          "x": 6.959586,
+          "y": 1.0,
+          "z": 14.92488,
+          "radiusBlocks": 16.467784,
+          "sourceSamplesNearAngle": 78
+        },
+        {
+          "thetaDeg": 66,
+          "sBlocks": 0.909917,
+          "x": 6.720061,
+          "y": 1.0,
+          "z": 15.093504,
+          "radiusBlocks": 16.521897,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 67,
+          "sBlocks": 1.199249,
+          "x": 6.463957,
+          "y": 1.0,
+          "z": 15.228129,
+          "radiusBlocks": 16.543236,
+          "sourceSamplesNearAngle": 72
+        },
+        {
+          "thetaDeg": 68,
+          "sBlocks": 1.487986,
+          "x": 6.195067,
+          "y": 1.0,
+          "z": 15.33333,
+          "radiusBlocks": 16.537529,
+          "sourceSamplesNearAngle": 63
+        },
+        {
+          "thetaDeg": 69,
+          "sBlocks": 1.777881,
+          "x": 5.915883,
+          "y": 1.0,
+          "z": 15.411401,
+          "radiusBlocks": 16.507845,
+          "sourceSamplesNearAngle": 60
+        },
+        {
+          "thetaDeg": 70,
+          "sBlocks": 2.070048,
+          "x": 5.628544,
+          "y": 1.0,
+          "z": 15.464297,
+          "radiusBlocks": 16.456761,
+          "sourceSamplesNearAngle": 60
+        },
+        {
+          "thetaDeg": 71,
+          "sBlocks": 2.360932,
+          "x": 5.341978,
+          "y": 1.0,
+          "z": 15.514231,
+          "radiusBlocks": 16.408171,
+          "sourceSamplesNearAngle": 64
+        },
+        {
+          "thetaDeg": 72,
+          "sBlocks": 2.648346,
+          "x": 5.06204,
+          "y": 1.0,
+          "z": 15.579358,
+          "radiusBlocks": 16.381107,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 73,
+          "sBlocks": 2.934535,
+          "x": 4.784818,
+          "y": 1.0,
+          "z": 15.650436,
+          "radiusBlocks": 16.365532,
+          "sourceSamplesNearAngle": 60
+        },
+        {
+          "thetaDeg": 74,
+          "sBlocks": 3.220172,
+          "x": 4.511176,
+          "y": 1.0,
+          "z": 15.73234,
+          "radiusBlocks": 16.366344,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 75,
+          "sBlocks": 3.50606,
+          "x": 4.23841,
+          "y": 1.0,
+          "z": 15.81796,
+          "radiusBlocks": 16.375958,
+          "sourceSamplesNearAngle": 64
+        },
+        {
+          "thetaDeg": 76,
+          "sBlocks": 3.79194,
+          "x": 3.96274,
+          "y": 1.0,
+          "z": 15.893683,
+          "radiusBlocks": 16.380246,
+          "sourceSamplesNearAngle": 69
+        },
+        {
+          "thetaDeg": 77,
+          "sBlocks": 4.077822,
+          "x": 3.684629,
+          "y": 1.0,
+          "z": 15.959881,
+          "radiusBlocks": 16.379691,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 78,
+          "sBlocks": 4.363702,
+          "x": 3.405623,
+          "y": 1.0,
+          "z": 16.022197,
+          "radiusBlocks": 16.380142,
+          "sourceSamplesNearAngle": 94
+        },
+        {
+          "thetaDeg": 79,
+          "sBlocks": 4.649888,
+          "x": 3.127555,
+          "y": 1.0,
+          "z": 16.089873,
+          "radiusBlocks": 16.391022,
+          "sourceSamplesNearAngle": 82
+        },
+        {
+          "thetaDeg": 80,
+          "sBlocks": 4.936878,
+          "x": 2.849842,
+          "y": 1.0,
+          "z": 16.162256,
+          "radiusBlocks": 16.411585,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 81,
+          "sBlocks": 5.226054,
+          "x": 2.573175,
+          "y": 1.0,
+          "z": 16.246389,
+          "radiusBlocks": 16.448903,
+          "sourceSamplesNearAngle": 81
+        },
+        {
+          "thetaDeg": 82,
+          "sBlocks": 5.517001,
+          "x": 2.295481,
+          "y": 1.0,
+          "z": 16.333199,
+          "radiusBlocks": 16.493715,
+          "sourceSamplesNearAngle": 81
+        },
+        {
+          "thetaDeg": 83,
+          "sBlocks": 5.807572,
+          "x": 2.014603,
+          "y": 1.0,
+          "z": 16.407621,
+          "radiusBlocks": 16.53084,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 84,
+          "sBlocks": 6.097553,
+          "x": 1.730737,
+          "y": 1.0,
+          "z": 16.466863,
+          "radiusBlocks": 16.557567,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 85,
+          "sBlocks": 6.38662,
+          "x": 1.443522,
+          "y": 1.0,
+          "z": 16.499531,
+          "radiusBlocks": 16.562556,
+          "sourceSamplesNearAngle": 82
+        },
+        {
+          "thetaDeg": 86,
+          "sBlocks": 6.675903,
+          "x": 1.154371,
+          "y": 1.0,
+          "z": 16.508268,
+          "radiusBlocks": 16.548579,
+          "sourceSamplesNearAngle": 113
+        },
+        {
+          "thetaDeg": 87,
+          "sBlocks": 6.965268,
+          "x": 0.865019,
+          "y": 1.0,
+          "z": 16.505543,
+          "radiusBlocks": 16.528194,
+          "sourceSamplesNearAngle": 116
+        },
+        {
+          "thetaDeg": 88,
+          "sBlocks": 7.25408,
+          "x": 0.576238,
+          "y": 1.0,
+          "z": 16.501296,
+          "radiusBlocks": 16.511354,
+          "sourceSamplesNearAngle": 91
+        },
+        {
+          "thetaDeg": 89,
+          "sBlocks": 7.542303,
+          "x": 0.288016,
+          "y": 1.0,
+          "z": 16.500453,
+          "radiusBlocks": 16.502967,
+          "sourceSamplesNearAngle": 86
+        },
+        {
+          "thetaDeg": 90,
+          "sBlocks": 7.830362,
+          "x": 0.0,
+          "y": 1.0,
+          "z": 16.505418,
+          "radiusBlocks": 16.505418,
+          "sourceSamplesNearAngle": 89
+        },
+        {
+          "thetaDeg": 91,
+          "sBlocks": 8.118797,
+          "x": -0.288272,
+          "y": 1.0,
+          "z": 16.515106,
+          "radiusBlocks": 16.517622,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 92,
+          "sBlocks": 8.40713,
+          "x": -0.576576,
+          "y": 1.0,
+          "z": 16.510974,
+          "radiusBlocks": 16.521038,
+          "sourceSamplesNearAngle": 89
+        },
+        {
+          "thetaDeg": 93,
+          "sBlocks": 8.695821,
+          "x": -0.86376,
+          "y": 1.0,
+          "z": 16.481514,
+          "radiusBlocks": 16.504132,
+          "sourceSamplesNearAngle": 97
+        },
+        {
+          "thetaDeg": 94,
+          "sBlocks": 8.986797,
+          "x": -1.148217,
+          "y": 1.0,
+          "z": 16.420269,
+          "radiusBlocks": 16.460366,
+          "sourceSamplesNearAngle": 99
+        },
+        {
+          "thetaDeg": 95,
+          "sBlocks": 9.279335,
+          "x": -1.429582,
+          "y": 1.0,
+          "z": 16.340192,
+          "radiusBlocks": 16.402609,
+          "sourceSamplesNearAngle": 94
+        },
+        {
+          "thetaDeg": 96,
+          "sBlocks": 9.571722,
+          "x": -1.708057,
+          "y": 1.0,
+          "z": 16.251076,
+          "radiusBlocks": 16.340591,
+          "sourceSamplesNearAngle": 97
+        },
+        {
+          "thetaDeg": 97,
+          "sBlocks": 9.861064,
+          "x": -1.985156,
+          "y": 1.0,
+          "z": 16.167799,
+          "radiusBlocks": 16.289216,
+          "sourceSamplesNearAngle": 93
+        },
+        {
+          "thetaDeg": 98,
+          "sBlocks": 10.147714,
+          "x": -2.261563,
+          "y": 1.0,
+          "z": 16.091859,
+          "radiusBlocks": 16.250003,
+          "sourceSamplesNearAngle": 97
+        },
+        {
+          "thetaDeg": 99,
+          "sBlocks": 10.431432,
+          "x": -2.540399,
+          "y": 1.0,
+          "z": 16.039448,
+          "radiusBlocks": 16.239382,
+          "sourceSamplesNearAngle": 98
+        },
+        {
+          "thetaDeg": 100,
+          "sBlocks": 10.71619,
+          "x": -2.824303,
+          "y": 1.0,
+          "z": 16.017419,
+          "radiusBlocks": 16.264514,
+          "sourceSamplesNearAngle": 128
+        },
+        {
+          "thetaDeg": 101,
+          "sBlocks": 11.005153,
+          "x": -3.113264,
+          "y": 1.0,
+          "z": 16.016357,
+          "radiusBlocks": 16.31613,
+          "sourceSamplesNearAngle": 131
+        },
+        {
+          "thetaDeg": 102,
+          "sBlocks": 11.294606,
+          "x": -3.402595,
+          "y": 1.0,
+          "z": 16.007951,
+          "radiusBlocks": 16.365578,
+          "sourceSamplesNearAngle": 114
+        },
+        {
+          "thetaDeg": 103,
+          "sBlocks": 11.581772,
+          "x": -3.687592,
+          "y": 1.0,
+          "z": 15.972714,
+          "radiusBlocks": 16.392862,
+          "sourceSamplesNearAngle": 103
+        },
+        {
+          "thetaDeg": 104,
+          "sBlocks": 11.867971,
+          "x": -3.96705,
+          "y": 1.0,
+          "z": 15.910968,
+          "radiusBlocks": 16.39806,
+          "sourceSamplesNearAngle": 108
+        },
+        {
+          "thetaDeg": 105,
+          "sBlocks": 12.154897,
+          "x": -4.23815,
+          "y": 1.0,
+          "z": 15.81699,
+          "radiusBlocks": 16.374953,
+          "sourceSamplesNearAngle": 111
+        },
+        {
+          "thetaDeg": 106,
+          "sBlocks": 12.44178,
+          "x": -4.505942,
+          "y": 1.0,
+          "z": 15.714089,
+          "radiusBlocks": 16.347358,
+          "sourceSamplesNearAngle": 108
+        },
+        {
+          "thetaDeg": 107,
+          "sBlocks": 12.727277,
+          "x": -4.775683,
+          "y": 1.0,
+          "z": 15.620555,
+          "radiusBlocks": 16.334285,
+          "sourceSamplesNearAngle": 110
+        },
+        {
+          "thetaDeg": 108,
+          "sBlocks": 13.012431,
+          "x": -5.048906,
+          "y": 1.0,
+          "z": 15.538935,
+          "radiusBlocks": 16.338604,
+          "sourceSamplesNearAngle": 106
+        },
+        {
+          "thetaDeg": 109,
+          "sBlocks": 13.299001,
+          "x": -5.327803,
+          "y": 1.0,
+          "z": 15.473064,
+          "radiusBlocks": 16.364632,
+          "sourceSamplesNearAngle": 107
+        },
+        {
+          "thetaDeg": 110,
+          "sBlocks": 13.589436,
+          "x": -5.614226,
+          "y": 1.0,
+          "z": 15.42496,
+          "radiusBlocks": 16.4149,
+          "sourceSamplesNearAngle": 130
+        },
+        {
+          "thetaDeg": 111,
+          "sBlocks": 13.89252,
+          "x": -5.917136,
+          "y": 1.0,
+          "z": 15.414666,
+          "radiusBlocks": 16.511342,
+          "sourceSamplesNearAngle": 140
+        },
+        {
+          "thetaDeg": 112,
+          "sBlocks": 14.180704,
+          "x": -6.185643,
+          "y": 1.0,
+          "z": 15.310003,
+          "radiusBlocks": 16.51237,
+          "sourceSamplesNearAngle": 139
+        },
+        {
+          "thetaDeg": 113,
+          "sBlocks": 14.474697,
+          "x": -6.428185,
+          "y": 1.0,
+          "z": 15.143856,
+          "radiusBlocks": 16.451685,
+          "sourceSamplesNearAngle": 115
+        },
+        {
+          "thetaDeg": 114,
+          "sBlocks": 14.769222,
+          "x": -6.663793,
+          "y": 1.0,
+          "z": 14.967125,
+          "radiusBlocks": 16.383558,
+          "sourceSamplesNearAngle": 115
+        },
+        {
+          "thetaDeg": 115,
+          "sBlocks": 15.062053,
+          "x": -6.896232,
+          "y": 1.0,
+          "z": 14.789017,
+          "radiusBlocks": 16.317875,
+          "sourceSamplesNearAngle": 126
+        },
+        {
+          "thetaDeg": 116,
+          "sBlocks": 15.348756,
+          "x": -7.137688,
+          "y": 1.0,
+          "z": 14.634429,
+          "radiusBlocks": 16.282294,
+          "sourceSamplesNearAngle": 127
+        },
+        {
+          "thetaDeg": 117,
+          "sBlocks": 15.632927,
+          "x": -7.391662,
+          "y": 1.0,
+          "z": 14.506954,
+          "radiusBlocks": 16.281535,
+          "sourceSamplesNearAngle": 137
+        },
+        {
+          "thetaDeg": 118,
+          "sBlocks": 15.919329,
+          "x": -7.659378,
+          "y": 1.0,
+          "z": 14.405194,
+          "radiusBlocks": 16.314891,
+          "sourceSamplesNearAngle": 150
+        },
+        {
+          "thetaDeg": 119,
+          "sBlocks": 16.210652,
+          "x": -7.93828,
+          "y": 1.0,
+          "z": 14.321036,
+          "radiusBlocks": 16.374015,
+          "sourceSamplesNearAngle": 146
+        },
+        {
+          "thetaDeg": 120,
+          "sBlocks": 16.510422,
+          "x": -8.231036,
+          "y": 1.0,
+          "z": 14.256573,
+          "radiusBlocks": 16.462073,
+          "sourceSamplesNearAngle": 138
+        },
+        {
+          "thetaDeg": 121,
+          "sBlocks": 16.814596,
+          "x": -8.528752,
+          "y": 1.0,
+          "z": 14.194227,
+          "radiusBlocks": 16.559459,
+          "sourceSamplesNearAngle": 145
+        },
+        {
+          "thetaDeg": 122,
+          "sBlocks": 17.103683,
+          "x": -8.770116,
+          "y": 1.0,
+          "z": 14.035119,
+          "radiusBlocks": 16.54991,
+          "sourceSamplesNearAngle": 141
+        },
+        {
+          "thetaDeg": 123,
+          "sBlocks": 17.393749,
+          "x": -8.997825,
+          "y": 1.0,
+          "z": 13.855435,
+          "radiusBlocks": 16.520712,
+          "sourceSamplesNearAngle": 144
+        },
+        {
+          "thetaDeg": 124,
+          "sBlocks": 17.682663,
+          "x": -9.226554,
+          "y": 1.0,
+          "z": 13.678929,
+          "radiusBlocks": 16.49977,
+          "sourceSamplesNearAngle": 161
+        },
+        {
+          "thetaDeg": 125,
+          "sBlocks": 17.971037,
+          "x": -9.453587,
+          "y": 1.0,
+          "z": 13.501122,
+          "radiusBlocks": 16.481827,
+          "sourceSamplesNearAngle": 158
+        },
+        {
+          "thetaDeg": 126,
+          "sBlocks": 18.259484,
+          "x": -9.673681,
+          "y": 1.0,
+          "z": 13.314679,
+          "radiusBlocks": 16.457849,
+          "sourceSamplesNearAngle": 139
+        },
+        {
+          "thetaDeg": 127,
+          "sBlocks": 18.548007,
+          "x": -9.886644,
+          "y": 1.0,
+          "z": 13.12002,
+          "radiusBlocks": 16.428045,
+          "sourceSamplesNearAngle": 114
+        },
+        {
+          "thetaDeg": 128,
+          "sBlocks": 18.836521,
+          "x": -10.092737,
+          "y": 1.0,
+          "z": 12.918114,
+          "radiusBlocks": 16.393322,
+          "sourceSamplesNearAngle": 119
+        },
+        {
+          "thetaDeg": 129,
+          "sBlocks": 19.12523,
+          "x": -10.290724,
+          "y": 1.0,
+          "z": 12.707985,
+          "radiusBlocks": 16.352122,
+          "sourceSamplesNearAngle": 119
+        },
+        {
+          "thetaDeg": 130,
+          "sBlocks": 19.413614,
+          "x": -10.482672,
+          "y": 1.0,
+          "z": 12.492762,
+          "radiusBlocks": 16.308143,
+          "sourceSamplesNearAngle": 127
+        },
+        {
+          "thetaDeg": 131,
+          "sBlocks": 19.70176,
+          "x": -10.667977,
+          "y": 1.0,
+          "z": 12.272104,
+          "radiusBlocks": 16.260698,
+          "sourceSamplesNearAngle": 133
+        },
+        {
+          "thetaDeg": 132,
+          "sBlocks": 19.989826,
+          "x": -10.845777,
+          "y": 1.0,
+          "z": 12.045455,
+          "radiusBlocks": 16.208759,
+          "sourceSamplesNearAngle": 146
+        },
+        {
+          "thetaDeg": 133,
+          "sBlocks": 20.278209,
+          "x": -11.014434,
+          "y": 1.0,
+          "z": 11.811534,
+          "radiusBlocks": 16.150235,
+          "sourceSamplesNearAngle": 133
+        },
+        {
+          "thetaDeg": 134,
+          "sBlocks": 20.566694,
+          "x": -11.174485,
+          "y": 1.0,
+          "z": 11.571518,
+          "radiusBlocks": 16.086303,
+          "sourceSamplesNearAngle": 129
+        },
+        {
+          "thetaDeg": 135,
+          "sBlocks": 20.855266,
+          "x": -11.3258,
+          "y": 1.0,
+          "z": 11.3258,
+          "radiusBlocks": 16.0171,
+          "sourceSamplesNearAngle": 116
+        },
+        {
+          "thetaDeg": 136,
+          "sBlocks": 21.145282,
+          "x": -11.464411,
+          "y": 1.0,
+          "z": 11.071053,
+          "radiusBlocks": 15.937407,
+          "sourceSamplesNearAngle": 111
+        },
+        {
+          "thetaDeg": 137,
+          "sBlocks": 21.434735,
+          "x": -11.595517,
+          "y": 1.0,
+          "z": 10.812994,
+          "radiusBlocks": 15.854869,
+          "sourceSamplesNearAngle": 107
+        },
+        {
+          "thetaDeg": 138,
+          "sBlocks": 21.716595,
+          "x": -11.740792,
+          "y": 1.0,
+          "z": 10.571456,
+          "radiusBlocks": 15.798794,
+          "sourceSamplesNearAngle": 104
+        },
+        {
+          "thetaDeg": 139,
+          "sBlocks": 21.99265,
+          "x": -11.911532,
+          "y": 1.0,
+          "z": 10.354537,
+          "radiusBlocks": 15.782935,
+          "sourceSamplesNearAngle": 108
+        },
+        {
+          "thetaDeg": 140,
+          "sBlocks": 22.269165,
+          "x": -12.107156,
+          "y": 1.0,
+          "z": 10.15911,
+          "radiusBlocks": 15.804769,
+          "sourceSamplesNearAngle": 104
+        },
+        {
+          "thetaDeg": 141,
+          "sBlocks": 22.550199,
+          "x": -12.322574,
+          "y": 1.0,
+          "z": 9.978623,
+          "radiusBlocks": 15.856189,
+          "sourceSamplesNearAngle": 111
+        },
+        {
+          "thetaDeg": 142,
+          "sBlocks": 22.836947,
+          "x": -12.552154,
+          "y": 1.0,
+          "z": 9.806817,
+          "radiusBlocks": 15.928912,
+          "sourceSamplesNearAngle": 139
+        },
+        {
+          "thetaDeg": 143,
+          "sBlocks": 23.126402,
+          "x": -12.783853,
+          "y": 1.0,
+          "z": 9.633324,
+          "radiusBlocks": 16.007118,
+          "sourceSamplesNearAngle": 136
+        },
+        {
+          "thetaDeg": 144,
+          "sBlocks": 23.41887,
+          "x": -13.018091,
+          "y": 1.0,
+          "z": 9.458197,
+          "radiusBlocks": 16.091246,
+          "sourceSamplesNearAngle": 106
+        },
+        {
+          "thetaDeg": 145,
+          "sBlocks": 23.710781,
+          "x": -13.244425,
+          "y": 1.0,
+          "z": 9.273846,
+          "radiusBlocks": 16.168458,
+          "sourceSamplesNearAngle": 91
+        },
+        {
+          "thetaDeg": 146,
+          "sBlocks": 24.000049,
+          "x": -13.454985,
+          "y": 1.0,
+          "z": 9.075502,
+          "radiusBlocks": 16.229644,
+          "sourceSamplesNearAngle": 66
+        },
+        {
+          "thetaDeg": 147,
+          "sBlocks": 24.288237,
+          "x": -13.653821,
+          "y": 1.0,
+          "z": 8.866895,
+          "radiusBlocks": 16.280315,
+          "sourceSamplesNearAngle": 47
+        },
+        {
+          "thetaDeg": 148,
+          "sBlocks": 24.579852,
+          "x": -13.860055,
+          "y": 1.0,
+          "z": 8.660724,
+          "radiusBlocks": 16.343478,
+          "sourceSamplesNearAngle": 52
+        },
+        {
+          "thetaDeg": 149,
+          "sBlocks": 24.870863,
+          "x": -14.056422,
+          "y": 1.0,
+          "z": 8.44595,
+          "radiusBlocks": 16.398691,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 150,
+          "sBlocks": 25.159633,
+          "x": -14.23283,
+          "y": 1.0,
+          "z": 8.217328,
+          "radiusBlocks": 16.434656,
+          "sourceSamplesNearAngle": 104
+        },
+        {
+          "thetaDeg": 151,
+          "sBlocks": 25.447013,
+          "x": -14.387507,
+          "y": 1.0,
+          "z": 7.975125,
+          "radiusBlocks": 16.450014,
+          "sourceSamplesNearAngle": 115
+        },
+        {
+          "thetaDeg": 152,
+          "sBlocks": 25.734205,
+          "x": -14.528995,
+          "y": 1.0,
+          "z": 7.725204,
+          "radiusBlocks": 16.455105,
+          "sourceSamplesNearAngle": 123
+        },
+        {
+          "thetaDeg": 153,
+          "sBlocks": 26.021388,
+          "x": -14.660179,
+          "y": 1.0,
+          "z": 7.469734,
+          "radiusBlocks": 16.453504,
+          "sourceSamplesNearAngle": 116
+        },
+        {
+          "thetaDeg": 154,
+          "sBlocks": 26.308783,
+          "x": -14.796649,
+          "y": 1.0,
+          "z": 7.216808,
+          "radiusBlocks": 16.46278,
+          "sourceSamplesNearAngle": 109
+        },
+        {
+          "thetaDeg": 155,
+          "sBlocks": 26.597206,
+          "x": -14.94096,
+          "y": 1.0,
+          "z": 6.967084,
+          "radiusBlocks": 16.485526,
+          "sourceSamplesNearAngle": 108
+        },
+        {
+          "thetaDeg": 156,
+          "sBlocks": 26.88718,
+          "x": -15.091008,
+          "y": 1.0,
+          "z": 6.718949,
+          "radiusBlocks": 16.519164,
+          "sourceSamplesNearAngle": 113
+        },
+        {
+          "thetaDeg": 157,
+          "sBlocks": 27.177208,
+          "x": -15.232764,
+          "y": 1.0,
+          "z": 6.465925,
+          "radiusBlocks": 16.548272,
+          "sourceSamplesNearAngle": 108
+        },
+        {
+          "thetaDeg": 158,
+          "sBlocks": 27.466582,
+          "x": -15.357743,
+          "y": 1.0,
+          "z": 6.204931,
+          "radiusBlocks": 16.563859,
+          "sourceSamplesNearAngle": 133
+        },
+        {
+          "thetaDeg": 159,
+          "sBlocks": 27.755965,
+          "x": -15.448976,
+          "y": 1.0,
+          "z": 5.930306,
+          "radiusBlocks": 16.548093,
+          "sourceSamplesNearAngle": 129
+        },
+        {
+          "thetaDeg": 160,
+          "sBlocks": 28.047771,
+          "x": -15.508519,
+          "y": 1.0,
+          "z": 5.644639,
+          "radiusBlocks": 16.503821,
+          "sourceSamplesNearAngle": 124
+        },
+        {
+          "thetaDeg": 161,
+          "sBlocks": 28.351278,
+          "x": -15.511828,
+          "y": 1.0,
+          "z": 5.341151,
+          "radiusBlocks": 16.40563,
+          "sourceSamplesNearAngle": 90
+        },
+        {
+          "thetaDeg": 162,
+          "sBlocks": 28.645523,
+          "x": -15.535782,
+          "y": 1.0,
+          "z": 5.047882,
+          "radiusBlocks": 16.335288,
+          "sourceSamplesNearAngle": 92
+        },
+        {
+          "thetaDeg": 163,
+          "sBlocks": 28.933561,
+          "x": -15.579827,
+          "y": 1.0,
+          "z": 4.763231,
+          "radiusBlocks": 16.291696,
+          "sourceSamplesNearAngle": 93
+        },
+        {
+          "thetaDeg": 164,
+          "sBlocks": 29.218477,
+          "x": -15.640632,
+          "y": 1.0,
+          "z": 4.484879,
+          "radiusBlocks": 16.27094,
+          "sourceSamplesNearAngle": 97
+        },
+        {
+          "thetaDeg": 165,
+          "sBlocks": 29.502509,
+          "x": -15.719969,
+          "y": 1.0,
+          "z": 4.212153,
+          "radiusBlocks": 16.274509,
+          "sourceSamplesNearAngle": 83
+        },
+        {
+          "thetaDeg": 166,
+          "sBlocks": 29.787028,
+          "x": -15.804867,
+          "y": 1.0,
+          "z": 3.940596,
+          "radiusBlocks": 16.288712,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 167,
+          "sBlocks": 30.071608,
+          "x": -15.88162,
+          "y": 1.0,
+          "z": 3.666561,
+          "radiusBlocks": 16.299372,
+          "sourceSamplesNearAngle": 79
+        },
+        {
+          "thetaDeg": 168,
+          "sBlocks": 30.356226,
+          "x": -15.949932,
+          "y": 1.0,
+          "z": 3.390263,
+          "radiusBlocks": 16.306263,
+          "sourceSamplesNearAngle": 79
+        },
+        {
+          "thetaDeg": 169,
+          "sBlocks": 30.640831,
+          "x": -16.000837,
+          "y": 1.0,
+          "z": 3.110248,
+          "radiusBlocks": 16.300319,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 170,
+          "sBlocks": 30.925404,
+          "x": -16.057422,
+          "y": 1.0,
+          "z": 2.831357,
+          "radiusBlocks": 16.305133,
+          "sourceSamplesNearAngle": 84
+        },
+        {
+          "thetaDeg": 171,
+          "sBlocks": 31.220512,
+          "x": -16.02472,
+          "y": 1.0,
+          "z": 2.538066,
+          "radiusBlocks": 16.22447,
+          "sourceSamplesNearAngle": 83
+        },
+        {
+          "thetaDeg": 172,
+          "sBlocks": 31.516211,
+          "x": -15.979747,
+          "y": 1.0,
+          "z": 2.245807,
+          "radiusBlocks": 16.136789,
+          "sourceSamplesNearAngle": 95
+        },
+        {
+          "thetaDeg": 173,
+          "sBlocks": 31.823252,
+          "x": -15.892665,
+          "y": 1.0,
+          "z": 1.951374,
+          "radiusBlocks": 16.012016,
+          "sourceSamplesNearAngle": 82
+        },
+        {
+          "thetaDeg": 174,
+          "sBlocks": 32.129171,
+          "x": -15.798079,
+          "y": 1.0,
+          "z": 1.660445,
+          "radiusBlocks": 15.885099,
+          "sourceSamplesNearAngle": 72
+        },
+        {
+          "thetaDeg": 175,
+          "sBlocks": 32.424117,
+          "x": -15.721951,
+          "y": 1.0,
+          "z": 1.375492,
+          "radiusBlocks": 15.782006,
+          "sourceSamplesNearAngle": 53
+        },
+        {
+          "thetaDeg": 176,
+          "sBlocks": 32.705766,
+          "x": -15.682467,
+          "y": 1.0,
+          "z": 1.096625,
+          "radiusBlocks": 15.720762,
+          "sourceSamplesNearAngle": 50
+        },
+        {
+          "thetaDeg": 177,
+          "sBlocks": 32.980408,
+          "x": -15.684515,
+          "y": 1.0,
+          "z": 0.821991,
+          "radiusBlocks": 15.706039,
+          "sourceSamplesNearAngle": 53
+        },
+        {
+          "thetaDeg": 178,
+          "sBlocks": 33.256484,
+          "x": -15.726968,
+          "y": 1.0,
+          "z": 0.549198,
+          "radiusBlocks": 15.736555,
+          "sourceSamplesNearAngle": 55
+        },
+        {
+          "thetaDeg": 179,
+          "sBlocks": 33.540772,
+          "x": -15.80518,
+          "y": 1.0,
+          "z": 0.27588,
+          "radiusBlocks": 15.807588,
+          "sourceSamplesNearAngle": 53
+        },
+        {
+          "thetaDeg": 180,
+          "sBlocks": 33.841248,
+          "x": -15.924241,
+          "y": 1.0,
+          "z": 0.0,
+          "radiusBlocks": 15.924241,
+          "sourceSamplesNearAngle": 58
+        },
+        {
+          "thetaDeg": 181,
+          "sBlocks": 34.130032,
+          "x": -15.997858,
+          "y": 1.0,
+          "z": -0.279244,
+          "radiusBlocks": 16.000295,
+          "sourceSamplesNearAngle": 70
+        },
+        {
+          "thetaDeg": 182,
+          "sBlocks": 34.41975,
+          "x": -16.065265,
+          "y": 1.0,
+          "z": -0.561011,
+          "radiusBlocks": 16.075057,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 183,
+          "sBlocks": 34.708974,
+          "x": -16.120793,
+          "y": 1.0,
+          "z": -0.844855,
+          "radiusBlocks": 16.142917,
+          "sourceSamplesNearAngle": 105
+        },
+        {
+          "thetaDeg": 184,
+          "sBlocks": 35.003777,
+          "x": -16.187734,
+          "y": 1.0,
+          "z": -1.131957,
+          "radiusBlocks": 16.227263,
+          "sourceSamplesNearAngle": 118
+        },
+        {
+          "thetaDeg": 185,
+          "sBlocks": 35.300419,
+          "x": -16.250984,
+          "y": 1.0,
+          "z": -1.421777,
+          "radiusBlocks": 16.313061,
+          "sourceSamplesNearAngle": 103
+        },
+        {
+          "thetaDeg": 186,
+          "sBlocks": 35.595345,
+          "x": -16.297786,
+          "y": 1.0,
+          "z": -1.712966,
+          "radiusBlocks": 16.387559,
+          "sourceSamplesNearAngle": 106
+        },
+        {
+          "thetaDeg": 187,
+          "sBlocks": 35.885057,
+          "x": -16.308796,
+          "y": 1.0,
+          "z": -2.002468,
+          "radiusBlocks": 16.431272,
+          "sourceSamplesNearAngle": 104
+        },
+        {
+          "thetaDeg": 188,
+          "sBlocks": 36.172016,
+          "x": -16.279336,
+          "y": 1.0,
+          "z": -2.287911,
+          "radiusBlocks": 16.439322,
+          "sourceSamplesNearAngle": 102
+        },
+        {
+          "thetaDeg": 189,
+          "sBlocks": 36.459418,
+          "x": -16.21778,
+          "y": 1.0,
+          "z": -2.568644,
+          "radiusBlocks": 16.419937,
+          "sourceSamplesNearAngle": 106
+        },
+        {
+          "thetaDeg": 190,
+          "sBlocks": 36.747116,
+          "x": -16.14292,
+          "y": 1.0,
+          "z": -2.846432,
+          "radiusBlocks": 16.39195,
+          "sourceSamplesNearAngle": 96
+        },
+        {
+          "thetaDeg": 191,
+          "sBlocks": 37.034045,
+          "x": -16.06667,
+          "y": 1.0,
+          "z": -3.123044,
+          "radiusBlocks": 16.367385,
+          "sourceSamplesNearAngle": 97
+        },
+        {
+          "thetaDeg": 192,
+          "sBlocks": 37.319932,
+          "x": -15.995913,
+          "y": 1.0,
+          "z": -3.400036,
+          "radiusBlocks": 16.353271,
+          "sourceSamplesNearAngle": 100
+        },
+        {
+          "thetaDeg": 193,
+          "sBlocks": 37.605336,
+          "x": -15.932314,
+          "y": 1.0,
+          "z": -3.678265,
+          "radiusBlocks": 16.3514,
+          "sourceSamplesNearAngle": 95
+        },
+        {
+          "thetaDeg": 194,
+          "sBlocks": 37.890796,
+          "x": -15.870166,
+          "y": 1.0,
+          "z": -3.956877,
+          "radiusBlocks": 16.35601,
+          "sourceSamplesNearAngle": 95
+        },
+        {
+          "thetaDeg": 195,
+          "sBlocks": 38.17625,
+          "x": -15.7974,
+          "y": 1.0,
+          "z": -4.2329,
+          "radiusBlocks": 16.354671,
+          "sourceSamplesNearAngle": 91
+        },
+        {
+          "thetaDeg": 196,
+          "sBlocks": 38.461755,
+          "x": -15.712381,
+          "y": 1.0,
+          "z": -4.505453,
+          "radiusBlocks": 16.345581,
+          "sourceSamplesNearAngle": 92
+        },
+        {
+          "thetaDeg": 197,
+          "sBlocks": 38.747026,
+          "x": -15.628144,
+          "y": 1.0,
+          "z": -4.778003,
+          "radiusBlocks": 16.342221,
+          "sourceSamplesNearAngle": 101
+        },
+        {
+          "thetaDeg": 198,
+          "sBlocks": 39.032696,
+          "x": -15.555414,
+          "y": 1.0,
+          "z": -5.05426,
+          "radiusBlocks": 16.35593,
+          "sourceSamplesNearAngle": 93
+        },
+        {
+          "thetaDeg": 199,
+          "sBlocks": 39.319674,
+          "x": -15.490434,
+          "y": 1.0,
+          "z": -5.333784,
+          "radiusBlocks": 16.383003,
+          "sourceSamplesNearAngle": 96
+        },
+        {
+          "thetaDeg": 200,
+          "sBlocks": 39.6082,
+          "x": -15.42898,
+          "y": 1.0,
+          "z": -5.61569,
+          "radiusBlocks": 16.419178,
+          "sourceSamplesNearAngle": 96
+        },
+        {
+          "thetaDeg": 201,
+          "sBlocks": 39.898471,
+          "x": -15.369516,
+          "y": 1.0,
+          "z": -5.899805,
+          "radiusBlocks": 16.46298,
+          "sourceSamplesNearAngle": 98
+        },
+        {
+          "thetaDeg": 202,
+          "sBlocks": 40.19054,
+          "x": -15.310528,
+          "y": 1.0,
+          "z": -6.185855,
+          "radiusBlocks": 16.512936,
+          "sourceSamplesNearAngle": 102
+        },
+        {
+          "thetaDeg": 203,
+          "sBlocks": 40.484342,
+          "x": -15.25053,
+          "y": 1.0,
+          "z": -6.473466,
+          "radiusBlocks": 16.567571,
+          "sourceSamplesNearAngle": 112
+        }
+      ]
+    },
+    {
+      "pathId": "PATH_B",
+      "heightRelativeToPlayerFeet": 0.0,
+      "minThetaDeg": 60,
+      "maxThetaDeg": 210,
+      "totalObservedModelArcLengthBlocks": 35.5327,
+      "pointSpacingDeg": 1,
+      "fitMethod": "theta-indexed radial median (|Δtheta|<1.25 deg) + Savitzky-Golay 11-point cubic smoothing",
+      "pathOrigin": "session player foot position [-100.5,71,44.5]",
+      "observationsUsed": 3772,
+      "uniqueEntities": 43,
+      "absoluteRadialResidualMedianBlocks": 0.057,
+      "absoluteRadialResidualP90Blocks": 0.4071,
+      "radialResidualRMSEBlocks": 0.217,
+      "endpointCaveat": "angular limits are observed coverage limits, not verified physical turnaround points",
+      "points": [
+        {
+          "thetaDeg": 60,
+          "sBlocks": 0.0,
+          "x": 6.460478,
+          "y": 0.0,
+          "z": 11.189876,
+          "radiusBlocks": 12.920955,
+          "sourceSamplesNearAngle": 74
+        },
+        {
+          "thetaDeg": 61,
+          "sBlocks": 0.253112,
+          "x": 6.318981,
+          "y": 0.0,
+          "z": 11.399744,
+          "radiusBlocks": 13.033943,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 62,
+          "sBlocks": 0.480899,
+          "x": 6.123734,
+          "y": 0.0,
+          "z": 11.517069,
+          "radiusBlocks": 13.043888,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 63,
+          "sBlocks": 0.716113,
+          "x": 5.894031,
+          "y": 0.0,
+          "z": 11.567687,
+          "radiusBlocks": 12.982719,
+          "sourceSamplesNearAngle": 84
+        },
+        {
+          "thetaDeg": 64,
+          "sBlocks": 0.963127,
+          "x": 5.647258,
+          "y": 0.0,
+          "z": 11.578595,
+          "radiusBlocks": 12.882367,
+          "sourceSamplesNearAngle": 90
+        },
+        {
+          "thetaDeg": 65,
+          "sBlocks": 1.211537,
+          "x": 5.398849,
+          "y": 0.0,
+          "z": 11.577869,
+          "radiusBlocks": 12.774765,
+          "sourceSamplesNearAngle": 100
+        },
+        {
+          "thetaDeg": 66,
+          "sBlocks": 1.436178,
+          "x": 5.206361,
+          "y": 0.0,
+          "z": 11.693677,
+          "radiusBlocks": 12.800324,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 67,
+          "sBlocks": 1.659833,
+          "x": 5.00493,
+          "y": 0.0,
+          "z": 11.790876,
+          "radiusBlocks": 12.80914,
+          "sourceSamplesNearAngle": 85
+        },
+        {
+          "thetaDeg": 68,
+          "sBlocks": 1.883399,
+          "x": 4.798635,
+          "y": 0.0,
+          "z": 11.877039,
+          "radiusBlocks": 12.809799,
+          "sourceSamplesNearAngle": 79
+        },
+        {
+          "thetaDeg": 69,
+          "sBlocks": 2.107468,
+          "x": 4.584522,
+          "y": 0.0,
+          "z": 11.943089,
+          "radiusBlocks": 12.79278,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 70,
+          "sBlocks": 2.330821,
+          "x": 4.372571,
+          "y": 0.0,
+          "z": 12.013541,
+          "radiusBlocks": 12.784544,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 71,
+          "sBlocks": 2.553959,
+          "x": 4.160732,
+          "y": 0.0,
+          "z": 12.083642,
+          "radiusBlocks": 12.77991,
+          "sourceSamplesNearAngle": 75
+        },
+        {
+          "thetaDeg": 72,
+          "sBlocks": 2.777522,
+          "x": 3.943885,
+          "y": 0.0,
+          "z": 12.13803,
+          "radiusBlocks": 12.76268,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 73,
+          "sBlocks": 3.003679,
+          "x": 3.719427,
+          "y": 0.0,
+          "z": 12.165697,
+          "radiusBlocks": 12.721569,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 74,
+          "sBlocks": 3.241365,
+          "x": 3.482615,
+          "y": 0.0,
+          "z": 12.145323,
+          "radiusBlocks": 12.634772,
+          "sourceSamplesNearAngle": 75
+        },
+        {
+          "thetaDeg": 75,
+          "sBlocks": 3.465436,
+          "x": 3.279924,
+          "y": 0.0,
+          "z": 12.240841,
+          "radiusBlocks": 12.672652,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 76,
+          "sBlocks": 3.719157,
+          "x": 3.095404,
+          "y": 0.0,
+          "z": 12.414988,
+          "radiusBlocks": 12.795056,
+          "sourceSamplesNearAngle": 45
+        },
+        {
+          "thetaDeg": 77,
+          "sBlocks": 3.962576,
+          "x": 2.899619,
+          "y": 0.0,
+          "z": 12.559629,
+          "radiusBlocks": 12.889999,
+          "sourceSamplesNearAngle": 20
+        },
+        {
+          "thetaDeg": 78,
+          "sBlocks": 4.215648,
+          "x": 2.703674,
+          "y": 0.0,
+          "z": 12.719788,
+          "radiusBlocks": 13.003956,
+          "sourceSamplesNearAngle": 5
+        },
+        {
+          "thetaDeg": 79,
+          "sBlocks": 4.469604,
+          "x": 2.502639,
+          "y": 0.0,
+          "z": 12.874961,
+          "radiusBlocks": 13.115938,
+          "sourceSamplesNearAngle": 40
+        },
+        {
+          "thetaDeg": 80,
+          "sBlocks": 4.726704,
+          "x": 2.297539,
+          "y": 0.0,
+          "z": 13.029991,
+          "radiusBlocks": 13.230999,
+          "sourceSamplesNearAngle": 68
+        },
+        {
+          "thetaDeg": 81,
+          "sBlocks": 4.982677,
+          "x": 2.086749,
+          "y": 0.0,
+          "z": 13.175214,
+          "radiusBlocks": 13.339444,
+          "sourceSamplesNearAngle": 72
+        },
+        {
+          "thetaDeg": 82,
+          "sBlocks": 5.237292,
+          "x": 1.870558,
+          "y": 0.0,
+          "z": 13.309714,
+          "radiusBlocks": 13.440517,
+          "sourceSamplesNearAngle": 65
+        },
+        {
+          "thetaDeg": 83,
+          "sBlocks": 5.482045,
+          "x": 1.646252,
+          "y": 0.0,
+          "z": 13.407647,
+          "radiusBlocks": 13.508336,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 84,
+          "sBlocks": 5.718603,
+          "x": 1.413828,
+          "y": 0.0,
+          "z": 13.451677,
+          "radiusBlocks": 13.525773,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 85,
+          "sBlocks": 5.9552,
+          "x": 1.180061,
+          "y": 0.0,
+          "z": 13.488161,
+          "radiusBlocks": 13.539684,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 86,
+          "sBlocks": 6.191505,
+          "x": 0.944221,
+          "y": 0.0,
+          "z": 13.502984,
+          "radiusBlocks": 13.535957,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 87,
+          "sBlocks": 6.428099,
+          "x": 0.707628,
+          "y": 0.0,
+          "z": 13.502353,
+          "radiusBlocks": 13.520882,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 88,
+          "sBlocks": 6.66423,
+          "x": 0.471497,
+          "y": 0.0,
+          "z": 13.501913,
+          "radiusBlocks": 13.510143,
+          "sourceSamplesNearAngle": 67
+        },
+        {
+          "thetaDeg": 89,
+          "sBlocks": 6.900049,
+          "x": 0.235678,
+          "y": 0.0,
+          "z": 13.502006,
+          "radiusBlocks": 13.504063,
+          "sourceSamplesNearAngle": 70
+        },
+        {
+          "thetaDeg": 90,
+          "sBlocks": 7.135729,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 13.501237,
+          "radiusBlocks": 13.501237,
+          "sourceSamplesNearAngle": 67
+        },
+        {
+          "thetaDeg": 91,
+          "sBlocks": 7.371393,
+          "x": -0.235664,
+          "y": 0.0,
+          "z": 13.501195,
+          "radiusBlocks": 13.503251,
+          "sourceSamplesNearAngle": 73
+        },
+        {
+          "thetaDeg": 92,
+          "sBlocks": 7.607149,
+          "x": -0.471414,
+          "y": 0.0,
+          "z": 13.499537,
+          "radiusBlocks": 13.507765,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 93,
+          "sBlocks": 7.843064,
+          "x": -0.707306,
+          "y": 0.0,
+          "z": 13.496195,
+          "radiusBlocks": 13.514716,
+          "sourceSamplesNearAngle": 97
+        },
+        {
+          "thetaDeg": 94,
+          "sBlocks": 8.07922,
+          "x": -0.943415,
+          "y": 0.0,
+          "z": 13.491462,
+          "radiusBlocks": 13.524406,
+          "sourceSamplesNearAngle": 94
+        },
+        {
+          "thetaDeg": 95,
+          "sBlocks": 8.315942,
+          "x": -1.180122,
+          "y": 0.0,
+          "z": 13.488855,
+          "radiusBlocks": 13.54038,
+          "sourceSamplesNearAngle": 90
+        },
+        {
+          "thetaDeg": 96,
+          "sBlocks": 8.553455,
+          "x": -1.417633,
+          "y": 0.0,
+          "z": 13.487875,
+          "radiusBlocks": 13.56217,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 97,
+          "sBlocks": 8.791787,
+          "x": -1.655963,
+          "y": 0.0,
+          "z": 13.486734,
+          "radiusBlocks": 13.588017,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 98,
+          "sBlocks": 9.030902,
+          "x": -1.895062,
+          "y": 0.0,
+          "z": 13.484068,
+          "radiusBlocks": 13.616583,
+          "sourceSamplesNearAngle": 64
+        },
+        {
+          "thetaDeg": 99,
+          "sBlocks": 9.270731,
+          "x": -2.134834,
+          "y": 0.0,
+          "z": 13.478812,
+          "radiusBlocks": 13.646827,
+          "sourceSamplesNearAngle": 65
+        },
+        {
+          "thetaDeg": 100,
+          "sBlocks": 9.509976,
+          "x": -2.37332,
+          "y": 0.0,
+          "z": 13.459766,
+          "radiusBlocks": 13.667404,
+          "sourceSamplesNearAngle": 61
+        },
+        {
+          "thetaDeg": 101,
+          "sBlocks": 9.748771,
+          "x": -2.609616,
+          "y": 0.0,
+          "z": 13.425311,
+          "radiusBlocks": 13.676588,
+          "sourceSamplesNearAngle": 73
+        },
+        {
+          "thetaDeg": 102,
+          "sBlocks": 9.987496,
+          "x": -2.843949,
+          "y": 0.0,
+          "z": 13.37973,
+          "radiusBlocks": 13.678641,
+          "sourceSamplesNearAngle": 76
+        },
+        {
+          "thetaDeg": 103,
+          "sBlocks": 10.226265,
+          "x": -3.075531,
+          "y": 0.0,
+          "z": 13.32159,
+          "radiusBlocks": 13.672003,
+          "sourceSamplesNearAngle": 75
+        },
+        {
+          "thetaDeg": 104,
+          "sBlocks": 10.469464,
+          "x": -3.295677,
+          "y": 0.0,
+          "z": 13.218239,
+          "radiusBlocks": 13.622897,
+          "sourceSamplesNearAngle": 45
+        },
+        {
+          "thetaDeg": 105,
+          "sBlocks": 10.718154,
+          "x": -3.506449,
+          "y": 0.0,
+          "z": 13.086247,
+          "radiusBlocks": 13.547879,
+          "sourceSamplesNearAngle": 26
+        },
+        {
+          "thetaDeg": 106,
+          "sBlocks": 10.968429,
+          "x": -3.711117,
+          "y": 0.0,
+          "z": 12.942203,
+          "radiusBlocks": 13.463767,
+          "sourceSamplesNearAngle": 14
+        },
+        {
+          "thetaDeg": 107,
+          "sBlocks": 11.213391,
+          "x": -3.915583,
+          "y": 0.0,
+          "z": 12.807297,
+          "radiusBlocks": 13.392484,
+          "sourceSamplesNearAngle": 17
+        },
+        {
+          "thetaDeg": 108,
+          "sBlocks": 11.451599,
+          "x": -4.12367,
+          "y": 0.0,
+          "z": 12.69135,
+          "radiusBlocks": 13.344475,
+          "sourceSamplesNearAngle": 32
+        },
+        {
+          "thetaDeg": 109,
+          "sBlocks": 11.685303,
+          "x": -4.337544,
+          "y": 0.0,
+          "z": 12.597141,
+          "radiusBlocks": 13.322997,
+          "sourceSamplesNearAngle": 50
+        },
+        {
+          "thetaDeg": 110,
+          "sBlocks": 11.917823,
+          "x": -4.556367,
+          "y": 0.0,
+          "z": 12.518517,
+          "radiusBlocks": 13.321927,
+          "sourceSamplesNearAngle": 53
+        },
+        {
+          "thetaDeg": 111,
+          "sBlocks": 12.151657,
+          "x": -4.782362,
+          "y": 0.0,
+          "z": 12.458479,
+          "radiusBlocks": 13.344838,
+          "sourceSamplesNearAngle": 66
+        },
+        {
+          "thetaDeg": 112,
+          "sBlocks": 12.388858,
+          "x": -5.015148,
+          "y": 0.0,
+          "z": 12.412927,
+          "radiusBlocks": 13.387773,
+          "sourceSamplesNearAngle": 61
+        },
+        {
+          "thetaDeg": 113,
+          "sBlocks": 12.626612,
+          "x": -5.247412,
+          "y": 0.0,
+          "z": 12.362129,
+          "radiusBlocks": 13.429727,
+          "sourceSamplesNearAngle": 54
+        },
+        {
+          "thetaDeg": 114,
+          "sBlocks": 12.861153,
+          "x": -5.465051,
+          "y": 0.0,
+          "z": 12.274706,
+          "radiusBlocks": 13.436339,
+          "sourceSamplesNearAngle": 42
+        },
+        {
+          "thetaDeg": 115,
+          "sBlocks": 13.095685,
+          "x": -5.675846,
+          "y": 0.0,
+          "z": 12.17189,
+          "radiusBlocks": 13.430195,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 116,
+          "sBlocks": 13.330203,
+          "x": -5.883105,
+          "y": 0.0,
+          "z": 12.062153,
+          "radiusBlocks": 13.420375,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 117,
+          "sBlocks": 13.564424,
+          "x": -6.091284,
+          "y": 0.0,
+          "z": 11.954818,
+          "radiusBlocks": 13.417206,
+          "sourceSamplesNearAngle": 41
+        },
+        {
+          "thetaDeg": 118,
+          "sBlocks": 13.798626,
+          "x": -6.300047,
+          "y": 0.0,
+          "z": 11.848665,
+          "radiusBlocks": 13.419443,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 119,
+          "sBlocks": 14.032926,
+          "x": -6.508186,
+          "y": 0.0,
+          "z": 11.741079,
+          "radiusBlocks": 13.424211,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 120,
+          "sBlocks": 14.267286,
+          "x": -6.708123,
+          "y": 0.0,
+          "z": 11.61881,
+          "radiusBlocks": 13.416246,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 121,
+          "sBlocks": 14.501977,
+          "x": -6.900593,
+          "y": 0.0,
+          "z": 11.484515,
+          "radiusBlocks": 13.398219,
+          "sourceSamplesNearAngle": 50
+        },
+        {
+          "thetaDeg": 122,
+          "sBlocks": 14.737188,
+          "x": -7.112375,
+          "y": 0.0,
+          "z": 11.382179,
+          "radiusBlocks": 13.42162,
+          "sourceSamplesNearAngle": 47
+        },
+        {
+          "thetaDeg": 123,
+          "sBlocks": 14.971589,
+          "x": -7.313563,
+          "y": 0.0,
+          "z": 11.261899,
+          "radiusBlocks": 13.428275,
+          "sourceSamplesNearAngle": 38
+        },
+        {
+          "thetaDeg": 124,
+          "sBlocks": 15.206283,
+          "x": -7.500811,
+          "y": 0.0,
+          "z": 11.120409,
+          "radiusBlocks": 13.413637,
+          "sourceSamplesNearAngle": 29
+        },
+        {
+          "thetaDeg": 125,
+          "sBlocks": 15.441918,
+          "x": -7.677172,
+          "y": 0.0,
+          "z": 10.964138,
+          "radiusBlocks": 13.38474,
+          "sourceSamplesNearAngle": 16
+        },
+        {
+          "thetaDeg": 126,
+          "sBlocks": 15.677841,
+          "x": -7.846726,
+          "y": 0.0,
+          "z": 10.800091,
+          "radiusBlocks": 13.349647,
+          "sourceSamplesNearAngle": 14
+        },
+        {
+          "thetaDeg": 127,
+          "sBlocks": 15.914449,
+          "x": -8.007968,
+          "y": 0.0,
+          "z": 10.626932,
+          "radiusBlocks": 13.306361,
+          "sourceSamplesNearAngle": 21
+        },
+        {
+          "thetaDeg": 128,
+          "sBlocks": 16.152699,
+          "x": -8.158195,
+          "y": 0.0,
+          "z": 10.442013,
+          "radiusBlocks": 13.251105,
+          "sourceSamplesNearAngle": 33
+        },
+        {
+          "thetaDeg": 129,
+          "sBlocks": 16.398489,
+          "x": -8.285532,
+          "y": 0.0,
+          "z": 10.23178,
+          "radiusBlocks": 13.16584,
+          "sourceSamplesNearAngle": 40
+        },
+        {
+          "thetaDeg": 130,
+          "sBlocks": 16.658945,
+          "x": -8.382719,
+          "y": 0.0,
+          "z": 9.990135,
+          "radiusBlocks": 13.041196,
+          "sourceSamplesNearAngle": 46
+        },
+        {
+          "thetaDeg": 131,
+          "sBlocks": 16.904169,
+          "x": -8.494603,
+          "y": 0.0,
+          "z": 9.771923,
+          "radiusBlocks": 12.947925,
+          "sourceSamplesNearAngle": 45
+        },
+        {
+          "thetaDeg": 132,
+          "sBlocks": 17.13977,
+          "x": -8.707141,
+          "y": 0.0,
+          "z": 9.67026,
+          "radiusBlocks": 13.012618,
+          "sourceSamplesNearAngle": 42
+        },
+        {
+          "thetaDeg": 133,
+          "sBlocks": 17.367742,
+          "x": -8.886809,
+          "y": 0.0,
+          "z": 9.529936,
+          "radiusBlocks": 13.030543,
+          "sourceSamplesNearAngle": 41
+        },
+        {
+          "thetaDeg": 134,
+          "sBlocks": 17.595164,
+          "x": -9.049053,
+          "y": 0.0,
+          "z": 9.370569,
+          "radiusBlocks": 13.026624,
+          "sourceSamplesNearAngle": 58
+        },
+        {
+          "thetaDeg": 135,
+          "sBlocks": 17.822822,
+          "x": -9.201386,
+          "y": 0.0,
+          "z": 9.201386,
+          "radiusBlocks": 13.012725,
+          "sourceSamplesNearAngle": 70
+        },
+        {
+          "thetaDeg": 136,
+          "sBlocks": 18.050481,
+          "x": -9.347711,
+          "y": 0.0,
+          "z": 9.026979,
+          "radiusBlocks": 12.994847,
+          "sourceSamplesNearAngle": 72
+        },
+        {
+          "thetaDeg": 137,
+          "sBlocks": 18.279119,
+          "x": -9.481173,
+          "y": 0.0,
+          "z": 8.841337,
+          "radiusBlocks": 12.963868,
+          "sourceSamplesNearAngle": 57
+        },
+        {
+          "thetaDeg": 138,
+          "sBlocks": 18.510504,
+          "x": -9.596544,
+          "y": 0.0,
+          "z": 8.640767,
+          "radiusBlocks": 12.913423,
+          "sourceSamplesNearAngle": 57
+        },
+        {
+          "thetaDeg": 139,
+          "sBlocks": 18.746192,
+          "x": -9.692346,
+          "y": 0.0,
+          "z": 8.425427,
+          "radiusBlocks": 12.842484,
+          "sourceSamplesNearAngle": 56
+        },
+        {
+          "thetaDeg": 140,
+          "sBlocks": 18.979346,
+          "x": -9.787213,
+          "y": 0.0,
+          "z": 8.212447,
+          "radiusBlocks": 12.776299,
+          "sourceSamplesNearAngle": 52
+        },
+        {
+          "thetaDeg": 141,
+          "sBlocks": 19.202791,
+          "x": -9.938773,
+          "y": 0.0,
+          "z": 8.04826,
+          "radiusBlocks": 12.788811,
+          "sourceSamplesNearAngle": 53
+        },
+        {
+          "thetaDeg": 142,
+          "sBlocks": 19.454637,
+          "x": -10.168116,
+          "y": 0.0,
+          "z": 7.944203,
+          "radiusBlocks": 12.903525,
+          "sourceSamplesNearAngle": 52
+        },
+        {
+          "thetaDeg": 143,
+          "sBlocks": 19.687223,
+          "x": -10.350091,
+          "y": 0.0,
+          "z": 7.799353,
+          "radiusBlocks": 12.959718,
+          "sourceSamplesNearAngle": 54
+        },
+        {
+          "thetaDeg": 144,
+          "sBlocks": 19.91961,
+          "x": -10.526203,
+          "y": 0.0,
+          "z": 7.647734,
+          "radiusBlocks": 13.011103,
+          "sourceSamplesNearAngle": 60
+        },
+        {
+          "thetaDeg": 145,
+          "sBlocks": 20.151519,
+          "x": -10.695035,
+          "y": 0.0,
+          "z": 7.488744,
+          "radiusBlocks": 13.056227,
+          "sourceSamplesNearAngle": 64
+        },
+        {
+          "thetaDeg": 146,
+          "sBlocks": 20.38253,
+          "x": -10.853965,
+          "y": 0.0,
+          "z": 7.321092,
+          "radiusBlocks": 13.092248,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 147,
+          "sBlocks": 20.612717,
+          "x": -11.001796,
+          "y": 0.0,
+          "z": 7.14465,
+          "radiusBlocks": 13.118138,
+          "sourceSamplesNearAngle": 57
+        },
+        {
+          "thetaDeg": 148,
+          "sBlocks": 20.842555,
+          "x": -11.140301,
+          "y": 0.0,
+          "z": 6.961232,
+          "radiusBlocks": 13.136402,
+          "sourceSamplesNearAngle": 57
+        },
+        {
+          "thetaDeg": 149,
+          "sBlocks": 21.073073,
+          "x": -11.278984,
+          "y": 0.0,
+          "z": 6.777098,
+          "radiusBlocks": 13.15844,
+          "sourceSamplesNearAngle": 58
+        },
+        {
+          "thetaDeg": 150,
+          "sBlocks": 21.304515,
+          "x": -11.418727,
+          "y": 0.0,
+          "z": 6.592605,
+          "radiusBlocks": 13.185211,
+          "sourceSamplesNearAngle": 51
+        },
+        {
+          "thetaDeg": 151,
+          "sBlocks": 21.538356,
+          "x": -11.566659,
+          "y": 0.0,
+          "z": 6.411504,
+          "radiusBlocks": 13.224786,
+          "sourceSamplesNearAngle": 49
+        },
+        {
+          "thetaDeg": 152,
+          "sBlocks": 21.773457,
+          "x": -11.714516,
+          "y": 0.0,
+          "z": 6.228719,
+          "radiusBlocks": 13.267511,
+          "sourceSamplesNearAngle": 42
+        },
+        {
+          "thetaDeg": 153,
+          "sBlocks": 22.009063,
+          "x": -11.858424,
+          "y": 0.0,
+          "z": 6.042169,
+          "radiusBlocks": 13.309021,
+          "sourceSamplesNearAngle": 36
+        },
+        {
+          "thetaDeg": 154,
+          "sBlocks": 22.245997,
+          "x": -12.002274,
+          "y": 0.0,
+          "z": 5.8539,
+          "radiusBlocks": 13.353754,
+          "sourceSamplesNearAngle": 37
+        },
+        {
+          "thetaDeg": 155,
+          "sBlocks": 22.483356,
+          "x": -12.141548,
+          "y": 0.0,
+          "z": 5.661697,
+          "radiusBlocks": 13.396716,
+          "sourceSamplesNearAngle": 34
+        },
+        {
+          "thetaDeg": 156,
+          "sBlocks": 22.717705,
+          "x": -12.251225,
+          "y": 0.0,
+          "z": 5.454597,
+          "radiusBlocks": 13.410636,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 157,
+          "sBlocks": 22.953708,
+          "x": -12.314774,
+          "y": 0.0,
+          "z": 5.227311,
+          "radiusBlocks": 13.378282,
+          "sourceSamplesNearAngle": 45
+        },
+        {
+          "thetaDeg": 158,
+          "sBlocks": 23.20018,
+          "x": -12.329031,
+          "y": 0.0,
+          "z": 4.981252,
+          "radiusBlocks": 13.297288,
+          "sourceSamplesNearAngle": 52
+        },
+        {
+          "thetaDeg": 159,
+          "sBlocks": 23.456174,
+          "x": -12.311315,
+          "y": 0.0,
+          "z": 4.725871,
+          "radiusBlocks": 13.187204,
+          "sourceSamplesNearAngle": 60
+        },
+        {
+          "thetaDeg": 160,
+          "sBlocks": 23.71425,
+          "x": -12.280305,
+          "y": 0.0,
+          "z": 4.469666,
+          "radiusBlocks": 13.068428,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 161,
+          "sBlocks": 23.963204,
+          "x": -12.260199,
+          "y": 0.0,
+          "z": 4.221525,
+          "radiusBlocks": 12.96664,
+          "sourceSamplesNearAngle": 55
+        },
+        {
+          "thetaDeg": 162,
+          "sBlocks": 24.197751,
+          "x": -12.271492,
+          "y": 0.0,
+          "z": 3.987249,
+          "radiusBlocks": 12.90301,
+          "sourceSamplesNearAngle": 48
+        },
+        {
+          "thetaDeg": 163,
+          "sBlocks": 24.423368,
+          "x": -12.324046,
+          "y": 0.0,
+          "z": 3.767839,
+          "radiusBlocks": 12.887154,
+          "sourceSamplesNearAngle": 41
+        },
+        {
+          "thetaDeg": 164,
+          "sBlocks": 24.652817,
+          "x": -12.429685,
+          "y": 0.0,
+          "z": 3.564155,
+          "radiusBlocks": 12.930594,
+          "sourceSamplesNearAngle": 40
+        },
+        {
+          "thetaDeg": 165,
+          "sBlocks": 24.897467,
+          "x": -12.579354,
+          "y": 0.0,
+          "z": 3.370628,
+          "radiusBlocks": 13.023106,
+          "sourceSamplesNearAngle": 40
+        },
+        {
+          "thetaDeg": 166,
+          "sBlocks": 25.152402,
+          "x": -12.74638,
+          "y": 0.0,
+          "z": 3.178029,
+          "radiusBlocks": 13.136593,
+          "sourceSamplesNearAngle": 39
+        },
+        {
+          "thetaDeg": 167,
+          "sBlocks": 25.408744,
+          "x": -12.909683,
+          "y": 0.0,
+          "z": 2.980435,
+          "radiusBlocks": 13.249261,
+          "sourceSamplesNearAngle": 40
+        },
+        {
+          "thetaDeg": 168,
+          "sBlocks": 25.662622,
+          "x": -13.060283,
+          "y": 0.0,
+          "z": 2.776049,
+          "radiusBlocks": 13.352058,
+          "sourceSamplesNearAngle": 41
+        },
+        {
+          "thetaDeg": 169,
+          "sBlocks": 25.913245,
+          "x": -13.195306,
+          "y": 0.0,
+          "z": 2.564908,
+          "radiusBlocks": 13.442278,
+          "sourceSamplesNearAngle": 43
+        },
+        {
+          "thetaDeg": 170,
+          "sBlocks": 26.159497,
+          "x": -13.309759,
+          "y": 0.0,
+          "z": 2.34687,
+          "radiusBlocks": 13.515083,
+          "sourceSamplesNearAngle": 45
+        },
+        {
+          "thetaDeg": 171,
+          "sBlocks": 26.400975,
+          "x": -13.397755,
+          "y": 0.0,
+          "z": 2.121996,
+          "radiusBlocks": 13.56476,
+          "sourceSamplesNearAngle": 44
+        },
+        {
+          "thetaDeg": 172,
+          "sBlocks": 26.63951,
+          "x": -13.459647,
+          "y": 0.0,
+          "z": 1.89163,
+          "radiusBlocks": 13.591923,
+          "sourceSamplesNearAngle": 45
+        },
+        {
+          "thetaDeg": 173,
+          "sBlocks": 26.876737,
+          "x": -13.491242,
+          "y": 0.0,
+          "z": 1.656516,
+          "radiusBlocks": 13.592558,
+          "sourceSamplesNearAngle": 47
+        },
+        {
+          "thetaDeg": 174,
+          "sBlocks": 27.114283,
+          "x": -13.503725,
+          "y": 0.0,
+          "z": 1.419299,
+          "radiusBlocks": 13.578107,
+          "sourceSamplesNearAngle": 51
+        },
+        {
+          "thetaDeg": 175,
+          "sBlocks": 27.352161,
+          "x": -13.503694,
+          "y": 0.0,
+          "z": 1.18142,
+          "radiusBlocks": 13.555276,
+          "sourceSamplesNearAngle": 62
+        },
+        {
+          "thetaDeg": 176,
+          "sBlocks": 27.589504,
+          "x": -13.501135,
+          "y": 0.0,
+          "z": 0.944091,
+          "radiusBlocks": 13.534104,
+          "sourceSamplesNearAngle": 68
+        },
+        {
+          "thetaDeg": 177,
+          "sBlocks": 27.826168,
+          "x": -13.498747,
+          "y": 0.0,
+          "z": 0.707439,
+          "radiusBlocks": 13.517272,
+          "sourceSamplesNearAngle": 70
+        },
+        {
+          "thetaDeg": 178,
+          "sBlocks": 28.062228,
+          "x": -13.498547,
+          "y": 0.0,
+          "z": 0.47138,
+          "radiusBlocks": 13.506775,
+          "sourceSamplesNearAngle": 61
+        },
+        {
+          "thetaDeg": 179,
+          "sBlocks": 28.297963,
+          "x": -13.500596,
+          "y": 0.0,
+          "z": 0.235654,
+          "radiusBlocks": 13.502653,
+          "sourceSamplesNearAngle": 61
+        },
+        {
+          "thetaDeg": 180,
+          "sBlocks": 28.533662,
+          "x": -13.505254,
+          "y": 0.0,
+          "z": 0.0,
+          "radiusBlocks": 13.505254,
+          "sourceSamplesNearAngle": 65
+        },
+        {
+          "thetaDeg": 181,
+          "sBlocks": 28.769514,
+          "x": -13.509627,
+          "y": 0.0,
+          "z": -0.235811,
+          "radiusBlocks": 13.511685,
+          "sourceSamplesNearAngle": 64
+        },
+        {
+          "thetaDeg": 182,
+          "sBlocks": 29.005366,
+          "x": -13.505737,
+          "y": 0.0,
+          "z": -0.471631,
+          "radiusBlocks": 13.513969,
+          "sourceSamplesNearAngle": 61
+        },
+        {
+          "thetaDeg": 183,
+          "sBlocks": 29.241333,
+          "x": -13.485993,
+          "y": 0.0,
+          "z": -0.706771,
+          "radiusBlocks": 13.504501,
+          "sourceSamplesNearAngle": 77
+        },
+        {
+          "thetaDeg": 184,
+          "sBlocks": 29.477983,
+          "x": -13.448273,
+          "y": 0.0,
+          "z": -0.940395,
+          "radiusBlocks": 13.481112,
+          "sourceSamplesNearAngle": 92
+        },
+        {
+          "thetaDeg": 185,
+          "sBlocks": 29.716646,
+          "x": -13.387862,
+          "y": 0.0,
+          "z": -1.171286,
+          "radiusBlocks": 13.439002,
+          "sourceSamplesNearAngle": 94
+        },
+        {
+          "thetaDeg": 186,
+          "sBlocks": 29.95886,
+          "x": -13.303205,
+          "y": 0.0,
+          "z": -1.398223,
+          "radiusBlocks": 13.376483,
+          "sourceSamplesNearAngle": 70
+        },
+        {
+          "thetaDeg": 187,
+          "sBlocks": 30.205371,
+          "x": -13.196172,
+          "y": 0.0,
+          "z": -1.620286,
+          "radiusBlocks": 13.295273,
+          "sourceSamplesNearAngle": 53
+        },
+        {
+          "thetaDeg": 188,
+          "sBlocks": 30.454444,
+          "x": -13.074223,
+          "y": 0.0,
+          "z": -1.837462,
+          "radiusBlocks": 13.202711,
+          "sourceSamplesNearAngle": 57
+        },
+        {
+          "thetaDeg": 189,
+          "sBlocks": 30.701808,
+          "x": -12.949307,
+          "y": 0.0,
+          "z": -2.050969,
+          "radiusBlocks": 13.110722,
+          "sourceSamplesNearAngle": 71
+        },
+        {
+          "thetaDeg": 190,
+          "sBlocks": 30.94344,
+          "x": -12.833099,
+          "y": 0.0,
+          "z": -2.262822,
+          "radiusBlocks": 13.03107,
+          "sourceSamplesNearAngle": 83
+        },
+        {
+          "thetaDeg": 191,
+          "sBlocks": 31.178875,
+          "x": -12.729928,
+          "y": 0.0,
+          "z": -2.474447,
+          "radiusBlocks": 12.96819,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 192,
+          "sBlocks": 31.40984,
+          "x": -12.637819,
+          "y": 0.0,
+          "z": -2.686251,
+          "radiusBlocks": 12.920155,
+          "sourceSamplesNearAngle": 87
+        },
+        {
+          "thetaDeg": 193,
+          "sBlocks": 31.636134,
+          "x": -12.568499,
+          "y": 0.0,
+          "z": -2.901667,
+          "radiusBlocks": 12.899102,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 194,
+          "sBlocks": 31.861368,
+          "x": -12.520961,
+          "y": 0.0,
+          "z": -3.121826,
+          "radiusBlocks": 12.904273,
+          "sourceSamplesNearAngle": 80
+        },
+        {
+          "thetaDeg": 195,
+          "sBlocks": 32.088119,
+          "x": -12.488165,
+          "y": 0.0,
+          "z": -3.346194,
+          "radiusBlocks": 12.928699,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 196,
+          "sBlocks": 32.32028,
+          "x": -12.478503,
+          "y": 0.0,
+          "z": -3.578153,
+          "radiusBlocks": 12.98138,
+          "sourceSamplesNearAngle": 95
+        },
+        {
+          "thetaDeg": 197,
+          "sBlocks": 32.553765,
+          "x": -12.466254,
+          "y": 0.0,
+          "z": -3.811316,
+          "radiusBlocks": 13.035859,
+          "sourceSamplesNearAngle": 90
+        },
+        {
+          "thetaDeg": 198,
+          "sBlocks": 32.785215,
+          "x": -12.436407,
+          "y": 0.0,
+          "z": -4.040833,
+          "radiusBlocks": 13.076412,
+          "sourceSamplesNearAngle": 86
+        },
+        {
+          "thetaDeg": 199,
+          "sBlocks": 33.016061,
+          "x": -12.394974,
+          "y": 0.0,
+          "z": -4.267932,
+          "radiusBlocks": 13.10918,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 200,
+          "sBlocks": 33.246053,
+          "x": -12.338813,
+          "y": 0.0,
+          "z": -4.490961,
+          "radiusBlocks": 13.130691,
+          "sourceSamplesNearAngle": 90
+        },
+        {
+          "thetaDeg": 201,
+          "sBlocks": 33.475261,
+          "x": -12.252403,
+          "y": 0.0,
+          "z": -4.703257,
+          "radiusBlocks": 13.1241,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 202,
+          "sBlocks": 33.705864,
+          "x": -12.141802,
+          "y": 0.0,
+          "z": -4.905606,
+          "radiusBlocks": 13.095355,
+          "sourceSamplesNearAngle": 82
+        },
+        {
+          "thetaDeg": 203,
+          "sBlocks": 33.937182,
+          "x": -12.019637,
+          "y": 0.0,
+          "z": -5.102033,
+          "radiusBlocks": 13.057658,
+          "sourceSamplesNearAngle": 83
+        },
+        {
+          "thetaDeg": 204,
+          "sBlocks": 34.168136,
+          "x": -11.892675,
+          "y": 0.0,
+          "z": -5.29496,
+          "radiusBlocks": 13.018153,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 205,
+          "sBlocks": 34.397083,
+          "x": -11.77106,
+          "y": 0.0,
+          "z": -5.488935,
+          "radiusBlocks": 12.987928,
+          "sourceSamplesNearAngle": 88
+        },
+        {
+          "thetaDeg": 206,
+          "sBlocks": 34.624118,
+          "x": -11.660142,
+          "y": 0.0,
+          "z": -5.687031,
+          "radiusBlocks": 12.973096,
+          "sourceSamplesNearAngle": 89
+        },
+        {
+          "thetaDeg": 207,
+          "sBlocks": 34.850556,
+          "x": -11.554291,
+          "y": 0.0,
+          "z": -5.887205,
+          "radiusBlocks": 12.967684,
+          "sourceSamplesNearAngle": 89
+        },
+        {
+          "thetaDeg": 208,
+          "sBlocks": 35.076974,
+          "x": -11.454007,
+          "y": 0.0,
+          "z": -6.090204,
+          "radiusBlocks": 12.972466,
+          "sourceSamplesNearAngle": 86
+        },
+        {
+          "thetaDeg": 209,
+          "sBlocks": 35.304067,
+          "x": -11.359749,
+          "y": 0.0,
+          "z": -6.296812,
+          "radiusBlocks": 12.988215,
+          "sourceSamplesNearAngle": 89
+        },
+        {
+          "thetaDeg": 210,
+          "sBlocks": 35.532651,
+          "x": -11.271933,
+          "y": 0.0,
+          "z": -6.507853,
+          "radiusBlocks": 13.015707,
+          "sourceSamplesNearAngle": 91
+        }
+      ]
+    }
+  ],
+  "zombieSpeedLookup": [
+    {
+      "class": "LEATHER_ADULT",
+      "speedBlocksPerTick": 0.118768,
+      "source": "observed median",
+      "validMotionSamples": 4708,
+      "distinctEntityTags": 55
+    },
+    {
+      "class": "LEATHER_BABY",
+      "speedBlocksPerTick": 0.166667,
+      "source": "observed median",
+      "validMotionSamples": 128,
+      "distinctEntityTags": 1
+    },
+    {
+      "class": "IRON_ADULT",
+      "speedBlocksPerTick": 0.135417,
+      "source": "observed median",
+      "validMotionSamples": 1070,
+      "distinctEntityTags": 15
+    },
+    {
+      "class": "IRON_BABY",
+      "speedBlocksPerTick": 0.1875,
+      "source": "observed median",
+      "validMotionSamples": 1261,
+      "distinctEntityTags": 11
+    },
+    {
+      "class": "GOLD_ADULT",
+      "speedBlocksPerTick": 0.149144,
+      "source": "observed median",
+      "validMotionSamples": 1301,
+      "distinctEntityTags": 16
+    },
+    {
+      "class": "GOLD_BABY",
+      "speedBlocksPerTick": 0.208307,
+      "source": "observed median",
+      "validMotionSamples": 88,
+      "distinctEntityTags": 1
+    },
+    {
+      "class": "DIAMOND_ADULT",
+      "speedBlocksPerTick": 0.164702,
+      "source": "observed median",
+      "validMotionSamples": 537,
+      "distinctEntityTags": 11
+    },
+    {
+      "class": "DIAMOND_BABY",
+      "speedBlocksPerTick": 0.230583,
+      "source": "estimated: DIAMOND_ADULT median * 1.4, not measured",
+      "validMotionSamples": 0,
+      "distinctEntityTags": 0
+    }
+  ],
+  "arrowModel": {
+    "dragPerTick": 0.99,
+    "gravityVelocityDecrementBlocksPerTick": 0.05,
+    "firstObservedArrows": 116,
+    "empiricalInitialSpeed": {
+      "form": "V0(yaw)=a+b*sin(2*yaw)^2 (yaw in radians when evaluated)",
+      "a": 3.949996,
+      "b": 0.624544,
+      "rmseBlocksPerTick": 0.048757,
+      "caveat": "empirical approximation inferred from first observation after estimated 1/2 flight ticks; depends on sampled weapon / mode; not a vanilla rule"
+    },
+    "discreteMotionOrder": "position += velocity, then horizontal and vertical velocity *= drag, then vertical velocity -= gravity"
+  },
+  "assumptions": [
+    "physical turnaround points not verified",
+    "zombie path endpoints are observed coverage limits only",
+    "projectile collisions and latency not included",
+    "path widths and uncertainty should be handled via measured entity bounding boxes"
+  ]
+}

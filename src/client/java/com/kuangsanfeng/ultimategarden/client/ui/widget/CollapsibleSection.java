@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import java.util.function.Supplier;
+import net.minecraft.client.input.MouseButtonEvent;
 
 /** Full-width header with session-local state and measured content layout. */
 public final class CollapsibleSection extends StyledButton {
@@ -36,13 +37,23 @@ public final class CollapsibleSection extends StyledButton {
     private final int logicalY;
     private final HelpTooltip help;
     private final String description;
+    private final int rightControlsWidth;
     public CollapsibleSection(int x, int y, int width, int logicalY, String title, State state,
                               Supplier<ThemePalette> palette, HelpTooltip help, String description, Runnable relayout) {
+        this(x,y,width,logicalY,title,state,palette,help,description,relayout,0);
+    }
+    public CollapsibleSection(int x,int y,int width,int logicalY,String title,State state,
+                              Supplier<ThemePalette> palette,HelpTooltip help,String description,Runnable relayout,int rightControlsWidth) {
         super(x + state.inset(width), y, Math.max(40, width - state.inset(width)), Math.max(29, Minecraft.getInstance().font.split(
-                Component.literal(title).withStyle(ChatFormatting.BOLD), Math.max(20, width - state.inset(width) - 40 - (description.isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP))).size() * 11 + 16),
+                Component.literal(title).withStyle(ChatFormatting.BOLD), Math.max(20, width - state.inset(width) - 40 - rightControlsWidth - (description.isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP))).size() * 11 + 16),
                 title, false, palette, () -> { state.toggle(); relayout.run(); });
         this.state = state; this.logicalY = logicalY;
         this.help = help; this.description = description;
+        this.rightControlsWidth=rightControlsWidth;
+    }
+    @Override public boolean mouseClicked(MouseButtonEvent event,boolean doubleClick){
+        if(rightControlsWidth>0&&event.x()>=getRight()-rightControlsWidth)return false;
+        return super.mouseClicked(event,doubleClick);
     }
     public boolean isExpanded() { return state.isExpanded(); }
     public boolean isContentVisible() { return state.isContentVisible(); }
@@ -57,10 +68,10 @@ public final class CollapsibleSection extends StyledButton {
         int surface = state.depth() == 0 ? p.surface() : ThemePalette.blend(p.surface(), p.sidebar(), .55f);
         RoundedRect.fill(g, getX(), getY(), getWidth(), getHeight(), 10, p.bg(isHoveredOrFocused() && active ? p.selected() : surface, opacity));
         var title = getMessage().copy().withStyle(ChatFormatting.BOLD);
-        int textWidth = Math.max(20, getWidth() - 40 - (description.isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP));
+        int textWidth = Math.max(20, getWidth() - 40 - rightControlsWidth - (description.isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP));
         g.textWithWordWrap(Minecraft.getInstance().font, title, getX() + 10, getY() + 8, textWidth, p.fg(p.text(), opacity), false);
         help.iconAfterText(g, Minecraft.getInstance().font, this, title, getX() + 10, getY() + 8, textWidth, description, p, opacity);
-        int cx = getX() + getWidth() - 16, cy = getY() + getHeight() / 2;
+        int cx = getX() + getWidth() - 16 - rightControlsWidth, cy = getY() + getHeight() / 2;
         // Rasterized triangles, independent of the font's symbol coverage.
         for (int i = 0; i < 5; i++) {
             if (isExpanded()) g.fill(cx - 4 + i, cy - 2 + i, cx + 5 - i, cy - 1 + i, p.fg(p.text(), opacity));

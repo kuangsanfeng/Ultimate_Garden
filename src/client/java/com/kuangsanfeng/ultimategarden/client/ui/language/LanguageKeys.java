@@ -20,6 +20,7 @@ public final class LanguageKeys {
         case "Cancel pest timer" -> "ui.ultimategarden.cancel_pest_timer";
         case "Loadout" -> "ui.ultimategarden.loadout";
         case "Select crop" -> "ui.ultimategarden.select_crop";
+        case "Toggle Zombie Shootout" -> "ui.ultimategarden.shootout.hotkey";
         case "Toggle HUD" -> "ui.ultimategarden.toggle_hud";
         case "Mouse focus" -> "ui.ultimategarden.mouse_focus";
         case "Open Ultimate Garden Menu" -> "ui.ultimategarden.open_ultimate_garden_menu";

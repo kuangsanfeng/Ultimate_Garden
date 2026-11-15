@@ -76,8 +76,12 @@ public final class LanguageRegression {
         }
         Path screen=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java");
         Matcher refs=Pattern.compile("\"(ui\\.ultimategarden\\.[^\"]+)\"").matcher(Files.readString(screen));
-        Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.");
+        Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.","ui.ultimategarden.shootout.","ui.ultimategarden.view_check.","ui.ultimategarden.developer.shootout.log.");
         while(refs.find())if(!prefixes.contains(refs.group(1)) && !refs.group(1).equals("ui.ultimategarden.hint."))check(english.has(refs.group(1)));
+        for(var category:com.kuangsanfeng.ultimategarden.client.config.ZombieShootLogCategory.values()){
+            check(english.has("ui.ultimategarden.developer.shootout.log."+category.name()));
+            check(english.has("ui.ultimategarden.developer.shootout.log."+category.name()+".help"));
+        }
         for (var hint : GeneralConfig.Hint.values()) {
             check(english.has("ui.ultimategarden.hint." + hint.name()));
             check(english.has("ui.ultimategarden.hint." + hint.name() + ".help"));
@@ -90,6 +94,19 @@ public final class LanguageRegression {
             check(english.has("ui.ultimategarden.hud.phase." + phase.name()));
         for (var key : RandomDelayConfig.Key.values()) check(english.has("ui.ultimategarden.random_delay." + key.name()));
         for (var module : ConfigManager.Module.values()) check(english.has("ui.ultimategarden.account.file." + module.name()));
+        String[] materials={"LEATHER","IRON","GOLD","DIAMOND"}, names={"皮革","铁","金","钻石"};
+        var shootoutConfig=new ZombieShootoutConfig();
+        for(int i=0;i<materials.length;i++)for(boolean baby:new boolean[]{false,true}){
+            String age=baby?"BABY":"ADULT",key="ui.ultimategarden.shootout."+materials[i]+"_"+age;
+            String material=materials[i].substring(0,1)+materials[i].substring(1).toLowerCase(java.util.Locale.ROOT);
+            check(english.get(key).getAsString().equals(material+" "+(baby?"Baby":"Adult")+" Speed Window"));
+            check(chinese.get(key).getAsString().equals(names[i]+(baby?"幼年体":"成年体")+"速度采样窗口"));
+            check(english.get(key+".help").getAsString().equals("Movement speed averaging window in seconds."));
+            check(chinese.get(key+".help").getAsString().equals("用于计算平均移动速度的采样时间窗口，单位为秒。"));
+            check(shootoutConfig.get(ZombieShootoutConfig.Setting.valueOf(materials[i]+"_"+age))==.3);
+        }
+        check(english.get("ui.ultimategarden.hud.show").getAsString().equals("Show Farm Macro HUD"));
+        check(chinese.get("ui.ultimategarden.hud.show").getAsString().equals("显示农业宏 HUD"));
         System.out.println("PASS: "+checks+" GUI language checks: dictionary parity, placeholders, persistence, invalid values, module isolation, flags and UI references.");
     }
 }

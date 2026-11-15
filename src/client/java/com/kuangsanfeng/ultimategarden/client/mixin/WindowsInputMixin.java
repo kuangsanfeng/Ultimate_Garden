@@ -59,6 +59,17 @@ public class WindowsInputMixin {
             if (kind != null && com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.request(kind)) return;
         }
 
+        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled()
+                && com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings.matchesShootoutKey(event)) return;
+
+        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled() && client.screen==null) {
+            if (com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings.matchesMenuKey(event)) return;
+            if (client.options.keyUp.matches(event) || client.options.keyDown.matches(event)
+                    || client.options.keyLeft.matches(event) || client.options.keyRight.matches(event)
+                    || client.options.keyJump.matches(event) || client.options.keyShift.matches(event)
+                    || client.options.keySprint.matches(event)) { ci.cancel(); return; }
+        }
+
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient
                         .getWindowsInputInterceptor();
