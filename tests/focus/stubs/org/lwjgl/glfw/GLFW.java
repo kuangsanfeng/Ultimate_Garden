@@ -1,4 +1,5 @@
 package org.lwjgl.glfw;
+
 public final class GLFW {
     public static final int GLFW_KEY_W = 87, GLFW_KEY_A = 65, GLFW_KEY_S = 83, GLFW_KEY_D = 68;
     public static final int GLFW_KEY_SPACE = 32, GLFW_KEY_SLASH = 47;

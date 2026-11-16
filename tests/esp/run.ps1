@@ -18,7 +18,7 @@ gradle.projectsEvaluated {
     if ($LASTEXITCODE -ne 0) { throw 'ESP regression compilation failed.' }
     New-Item -ItemType Directory -Force build/esp-audit/pest-classes | Out-Null
     $pestStubs = @(Get-ChildItem tests/esp/pest-stubs -Recurse -Filter '*.java' | Select-Object -ExpandProperty FullName)
-    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/esp-audit/pest-classes @pestStubs src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/pest/PestESP.java tests/esp/PestESPRegression.java
+    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/esp-audit/pest-classes @pestStubs src/client/java/com/kuangsanfeng/ultimategarden/client/runtime/world/esp/adapters/PestESP.java tests/esp/PestESPRegression.java
     if ($LASTEXITCODE -ne 0) { throw 'Pest ESP regression compilation failed.' }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ("build/esp-audit/pest-classes;" + $classpath) PestESPRegression
     if ($LASTEXITCODE -ne 0) { throw 'Pest ESP regression failed.' }

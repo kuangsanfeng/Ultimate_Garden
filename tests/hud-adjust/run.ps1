@@ -14,7 +14,7 @@ try {
     $classpath = 'build/classes/java/client;build/classes/java/main;build/resources/client;build/resources/main;' + ($dependencies -join ';')
     New-Item -ItemType Directory -Force build/hud-adjust-audit/classes | Out-Null
     $stubs = @(Get-ChildItem tests/hud-adjust/stubs -Recurse -Filter '*.java' | Select-Object -ExpandProperty FullName)
-    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/hud-adjust-audit/classes @stubs src/client/java/com/kuangsanfeng/ultimategarden/client/ui/hud/HudAdjustmentController.java tests/hud-adjust/HudAdjustmentRegression.java
+    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/hud-adjust-audit/classes @stubs src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/hud/HudAdjustmentController.java tests/hud-adjust/HudAdjustmentRegression.java
     if ($LASTEXITCODE -ne 0) { throw 'HUD adjustment test compilation failed' }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/hud-adjust-audit/classes;' + $classpath) HudAdjustmentRegression
     if ($LASTEXITCODE -ne 0) { throw 'HUD adjustment test failed' }

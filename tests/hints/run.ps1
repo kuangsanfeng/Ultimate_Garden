@@ -10,7 +10,7 @@ try {
     $classpath = 'build/classes/java/client;build/classes/java/main;build/resources/client;build/resources/main;' + ($dependencies -join ';')
     New-Item -ItemType Directory -Force build/hint-audit/classes | Out-Null
     $stubs = @(Get-ChildItem tests/hints/stubs -Recurse -Filter '*.java' | Select-Object -ExpandProperty FullName)
-    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/hint-audit/classes @stubs src/client/java/com/kuangsanfeng/ultimategarden/client/hint/HintManager.java src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java tests/hints/HintRegression.java
+    & (Join-Path $env:JAVA_HOME 'bin/javac.exe') -encoding UTF-8 -cp $classpath -d build/hint-audit/classes @stubs src/client/java/com/kuangsanfeng/ultimategarden/client/platform/hint/HintManager.java src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/hint/FarmHints.java tests/hints/HintRegression.java
     if ($LASTEXITCODE -ne 0) { throw 'Hint test compilation failed' }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') -cp ('build/hint-audit/classes;' + $classpath) HintRegression
     if ($LASTEXITCODE -ne 0) { throw 'Hint regression failed' }

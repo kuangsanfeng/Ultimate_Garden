@@ -1,16 +1,18 @@
 package com.kuangsanfeng.ultimategarden.client.macro.farm;
+import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmState;
 
-import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsFocusController;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
+
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsFocusController;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.action.FarmCommandController;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.crop.CropType;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.route.RouteController;
 import com.kuangsanfeng.ultimategarden.client.macro.MacroManager;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.hint.FarmHints;
 import net.minecraft.client.Minecraft;
-import com.kuangsanfeng.ultimategarden.client.config.ConfigManager;
-import com.kuangsanfeng.ultimategarden.client.config.FarmConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.FarmConfig;
 import net.minecraft.client.gui.screens.ChatScreen;
 
 
@@ -22,7 +24,7 @@ public final class FarmController implements MacroManager.Module {
 
     private final FarmState state;
     private final Minecraft client;
-    private final com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState menuPause = new com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState();
+    private final com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState menuPause = new com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState();
     public enum MenuAction { PREVIOUS_LINE, NEXT_LINE, SET_SPAWN, WARP_GARDEN, LOADOUT }
     private final java.util.Deque<MenuAction> menuActions = new java.util.ArrayDeque<>();
     private VirtualInput.HeldActions heldActions;
@@ -263,6 +265,7 @@ public final class FarmController implements MacroManager.Module {
     // Tick: commands/timer must advance before route state, even while paused.
     // =========================================================
     public void tick() {
+        com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.observeWorld(client.level);
         if (lastWorld != null && lastWorld != client.level) abortForWorldChange();
         lastWorld = client.level;
         if (client.player == null || client.level == null) {
@@ -271,36 +274,36 @@ public final class FarmController implements MacroManager.Module {
         }
         if (playerGuiScreen != null && client.screen != playerGuiScreen) {
             playerGuiScreen = null;
-            if (!(client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen)
+            if (!(client.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen)
                     || !configManager.getGeneralConfig().isAutoPauseFarmWhenOpeningMenu()) endMenuPause();
         }
-        com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.clearTransient();
+        com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.clearTransient();
         if (menuPause.isActive()) {
             tickMenuSession();
             return;
         }
-        if (!(client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen)
+        if (!(client.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen)
                 && !menuActions.isEmpty() && !command.hasPendingWork()) executeMenuAction();
         command.tick();
         route.tick(isTimeTesterMode);
     }
 
     public void onPlayerScreenOpened(net.minecraft.client.gui.screens.Screen screen) {
-        if (screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen menu && menu.keepsFarmingInput()) reapplyMenuInput();
+        if (screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen menu && menu.keepsFarmingInput()) reapplyMenuInput();
         var kind = screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen
-                ? com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.INVENTORY
+                ? com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.INVENTORY
                 : screen instanceof ChatScreen
-                ? com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.CHAT
+                ? com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.CHAT
                 : screen instanceof net.minecraft.client.gui.screens.PauseScreen
-                ? com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.MENU : null;
-        boolean physical = com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.consume(kind);
+                ? com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.MENU : null;
+        boolean physical = com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.consume(kind);
         if (client.player != null && client.level != null && kind != null && physical) {
             windowsFocusController.useGameFocusForPlayerGui();
             if (!state.isRunning() && !menuPause.isActive()) return;
             playerGuiScreen = screen;
             if (!menuPause.isOpen()) {
                 boolean wasRunning = state.isRunning();
-                beginMenuPause(com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Source.PLAYER_GUI);
+                beginMenuPause(com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Source.PLAYER_GUI);
                 if (wasRunning) {
                     // Preserve queued work and the GUI resume snapshot.
                     pauseMacro(false);
@@ -314,7 +317,7 @@ public final class FarmController implements MacroManager.Module {
     }
     public boolean beginUltimateGardenMenu() {
         if (!configManager.getGeneralConfig().isAutoPauseFarmWhenOpeningMenu()) return false;
-        beginMenuPause(com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Source.ULTIMATE_GARDEN_MENU);
+        beginMenuPause(com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Source.ULTIMATE_GARDEN_MENU);
         return true;
     }
     public void endUltimateGardenMenu() {
@@ -322,9 +325,9 @@ public final class FarmController implements MacroManager.Module {
                 && configManager.getGeneralConfig().isAutoResumeFarmAfterGuiClose());
     }
     private boolean isOwnMenuVisible() {
-        return client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen;
+        return client.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen;
     }
-    private void beginMenuPause(com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Source source) {
+    private void beginMenuPause(com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Source source) {
         boolean reopening = menuPause.isActive();
         menuPause.open(state.isRunning() || command.isBusinessResumePending(), source);
         stopReason = "GUI Pause";
@@ -345,9 +348,9 @@ public final class FarmController implements MacroManager.Module {
     public String getRunStatus() {
         if (menuPause.isActive()) {
             if (menuPause.hasFailed()) return "Paused: action failed";
-            if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Intent.START) return "Start requested (after menu)";
-            if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Intent.PAUSE) return "User paused";
-            if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Intent.RESET) return "Reset";
+            if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Intent.START) return "Start requested (after menu)";
+            if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Intent.PAUSE) return "User paused";
+            if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Intent.RESET) return "Reset";
             return menuPause.isOpen() ? menuPause.wasRunningAtOpen() ? "Temporarily paused for menu" : "Menu open - " + stopReason : "Waiting for business actions";
         }
         return state.isRunning() ? "Running" : command.isBusinessResumePending() ? "Paused for business action" : stopReason;
@@ -433,8 +436,8 @@ public final class FarmController implements MacroManager.Module {
         input.releaseAll();
         boolean resume = menuPause.finish();
         if (menuPause.hasFailed()) stopReason = "Paused: action failed";
-        else if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Intent.PAUSE) stopReason = "User paused";
-        else if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState.Intent.RESET) stopReason = "Reset";
+        else if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Intent.PAUSE) stopReason = "User paused";
+        else if (menuPause.getIntent() == com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState.Intent.RESET) stopReason = "Reset";
         else stopReason = "Paused after menu";
         if (resume) startMacro();
         else windowsInputInterceptor.disable();
@@ -450,7 +453,7 @@ public final class FarmController implements MacroManager.Module {
     }
     public void abortForWorldChange() {
         playerGuiScreen = null;
-        com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.clear();
+        com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.clear();
         input.resumeAfterMenu(null, false); input.releaseAll();
         command.abortWorld(); menuActions.clear(); heldActions = null;
         menuPause.abort(); state.reset(); windowsInputInterceptor.disable();
@@ -513,7 +516,7 @@ public final class FarmController implements MacroManager.Module {
                 CropType crop =
                         CropType.fromValue(value);
                 if (crop.isCustom()) {
-                    com.kuangsanfeng.ultimategarden.client.hint.HintManager.printFor("CropSelect", "Not implemented / Coming soon");
+                    com.kuangsanfeng.ultimategarden.client.platform.hint.HintManager.printFor("CropSelect", "Not implemented / Coming soon");
                     return true;
                 }
                 if (!configManager.getCropConfig().getCrop(crop).isExecutable()) return true;
@@ -614,7 +617,7 @@ public final class FarmController implements MacroManager.Module {
                 CropType crop =
                         CropType.fromValue(value);
                 if (crop.isCustom()) {
-                    com.kuangsanfeng.ultimategarden.client.hint.HintManager.printFor("CropSelect", "Not implemented / Coming soon");
+                    com.kuangsanfeng.ultimategarden.client.platform.hint.HintManager.printFor("CropSelect", "Not implemented / Coming soon");
                     return true;
                 }
                 if (!configManager.getCropConfig().getCrop(crop).isExecutable()) return true;

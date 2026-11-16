@@ -1,6 +1,8 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
 import com.google.gson.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState;
+
+import com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState;
 import java.nio.file.*;
 
 public final class MenuPauseConfigRegression {

@@ -12,6 +12,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ShootoutPongMixin {
  @Inject(method="handlePongResponse",at=@At("HEAD"),cancellable=true)
  private void shootout$pong(ClientboundPongResponsePacket packet,CallbackInfo ci){
-  if(ZombieShootoutController.INSTANCE.onRttPong(this,packet.time()))ci.cancel();
+  if(com.kuangsanfeng.ultimategarden.client.platform.network.ClientRttConnection.pong(this,packet.time()))ci.cancel();
  }
 }

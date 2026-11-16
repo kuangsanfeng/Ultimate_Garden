@@ -2,7 +2,7 @@ package com.kuangsanfeng.ultimategarden.client.mixin;
 
 
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
 import net.minecraft.client.MouseHandler;
 import net.minecraft.client.input.MouseButtonInfo;
 import org.spongepowered.asm.mixin.Mixin;
@@ -25,11 +25,11 @@ public class WindowsMouseMixin {
 
     @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "grabMouse", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;setAll()V"))
     private void keepPhysicalKeysReleased(com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
-        if (!com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) original.call();
+        if (!com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) original.call();
     }
 
     @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method="onButton",at=@At(value="INVOKE",target="Lnet/minecraft/client/MouseHandler;grabMouse()V"))
-    private void shootout$keepCursor(net.minecraft.client.MouseHandler handler,com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original){if(!com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput.dispatching())original.call(handler);}
+    private void shootout$keepCursor(net.minecraft.client.MouseHandler handler,com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original){if(!com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching())original.call(handler);}
 
     // =========================================================
     // Mouse Button
@@ -49,11 +49,11 @@ public class WindowsMouseMixin {
 
 
         shootout$manualPressAdmitted=false;
-        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput.dispatching()) return;
-        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.button(buttonInfo.button(), action); ci.cancel(); return; }
+        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
+        if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.button(buttonInfo.button(), action); ci.cancel(); return; }
         if (action==org.lwjgl.glfw.GLFW.GLFW_PRESS && net.minecraft.client.Minecraft.getInstance().screen==null
                 && com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled()
-                && com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings.matchesShootoutMouse(buttonInfo.button())) {
+                && com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings.matchesShootoutMouse(buttonInfo.button())) {
             com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.stop("HOTKEY_STOP");
             ci.cancel(); return;
         }
@@ -92,7 +92,7 @@ public class WindowsMouseMixin {
     @Inject(method="onButton",at=@At("RETURN"))
     private void shootout$manualProcessed(long window,MouseButtonInfo buttonInfo,int action,CallbackInfo ci){
         boolean admitted=shootout$manualPressAdmitted;shootout$manualPressAdmitted=false;
-        if(admitted&&window==net.minecraft.client.Minecraft.getInstance().getWindow().handle()&&buttonInfo.button()==1&&action==org.lwjgl.glfw.GLFW.GLFW_PRESS&&!com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput.dispatching())
+        if(admitted&&window==net.minecraft.client.Minecraft.getInstance().getWindow().handle()&&buttonInfo.button()==1&&action==org.lwjgl.glfw.GLFW.GLFW_PRESS&&!com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching())
             com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.manualInputProcessed();
     }
 
@@ -113,8 +113,8 @@ public class WindowsMouseMixin {
     ) {
 
 
-        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput.dispatching()) return;
-        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
+        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
+        if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
 
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient
@@ -155,8 +155,8 @@ public class WindowsMouseMixin {
     ) {
 
 
-        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput.dispatching()) return;
-        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.move(xpos, ypos); ci.cancel(); return; }
+        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
+        if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.move(xpos, ypos); ci.cancel(); return; }
 
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient
@@ -192,8 +192,8 @@ public class WindowsMouseMixin {
             CallbackInfo ci
     ) {
 
-        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput.dispatching()) return;
-        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
+        if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
+        if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
 
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient

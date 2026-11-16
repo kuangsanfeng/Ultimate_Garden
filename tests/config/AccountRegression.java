@@ -1,6 +1,11 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.storage.AccountDirectories;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.storage.AccountIdentity;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.storage.ConfigIO;
 import com.google.gson.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.config.ConfigManager.Module;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager.Module;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;

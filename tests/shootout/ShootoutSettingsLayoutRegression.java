@@ -1,6 +1,9 @@
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
-import com.kuangsanfeng.ultimategarden.client.ui.widget.CollapsibleSection;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.widget.CollapsibleSection;
 import com.google.gson.*;
 import java.nio.file.*;
 import java.util.*;
@@ -23,7 +26,7 @@ public final class ShootoutSettingsLayoutRegression {
   check(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));var reload=new ConfigManager(dir).getZombieShootoutConfig();check(reload.get(AIM_SPEED)==777&&reload.get(AIM_CURVATURE)==42.5);
   fresh.setAutoShootEnabled(true);check(fresh.isManualShotRestrictionEnabled()&&!fresh.manualShotRestrictionEditable()&&!fresh.manualShotRestrictionEffective());fresh.setAutoShootEnabled(false);check(fresh.isManualShotRestrictionEnabled()&&fresh.manualShotRestrictionEffective());
   int windows=0;for(var setting:ZombieShootoutConfig.Setting.values())if(setting.window()){windows++;check(fresh.get(setting)==.3);}check(windows==8);
-  var source=Files.readString(Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java"));
+  var source=Files.readString(Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/menu/GardenMenuAdapter.java"));
   var menu=source.substring(source.indexOf("private void shootoutSettings()"),source.indexOf("private void shootoutInput("));
   String[] order={"shootout.status","Setting.AIM_SPEED,0","Setting.AIM_CURVATURE,0","Setting.AIM_TOLERANCE,0","Setting.AIM_CORRECTION_RATIO,CollapsibleSection.NESTED_INDENT","Setting.SHOOT_RATIO,CollapsibleSection.NESTED_INDENT","Setting.COOLDOWN,0","Setting.JITTER_MIN,CollapsibleSection.NESTED_INDENT","Setting.JITTER_MAX,CollapsibleSection.NESTED_INDENT","shootout.speed_sampling","if(setting.window())shootoutInput(setting,0)","sampling.finishContent(cursor)","Setting.BABY_OFFSET,0","Setting.PING_INTERVAL,0","shootout.ping","shootout.target"};
   int last=-1;for(String marker:order){int i=menu.indexOf(marker);check(i>last);last=i;}

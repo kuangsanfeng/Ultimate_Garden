@@ -1,4 +1,5 @@
 package net.minecraft.client;
+
 public final class Minecraft {
     public final Options options = new Options();
     public final MouseHandler mouseHandler = new MouseHandler();

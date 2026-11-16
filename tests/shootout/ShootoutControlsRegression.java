@@ -1,7 +1,18 @@
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.window.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCompletion;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCorrection;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutModel;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutSpeed;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutTargetLoss;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsState;
+
+
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import com.google.gson.JsonObject;
 import net.minecraft.world.phys.Vec3;
 import java.nio.file.*;

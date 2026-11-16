@@ -1,7 +1,10 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig;
 import java.nio.file.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController;
-import com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen;
+
+import com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import net.minecraft.client.Minecraft;
 public final class HudAdjustmentRegression {

@@ -1,6 +1,9 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutRtt;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.network.ShootoutRtt;
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import java.util.*;
 import java.nio.file.*;
 import com.google.gson.*;
@@ -38,8 +41,8 @@ public final class RttRegression {
   var copy=new ZombieShootoutConfig();check(!copy.load(cfg.toJson(new JsonObject())));check(copy.get(PING_INTERVAL)==2.75&&copy.get(AIM_TOLERANCE)==.5);
   var root=Files.createTempDirectory("ug-rtt-");var configs=new ConfigManager(root);configs.getZombieShootoutConfig().set(PING_INTERVAL,.5);check(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));check(new ConfigManager(root).getZombieShootoutConfig().get(PING_INTERVAL)==.5);
   var base=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client");String controller=Files.readString(base.resolve("macro/zombie_shoot/ZombieShootoutController.java"));
-  check(!controller.contains("getLatency()")&&!controller.contains("getPlayerInfo("));check(controller.contains("latency=ping/50."));check(controller.contains("rtt.start(connection"));check(controller.contains("rtt.stop();ping=-1;"));check(controller.contains("c.execute(()->"));check(controller.contains("ping=rtt.milliseconds()"));
-  String mixin=Files.readString(base.resolve("mixin/ShootoutPongMixin.java"));check(mixin.contains("handlePongResponse"));check(mixin.contains("packet.time()"));check(mixin.contains("onRttPong(this,packet.time()))ci.cancel()"));
+  check(!controller.contains("getLatency()")&&!controller.contains("getPlayerInfo("));check(controller.contains("latency=ping/50."));check(controller.contains("rtt.start(connection"));check(controller.contains("rtt.stop();ping=-1;"));String bridge=Files.readString(base.resolve("platform/network/ClientRttConnection.java"));check(bridge.contains("client.execute(()->"));check(bridge.contains("sample.accept(SERVICE.milliseconds())")&&controller.contains("onSample(value->{if(running)ping=value;})"));
+  String mixin=Files.readString(base.resolve("mixin/ShootoutPongMixin.java"));check(mixin.contains("handlePongResponse"));check(mixin.contains("packet.time()"));check(mixin.contains("ClientRttConnection.pong(this,packet.time()))ci.cancel()"));check(bridge.contains("ServerboundPingRequestPacket(token)")&&bridge.contains("ClientContextEvents.onDisconnect"));
   System.out.println("PASS: "+checks+" single-flight RTT, monotonic scheduling, pairing/session isolation, timeout, fractional precision, config and native packet wiring checks. Not Verified In-Game.");
  }
 }

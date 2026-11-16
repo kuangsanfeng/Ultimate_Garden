@@ -1,6 +1,6 @@
 package com.kuangsanfeng.ultimategarden.client.macro.farm.hint;
 
-import com.kuangsanfeng.ultimategarden.client.hint.HintManager;
+import com.kuangsanfeng.ultimategarden.client.platform.hint.HintManager;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import java.util.Locale;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.crop.CropType;

@@ -1,5 +1,10 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCompletion;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCorrection;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import java.nio.file.*;
 public final class AimCorrectionRegression {
  static int checks;static void check(boolean b){checks++;if(!b)throw new AssertionError("Correction "+checks);}

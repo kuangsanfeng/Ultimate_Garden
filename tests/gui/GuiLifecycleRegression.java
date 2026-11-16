@@ -1,6 +1,7 @@
-import com.kuangsanfeng.ultimategarden.client.macro.GuiPauseState;
-import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
-import com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput;
+
+import com.kuangsanfeng.ultimategarden.client.platform.gui.GuiPauseState;
+import com.kuangsanfeng.ultimategarden.client.runtime.scheduler.ActionScheduler;
+import com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput;
 import java.util.*;
 
 /** Standalone tests for the actual menu policy and scheduler, without a game renderer. */

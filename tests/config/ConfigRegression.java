@@ -1,4 +1,8 @@
-import com.kuangsanfeng.ultimategarden.client.config.*;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.UIConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.FarmConfig;
+
 import java.nio.file.*;
 
 /** Standalone regression checks; uses only existing runtime dependencies. */

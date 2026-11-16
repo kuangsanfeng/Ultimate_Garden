@@ -1,5 +1,6 @@
 package com.kuangsanfeng.ultimategarden.client;
-import com.kuangsanfeng.ultimategarden.client.config.ConfigManager;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
 public final class Ultimate_GardenClient {
  public static ConfigManager configs;
  public static final Focus focus=new Focus();

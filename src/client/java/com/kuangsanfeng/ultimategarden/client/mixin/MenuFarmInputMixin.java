@@ -1,7 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client.mixin;
 
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
-import com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;

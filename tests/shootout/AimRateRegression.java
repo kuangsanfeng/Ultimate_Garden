@@ -1,6 +1,12 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimClock;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutTanhAim;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import com.google.gson.*;
 import java.nio.file.*;
 
@@ -39,7 +45,7 @@ public final class AimRateRegression {
   for(String guard:new String[]{"c.isSameThread()","!running","!config().isAutoAimEnabled()","target!=current","!valid(target)","c.isPaused()","!c.isWindowActive()","!c.mouseHandler.isMouseGrabbed()"})check(frame.contains(guard));
   String tick=controller.substring(controller.indexOf(" private void tick()"),controller.indexOf(" private static net.minecraft.world.level.BlockGetter"));check(!tick.contains("mouse.aim("));check(tick.contains("requestFrameAim(solution)")&&tick.contains("requestFrameAim(fire)"));
   String mixin=Files.readString(base.resolve("mixin/ShootoutAimFrameMixin.java"));check(mixin.contains("method=\"runTick\"")&&mixin.contains("MouseHandler;handleAccumulatedMovement()V")&&mixin.contains("INSTANCE.aimFrame()"));
-  String screen=Files.readString(base.resolve("ui/screen/UltimateGardenScreen.java"));int i=screen.indexOf("Setting.AIM_UPDATE_RATE,0");check(i>screen.indexOf("Setting.AIM_CURVATURE,0"));check(screen.substring(screen.indexOf(';',i)+1).stripLeading().startsWith("divider();"));
+  String screen=Files.readString(base.resolve("platform/ui/adapters/menu/GardenMenuAdapter.java"));int i=screen.indexOf("Setting.AIM_UPDATE_RATE,0");check(i>screen.indexOf("Setting.AIM_CURVATURE,0"));check(screen.substring(screen.indexOf(';',i)+1).stripLeading().startsWith("divider();"));
   System.out.println("PASS: "+checks+" 20/60/120 Hz, high/low FPS, dropped deadlines, pause/rate changes, integer config and frame-only local input checks. Not Verified In-Game.");
  }
 }

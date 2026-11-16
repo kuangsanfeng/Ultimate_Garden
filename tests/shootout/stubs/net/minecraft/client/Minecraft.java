@@ -1,6 +1,7 @@
 package net.minecraft.client;
+
 import com.kuangsanfeng.ultimategarden.client.mixin.ShootoutMouseAccessor;
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutMouseInput;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput;
 import net.minecraft.client.input.MouseButtonInfo;
 public final class Minecraft {
  public final Options options=new Options();public final Player player=new Player();public final FakeMouse mouseHandler=new FakeMouse();

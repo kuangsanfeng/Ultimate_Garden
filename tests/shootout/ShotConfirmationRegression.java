@@ -1,6 +1,12 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCompletion;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutArrowConfirmation;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutShotClock;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import net.minecraft.world.phys.Vec3;import java.util.*;import com.google.gson.*;
 public final class ShotConfirmationRegression {
  static int checks;static final UUID PLAYER=UUID.randomUUID(),OTHER=UUID.randomUUID();

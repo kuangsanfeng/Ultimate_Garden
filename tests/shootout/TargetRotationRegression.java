@@ -1,4 +1,10 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutModel;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutLampCollision;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutCandidateSelection;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutTargetLoss;
+
 import net.minecraft.world.phys.*;
 import java.util.*;
 import java.nio.file.*;

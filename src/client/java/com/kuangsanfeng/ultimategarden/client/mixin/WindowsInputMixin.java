@@ -3,7 +3,7 @@ package com.kuangsanfeng.ultimategarden.client.mixin;
 
 import com.kuangsanfeng.ultimategarden.Ultimate_Garden;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
 import net.minecraft.client.KeyboardHandler;
 import net.minecraft.client.input.KeyEvent;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,7 +23,7 @@ public class WindowsInputMixin {
 
     @Inject(method = "keyPress(JILnet/minecraft/client/input/KeyEvent;)V", at = @At("RETURN"))
     private void clearUnusedInventoryRequest(long window, int action, KeyEvent event, CallbackInfo ci) {
-        com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.clearInventoryRequest();
+        com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.clearInventoryRequest();
     }
 
 
@@ -40,30 +40,30 @@ public class WindowsInputMixin {
     ) {
 
 
-        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()
-                && !com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.isVirtualDispatch()) {
+        if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()
+                && !com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.isVirtualDispatch()) {
             if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS && event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE)
-                net.minecraft.client.Minecraft.getInstance().execute(() -> com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(true));
+                net.minecraft.client.Minecraft.getInstance().execute(() -> com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.finish(true));
             ci.cancel(); return;
         }
         var client = net.minecraft.client.Minecraft.getInstance();
         if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS && client.screen == null) {
-            com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind kind = null;
+            com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind kind = null;
             if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
-                kind = com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.MENU;
+                kind = com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.MENU;
             } else if (client.options.keyInventory.matches(event)) {
-                kind = com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.INVENTORY;
+                kind = com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.INVENTORY;
             } else if (client.options.keyChat.matches(event) || client.options.keyCommand.matches(event)) {
-                kind = com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.Kind.CHAT;
+                kind = com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.CHAT;
             }
-            if (kind != null && com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput.request(kind)) return;
+            if (kind != null && com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.request(kind)) return;
         }
 
         if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled()
-                && com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings.matchesShootoutKey(event)) return;
+                && com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings.matchesShootoutKey(event)) return;
 
         if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled() && client.screen==null) {
-            if (com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings.matchesMenuKey(event)) return;
+            if (com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings.matchesMenuKey(event)) return;
             if (client.options.keyUp.matches(event) || client.options.keyDown.matches(event)
                     || client.options.keyLeft.matches(event) || client.options.keyRight.matches(event)
                     || client.options.keyJump.matches(event) || client.options.keyShift.matches(event)

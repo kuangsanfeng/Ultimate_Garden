@@ -1,4 +1,10 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutSpeed;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutCandidateSelection;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutPolicy;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutTargetRound;
+
 import java.util.*;
 import java.nio.file.*;
 

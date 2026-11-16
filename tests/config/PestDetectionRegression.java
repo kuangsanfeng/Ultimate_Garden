@@ -1,4 +1,5 @@
-import com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestESP.Detection;
+
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.PestESP.Detection;
 import java.util.*;
 
 public final class PestDetectionRegression {
@@ -24,11 +25,11 @@ public final class PestDetectionRegression {
         check(Detection.associate(List.of(a),List.of(new Detection.Tag("Slug",0,5,0))).isEmpty());
         check(Detection.associate(List.of(a),List.of()).isEmpty());
         var directory=java.nio.file.Files.createTempDirectory("ug-pest-detection-");
-        var configs=new com.kuangsanfeng.ultimategarden.client.config.ConfigManager(directory);
+        var configs=new com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager(directory);
         check(configs.getPestConfig().isPestESPPreciseDetection());
         configs.getPestConfig().setPestESPPreciseDetection(false);
-        check(configs.save(com.kuangsanfeng.ultimategarden.client.config.ConfigManager.Module.PEST));
-        var loaded=new com.kuangsanfeng.ultimategarden.client.config.ConfigManager(directory);
+        check(configs.save(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager.Module.PEST));
+        var loaded=new com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager(directory);
         check(!loaded.getPestConfig().isPestESPPreciseDetection());
         check(loaded.getPestConfig().isAutoPestLoadout() && loaded.getPestConfig().getPestLoadoutDelayTicks()==2500);
         System.out.println("PASS: "+checks+" pest parser/type/association/persistence checks; server geometry remains unverified.");

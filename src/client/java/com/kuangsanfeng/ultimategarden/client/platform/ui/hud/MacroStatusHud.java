@@ -1,0 +1,2 @@
+package com.kuangsanfeng.ultimategarden.client.platform.ui.hud;
+public final class MacroStatusHud extends com.kuangsanfeng.ultimategarden.client.platform.ui.adapters.farm.MacroStatusHud {public MacroStatusHud(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager c,com.kuangsanfeng.ultimategarden.client.macro.farm.FarmController f,com.kuangsanfeng.ultimategarden.client.platform.window.WindowsState w){super(c,f,w);}}

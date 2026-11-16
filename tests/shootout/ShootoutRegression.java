@@ -1,6 +1,15 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutTanhAim;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutModel;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutSpeed;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutShotClock;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutPolicy;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import com.google.gson.*;import net.minecraft.world.phys.Vec3;import java.nio.file.*;import java.util.*;
 public final class ShootoutRegression {
  static int checks;static void check(boolean b){checks++;if(!b)throw new AssertionError("Shootout check "+checks);}static void close(double a,double b){check(Math.abs(a-b)<1e-6);}

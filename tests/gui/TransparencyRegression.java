@@ -1,6 +1,9 @@
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.ui.theme.ThemePalette;
-import com.kuangsanfeng.ultimategarden.client.ui.language.LanguageType;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.UIConfig;
+
+import com.kuangsanfeng.ultimategarden.client.platform.ui.theme.ThemePalette;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageType;
 import java.nio.file.*;
 import java.util.*;
 

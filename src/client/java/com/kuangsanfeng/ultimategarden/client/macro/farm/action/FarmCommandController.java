@@ -1,15 +1,15 @@
 package com.kuangsanfeng.ultimategarden.client.macro.farm.action;
 
-import com.kuangsanfeng.ultimategarden.client.window.WindowsFocusController;
-import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
-import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsFocusController;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
+import com.kuangsanfeng.ultimategarden.client.runtime.scheduler.ActionScheduler;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmState;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.hint.FarmHints;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestLoadoutTimer;
 import net.minecraft.client.Minecraft;
 
-import com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig;
-import static com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig.Key.*;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.RandomDelayConfig;
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.RandomDelayConfig.Key.*;
 
 
 // =========================================================
@@ -45,12 +45,13 @@ public final class FarmCommandController {
     private final VirtualInput input;
 
     private final ActionScheduler scheduler;
+    private final com.kuangsanfeng.ultimategarden.client.platform.gui.GuiWait guiWait=new com.kuangsanfeng.ultimategarden.client.platform.gui.GuiWait();
 
     // Owned here, advanced after scheduler.tick(), and cancelled only explicitly.
     // Farm pause/reset intentionally clears actions without cancelling this timer.
 
     private final PestLoadoutTimer pestLoadoutTimer;
-    private final com.kuangsanfeng.ultimategarden.client.config.PestConfig pestConfig;
+    private final com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.PestConfig pestConfig;
 
     private Runnable pestLoadoutTimerFinished;
     private boolean pendingPestLoadout;
@@ -61,7 +62,7 @@ public final class FarmCommandController {
     public boolean isExpectingLoadoutScreen() { return expectingLoadoutScreen; }
     public boolean isBusinessResumePending() { return businessResumePending; }
     public boolean isPestLoadoutPending() { return pendingPestLoadout || deferredPestInFlight; }
-    public void discardDeferredActions() { workflow = Workflow.IDLE; pendingPestLoadout = false; deferredPestInFlight = false; businessResumePending = false; macroState.setCommandRunning(false); scheduler.clear(); }
+    public void discardDeferredActions() { workflow = Workflow.IDLE; pendingPestLoadout = false; deferredPestInFlight = false; businessResumePending = false; macroState.setCommandRunning(false); guiWait.cancel(); scheduler.clear(); }
     public int getPestLoadoutRemainingTicks() { return pestLoadoutTimer.getRemainingTicks(); }
     public boolean hasPendingWork() { return scheduler.isRunning() || pendingPestLoadout || deferredPestInFlight; }
     public boolean hasActionFailed() { return actionFailed; }
@@ -70,7 +71,7 @@ public final class FarmCommandController {
     public void abortWorld() {
         workflow = Workflow.IDLE;
         macroState.setCommandRunning(false);
-        scheduler.clear(); scheduler.setPaused(false);
+        guiWait.cancel(); scheduler.clear(); scheduler.setPaused(false);
         pestLoadoutTimer.cancel(); pendingPestLoadout = false; deferredPestInFlight = false; expectingLoadoutScreen = false; businessResumePending = false;
     }
 
@@ -87,7 +88,7 @@ public final class FarmCommandController {
             Runnable pauser,
             Runnable resumer,
             WindowsFocusController windowsFocusController,
-            com.kuangsanfeng.ultimategarden.client.config.PestConfig pestConfig
+            com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.PestConfig pestConfig
     ) {
 
         this.client = client;
@@ -183,7 +184,7 @@ public final class FarmCommandController {
         businessResumePending = false;
         if (deferredPestInFlight) failAction();
 
-        scheduler.clear();
+        guiWait.cancel(); scheduler.clear();
     }
 
 
@@ -403,8 +404,9 @@ public final class FarmCommandController {
     }
 
     private void pestLoadoutStep2(int counter, Runnable after) {
+        long guiGeneration=guiWait.generation();
         // 如果检测次数超过 40 次(40 x 50ms == 2000ms)，直接退出，放弃本次动作
-        if (counter >= 40) {
+        if (guiWait.exhausted(counter,40)) {
             failAction();
             return;
         }
@@ -412,8 +414,9 @@ public final class FarmCommandController {
         scheduler.schedule(
                 50, // 每隔 50ms 检查一次
                 () -> {
+                    if(!guiWait.current(guiGeneration))return;
                     // 判断当前是否已经打开了界面 (client.screen 不为 null 代表界面已弹出)
-                    if (client.screen != null) {
+                    if (guiWait.matches(client.screen,java.util.Objects::nonNull)) {
                         // 1. 执行 slot 4
                         scheduler.scheduleDelayTicks(
                                 randomDelays.sample(PEST_SELECT),
@@ -433,8 +436,9 @@ public final class FarmCommandController {
     }
 
     private void pestLoadoutStep3(int counter, Runnable after){
+        long guiGeneration=guiWait.generation();
         // 如果检测次数超过 20 次(20 x 100ms == 2000ms)，直接退出，放弃本次动作
-        if (counter >= 20) {
+        if (guiWait.exhausted(counter,20)) {
             failAction();
             return;
         }
@@ -442,8 +446,9 @@ public final class FarmCommandController {
         scheduler.schedule(
                 100, // 每隔 100ms 检查一次
                 () -> {
+                    if(!guiWait.current(guiGeneration))return;
                     // 判断当前是否已经关闭了界面 (client.screen 为 null 代表界面已关闭)
-                    if (client.screen == null) {
+                    if (guiWait.matches(client.screen,screen->screen==null)) {
 
                         // 安排对焦状态保持
                         boolean currentlyReleased = windowsFocusController.isReleased();
@@ -506,8 +511,9 @@ public final class FarmCommandController {
     }
 
     private void spawnPestsStep2(int counter, Runnable after) {
+        long guiGeneration=guiWait.generation();
         // 如果检测次数超过 40 次(40 x 50ms == 2000ms)，直接退出，放弃本次动作
-        if (counter >= 40) {
+        if (guiWait.exhausted(counter,40)) {
             failAction();
             return;
         }
@@ -515,8 +521,9 @@ public final class FarmCommandController {
         scheduler.schedule(
                 50, // 每隔 50ms 检查一次
                 () -> {
+                    if(!guiWait.current(guiGeneration))return;
                     // 判断当前是否已经打开了界面 (client.screen 不为 null 代表界面已弹出)
-                    if (client.screen != null) {
+                    if (guiWait.matches(client.screen,java.util.Objects::nonNull)) {
                         // 1. 执行 slot 5
                         scheduler.scheduleDelayTicks(
                                 randomDelays.sample(SPAWN_LOADOUT_SELECT),
@@ -536,8 +543,9 @@ public final class FarmCommandController {
     }
 
     private void spawnPestsStep3(int counter, Runnable after) {
+        long guiGeneration=guiWait.generation();
         // 如果检测次数超过 20 次(20 x 100ms == 2000ms)，直接退出，放弃本次动作
-        if (counter >= 20) {
+        if (guiWait.exhausted(counter,20)) {
             failAction();
             return;
         }
@@ -545,8 +553,9 @@ public final class FarmCommandController {
         scheduler.schedule(
                 100, // 每隔 100ms 检查一次
                 () -> {
+                    if(!guiWait.current(guiGeneration))return;
                     // 判断当前是否已经关闭了界面 (client.screen 为 null 代表界面已关闭)
-                    if (client.screen == null) {
+                    if (guiWait.matches(client.screen,screen->screen==null)) {
                         // 安排对焦状态保持
                         boolean currentlyReleased = windowsFocusController.isReleased();
                         if (currentlyReleased) {

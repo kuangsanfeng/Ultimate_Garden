@@ -1,4 +1,5 @@
-import com.kuangsanfeng.ultimategarden.client.ui.widget.HelpTooltip.Motion;
+
+import com.kuangsanfeng.ultimategarden.client.platform.ui.widget.HelpTooltip.Motion;
 
 /** Exercises the production animation using deterministic monotonic frame times. */
 public final class HelpTooltipRegression {

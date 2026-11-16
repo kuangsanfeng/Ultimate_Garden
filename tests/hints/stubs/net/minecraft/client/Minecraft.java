@@ -1,4 +1,5 @@
 package net.minecraft.client;
+
 import java.util.*;
 import net.minecraft.network.chat.Component;
 public final class Minecraft {

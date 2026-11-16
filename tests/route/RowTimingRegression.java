@@ -1,6 +1,11 @@
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
-import com.kuangsanfeng.ultimategarden.client.macro.farm.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmController;
+import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmState;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.CropConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.PestConfig;
+
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
+
 import com.kuangsanfeng.ultimategarden.client.macro.farm.action.FarmCommandController;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.crop.CropType;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.route.RouteController;

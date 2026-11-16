@@ -1,19 +1,19 @@
 package com.kuangsanfeng.ultimategarden.client;
 
-import com.kuangsanfeng.ultimategarden.client.hotkey.MacroKeyBindings;
-import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
-import com.kuangsanfeng.ultimategarden.client.input.VirtualKeyboard;
-import com.kuangsanfeng.ultimategarden.client.input.VirtualMouse;
-import com.kuangsanfeng.ultimategarden.client.command.CommandListener;
-import com.kuangsanfeng.ultimategarden.client.command.CommandTree;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsFocusController;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsState;
+import com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualKeyboard;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualMouse;
+import com.kuangsanfeng.ultimategarden.client.runtime.command.CommandListener;
+import com.kuangsanfeng.ultimategarden.client.runtime.command.CommandTree;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsFocusController;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsState;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmController;
 import com.kuangsanfeng.ultimategarden.client.macro.MacroManager;
-import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
+import com.kuangsanfeng.ultimategarden.client.runtime.scheduler.ActionScheduler;
 import net.fabricmc.api.ClientModInitializer;
-import com.kuangsanfeng.ultimategarden.client.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
 import net.minecraft.client.Minecraft;
 
 
@@ -29,8 +29,10 @@ public class Ultimate_GardenClient implements ClientModInitializer {
     private static ConfigManager configManager;
 
     private static MacroManager macroManager;
+    private static final com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry features=new com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry();
+    public static com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry getFeatureRegistry(){return features;}
     private static net.minecraft.client.User observedUser;
-    private static com.kuangsanfeng.ultimategarden.client.macro.esp.ESPManager espManager;
+    private static com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPManager espManager;
 
 
 	// Compatibility: this pre-existing mouse-click queue has no tick driver.
@@ -52,10 +54,10 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
         observedUser = Minecraft.getInstance().getUser();
         configManager = new ConfigManager(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("ultimategarden"), accountIdentity(observedUser));
-        espManager = new com.kuangsanfeng.ultimategarden.client.macro.esp.ESPManager(configManager);
-        var pestESP = new com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestESP(configManager.getPestConfig());
-        espManager.register(com.kuangsanfeng.ultimategarden.client.config.ESPConfig.SILVERFISH, pestESP::collect);
-        new com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
+        espManager = new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPManager(configManager);
+        var pestESP = new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.PestESP(configManager.getPestConfig());
+        espManager.register(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig.SILVERFISH, pestESP::collect);
+        new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
         espManager.initialize();
 
 
@@ -123,7 +125,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
 
 
-        windowsInputInterceptor.setUiInputAllowed(() -> client.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen);
+        windowsInputInterceptor.setUiInputAllowed(() -> client.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen);
 
 		VirtualInput input =
 				new VirtualInput(
@@ -153,21 +155,26 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		// =====================================================
 
         macroManager = new MacroManager(farmController);
+        com.kuangsanfeng.ultimategarden.client.runtime.feature.adapters.ClientFeatures.install(features,farmController,com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE);
         com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.register();
         windowsInputInterceptor.setExternalOwner(com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::intercepting);
         windowsInputInterceptor.setExternalMouseOwners(
                 com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingAim,
                 com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingShoot);
         farmController.setExternalInputOwner(com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE::enabled);
-        var macroHud = new com.kuangsanfeng.ultimategarden.client.ui.hud.MacroStatusHud(configManager, farmController, windowsState);
-        net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
-                com.kuangsanfeng.ultimategarden.Ultimate_Garden.id("macro_status"), (graphics, delta) -> macroHud.render(graphics));
-        var shootoutHud = new com.kuangsanfeng.ultimategarden.client.ui.hud.ZombieShootoutHud(configManager);
-        net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
-                com.kuangsanfeng.ultimategarden.Ultimate_Garden.id("zombie_shootout_status"), (graphics, delta) -> shootoutHud.render(graphics));
+        var macroHud = new com.kuangsanfeng.ultimategarden.client.platform.ui.hud.MacroStatusHud(configManager, farmController, windowsState);
+        com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("macro_status",macroHud::render);
+        var shootoutHud = new com.kuangsanfeng.ultimategarden.client.platform.ui.hud.ZombieShootoutHud(configManager);
+        com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("zombie_shootout_status",shootoutHud::render);
         net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(
                 (game, screen, width, height) -> farmController.onPlayerScreenOpened(screen));
-        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.tick());
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.tick());
+        com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onChange(change -> {
+            if(change.change()==com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.Change.WORLD_CHANGED) {
+                com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.finish(false);
+                espManager.invalidateFrames();
+            }
+        });
         configManager.setCurrentAccountCopyGuard(() -> farmController.canEditRouteConfiguration() && !com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled());
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> {
             var session = game.getUser();
@@ -175,14 +182,17 @@ public class Ultimate_GardenClient implements ClientModInitializer {
             observedUser = session;
             var identity = accountIdentity(session);
             if (configManager.matchesAccount(identity)) return;
-            com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(false);
+            com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.finish(false);
             farmController.abortForWorldChange(); legacyMouseClickScheduler.clear(); espManager.invalidateFrames();
-            if (game.screen instanceof com.kuangsanfeng.ultimategarden.client.ui.screen.UltimateGardenScreen) game.setScreen(null);
+            if (game.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen) game.setScreen(null);
+            var previousAccount = configManager.currentAccount();
+            com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.accountBefore(previousAccount,identity);
             configManager.activateAccount(identity);
+            com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.accountAfter(previousAccount,identity);
             farmController.abortForWorldChange();
         });
-        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, game) -> { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(false); farmController.abortForWorldChange(); });
-        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(game -> { com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.finish(false); farmController.abortForWorldChange(); });
+        com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onDisconnect((handler, game) -> { features.stop("hud_layout","DISCONNECTED"); features.stop("farm","DISCONNECTED"); });
+        com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onStopping(game -> { features.stop("hud_layout","CLIENT_STOPPING"); features.stop("farm","CLIENT_STOPPING"); });
 
 		MacroKeyBindings.register(
 				macroManager
@@ -203,9 +213,9 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
 
 	public static ConfigManager getConfigManager() { return configManager; }
-    private static com.kuangsanfeng.ultimategarden.client.config.AccountIdentity accountIdentity(net.minecraft.client.User user) {
+    private static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.storage.AccountIdentity accountIdentity(net.minecraft.client.User user) {
         if (user == null) return null;
-        try { return new com.kuangsanfeng.ultimategarden.client.config.AccountIdentity(user.getProfileId(), user.getName()); }
+        try { return new com.kuangsanfeng.ultimategarden.client.platform.persistence.config.storage.AccountIdentity(user.getProfileId(), user.getName()); }
         catch (IllegalArgumentException error) { return null; }
     }
 

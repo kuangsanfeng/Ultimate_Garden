@@ -1,4 +1,5 @@
-import com.kuangsanfeng.ultimategarden.client.config.PestConfig;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.PestConfig;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmState;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.action.FarmCommandController;
 import java.util.*;

@@ -1,4 +1,10 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;import com.kuangsanfeng.ultimategarden.client.config.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutArrowConfirmation;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutShotClock;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
 import net.minecraft.world.phys.Vec3;import java.util.*;import java.nio.file.*;
 public final class ArrowConfirmationToggleRegression {
  static int checks;static void check(boolean b){checks++;if(!b)throw new AssertionError("Confirmation toggle "+checks);}

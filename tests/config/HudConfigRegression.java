@@ -1,6 +1,9 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig;
 import com.google.gson.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.config.HudConfig.*;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.*;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmState;
 import java.nio.file.*;
 

@@ -1,4 +1,5 @@
-import com.kuangsanfeng.ultimategarden.client.ui.widget.CollapsibleSection.State;
+
+import com.kuangsanfeng.ultimategarden.client.platform.ui.widget.CollapsibleSection.State;
 
 /** Checks the actual section measurement model without a game or configuration files. */
 public final class CollapsibleSectionRegression {

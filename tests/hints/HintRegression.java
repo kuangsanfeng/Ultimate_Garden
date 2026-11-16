@@ -1,9 +1,12 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.GeneralConfig;
 import java.nio.file.*;
 import java.util.*;
 import com.google.gson.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.config.GeneralConfig.Hint;
-import com.kuangsanfeng.ultimategarden.client.hint.HintManager;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.GeneralConfig.Hint;
+import com.kuangsanfeng.ultimategarden.client.platform.hint.HintManager;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.hint.FarmHints;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.crop.CropType;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;

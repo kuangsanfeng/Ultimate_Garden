@@ -1,9 +1,9 @@
 package com.kuangsanfeng.ultimategarden.client.macro.farm.route;
 
-import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
-import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
-import com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig;
-import static com.kuangsanfeng.ultimategarden.client.config.RandomDelayConfig.Key.*;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
+import com.kuangsanfeng.ultimategarden.client.runtime.scheduler.ActionScheduler;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.RandomDelayConfig;
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.RandomDelayConfig.Key.*;
 
 public final class SetLineYP {
 

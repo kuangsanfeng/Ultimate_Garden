@@ -1,7 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client.macro.farm.action;
 
-import com.kuangsanfeng.ultimategarden.client.scheduler.InputScheduler;
-import com.kuangsanfeng.ultimategarden.client.input.VirtualInput;
+import com.kuangsanfeng.ultimategarden.client.runtime.scheduler.InputScheduler;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
 
 /**
  * Minecraft command input.

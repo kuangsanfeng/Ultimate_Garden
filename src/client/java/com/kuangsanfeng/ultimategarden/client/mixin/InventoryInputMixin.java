@@ -1,6 +1,8 @@
 package com.kuangsanfeng.ultimategarden.client.mixin;
+import com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor;
 
-import com.kuangsanfeng.ultimategarden.client.input.PlayerGuiInput;
+
+import com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;

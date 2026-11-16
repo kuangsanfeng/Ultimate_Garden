@@ -22,7 +22,7 @@ public class WindowsPauseMixin {
             CallbackInfo ci
     ) {
 
-        if (com.kuangsanfeng.ultimategarden.client.ui.hud.HudAdjustmentController.isActive()) { ci.cancel(); return; }
+        if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) { ci.cancel(); return; }
         if (Ultimate_GardenClient
                 .getWindowsState()
                 .isMouseReleased()) {

@@ -1,6 +1,13 @@
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.window.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCompletion;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsState;
+
+
+
 import com.google.gson.*;
 import java.nio.file.*;
 
@@ -37,7 +44,7 @@ public final class ManualRestrictionRegression {
   check(!gate.contains("mouse.")&&!gate.contains("model.solve")&&!gate.contains("attempted("));
   String mixin=Files.readString(base.resolve("mixin/WindowsMouseMixin.java"));check(mixin.indexOf(".blockManualShot(")<mixin.indexOf(".onManualButton("));
   check(mixin.contains("boolean admitted=shootout$manualPressAdmitted;shootout$manualPressAdmitted=false"));check(mixin.contains("if(admitted&&window=="));
-  String menu=Files.readString(base.resolve("ui/screen/UltimateGardenScreen.java"));String row=menu.substring(menu.indexOf("toggle(\"ui.ultimategarden.shootout.manual_shot_restriction"),menu.indexOf("toggle(\"ui.ultimategarden.shootout.auto_start"));
+  String menu=Files.readString(base.resolve("platform/ui/adapters/menu/GardenMenuAdapter.java"));String row=menu.substring(menu.indexOf("toggle(\"ui.ultimategarden.shootout.manual_shot_restriction"),menu.indexOf("toggle(\"ui.ultimategarden.shootout.auto_start"));
   check(row.contains("automation::isManualShotRestrictionEnabled"));check(row.contains("automation.manualShotRestrictionEditable()"));check(row.contains("CollapsibleSection.NESTED_INDENT"));
   System.out.println("PASS: "+checks+" manual restriction parent transitions, saved value/persistence, tolerance boundary, release and pre-confirmation event wiring checks. Not Verified In-Game.");
  }

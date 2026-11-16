@@ -1,7 +1,17 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.render.ESPBoxRenderer;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.render.ESPFillRenderer;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.render.ESPTracerRenderer;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPColorMode;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPColorProvider;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPStyle;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPTargetStyle;
 import com.google.gson.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.macro.esp.render.*;
-import com.kuangsanfeng.ultimategarden.client.macro.esp.style.*;
+
+
+
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.world.phys.*;
 import java.nio.file.*;
@@ -93,10 +103,10 @@ public final class ESPRegression {
         check(silverfish.getBox().getColor().equals("#FEDCBA") && silverfish.getBox().getAlpha() == 0.8f);
         check(silverfish.getBox().getLineWidth() == 5);
         check(migrated.getESPConfig().getTarget("TEST_TARGET").getBox().getColor().equals("#010203"));
-        var mutableTargets = new ArrayList<com.kuangsanfeng.ultimategarden.client.macro.esp.ESPTarget>();
-        mutableTargets.add(new com.kuangsanfeng.ultimategarden.client.macro.esp.ESPTarget(ESPConfig.SILVERFISH, new AABB(0,0,0,1,1,1)));
+        var mutableTargets = new ArrayList<com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPTarget>();
+        mutableTargets.add(new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPTarget(ESPConfig.SILVERFISH, new AABB(0,0,0,1,1,1)));
         var mutableStyles = new HashMap<String, ESPTargetStyle>(); mutableStyles.put(ESPConfig.SILVERFISH, silverfish.snapshot());
-        var frame = new com.kuangsanfeng.ultimategarden.client.macro.esp.ESPManager.Frame(mutableTargets, mutableStyles, true, 3000, 0, 0);
+        var frame = new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPManager.Frame(mutableTargets, mutableStyles, true, 3000, 0, 0);
         mutableTargets.clear(); mutableStyles.clear(); check(frame.targets().size() == 1 && frame.styles().size() == 1);
         check(frame.styles().get(frame.targets().getFirst().type()).box().rgb() == 0xFEDCBA);
         Files.writeString(migration.resolve("esp.json"), "{\"schemaVersion\":2,\"general\":{\"throughWalls\":false},\"targets\":{\"SILVERFISH\":{\"box\":{\"color\":\"#654321\",\"alpha\":-1}}}}");

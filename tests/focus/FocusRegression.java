@@ -1,6 +1,7 @@
-import com.kuangsanfeng.ultimategarden.client.window.WindowsFocusController;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsState;
-import com.kuangsanfeng.ultimategarden.client.window.WindowsInputInterceptor;
+
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsFocusController;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsState;
+import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 

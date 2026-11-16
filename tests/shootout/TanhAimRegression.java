@@ -1,6 +1,12 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCompletion;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutTanhAim;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import com.google.gson.*;
 import java.nio.file.*;
 
@@ -35,7 +41,7 @@ public final class TanhAimRegression {
   var dir=Files.createTempDirectory("ug-tanh-");var configs=new ConfigManager(dir);configs.getZombieShootoutConfig().set(AIM_CURVATURE,42.5);check(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));check(new ConfigManager(dir).getZombieShootoutConfig().get(AIM_CURVATURE)==42.5);
   var base=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client");String controller=Files.readString(base.resolve("macro/zombie_shoot/ZombieShootoutController.java"));
   check(!controller.contains("get(SNAP)"));check(controller.contains("config().get(AIM_SPEED),config().get(AIM_CURVATURE)"));
-  String screen=Files.readString(base.resolve("ui/screen/UltimateGardenScreen.java"));check(!screen.substring(screen.indexOf("private void shootoutSettings()"),screen.indexOf("private void shootoutInput(")).contains("Setting.SNAP"));
+  String screen=Files.readString(base.resolve("platform/ui/adapters/menu/GardenMenuAdapter.java"));check(!screen.substring(screen.indexOf("private void shootoutSettings()"),screen.indexOf("private void shootoutInput(")).contains("Setting.SNAP"));
   check(AIM_CURVATURE.ordinal()==AIM_SPEED.ordinal()+1);
   System.out.println("PASS: "+checks+" Tanh numeric speed, whole-view rotation/budget, wrap/poles, curvature validation, legacy Snap persistence and menu wiring checks. Not Verified In-Game.");
  }

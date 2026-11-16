@@ -1,6 +1,17 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.GeneralConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.RandomDelayConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.UIConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootLogCategory;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageKeys;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageManager;
+import com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageType;
 import com.google.gson.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.ui.language.*;
+
+
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -74,11 +85,11 @@ public final class LanguageRegression {
                 Set<Integer> colors=new HashSet<>();for(int y=0;y<20;y++)for(int x=0;x<32;x++)colors.add(image.getRGB(x,y));check(colors.size()>3);
             }
         }
-        Path screen=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java");
+        Path screen=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/menu/GardenMenuAdapter.java");
         Matcher refs=Pattern.compile("\"(ui\\.ultimategarden\\.[^\"]+)\"").matcher(Files.readString(screen));
         Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.","ui.ultimategarden.shootout.","ui.ultimategarden.view_check.","ui.ultimategarden.developer.shootout.log.");
         while(refs.find())if(!prefixes.contains(refs.group(1)) && !refs.group(1).equals("ui.ultimategarden.hint."))check(english.has(refs.group(1)));
-        for(var category:com.kuangsanfeng.ultimategarden.client.config.ZombieShootLogCategory.values()){
+        for(var category:com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootLogCategory.values()){
             check(english.has("ui.ultimategarden.developer.shootout.log."+category.name()));
             check(english.has("ui.ultimategarden.developer.shootout.log."+category.name()+".help"));
         }

@@ -1,5 +1,10 @@
-import com.kuangsanfeng.ultimategarden.client.anti_check.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;import java.nio.file.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ExpectedViewTracker;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ViewWarningClock;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+
+import java.nio.file.*;
 public final class ViewDeviationRegression {
  static int checks;static void check(boolean b){checks++;if(!b)throw new AssertionError("View check "+checks);}
  public static void main(String[] args)throws Exception {

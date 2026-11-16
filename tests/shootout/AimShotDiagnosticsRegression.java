@@ -1,5 +1,15 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutAimCompletion;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutTanhAim;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutModel;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutArrowConfirmation;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootLogCategory;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat.ShootoutAimDiagnostics;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat.ZombieShootSnapshot;
+
+
 import com.google.gson.*;
 import net.minecraft.world.phys.Vec3;
 import java.nio.file.*;
@@ -53,13 +63,13 @@ public final class AimShotDiagnosticsRegression {
   }
   // A queue-budget failure still gets one reserved END after accepted rows, without touching any macro state.
   var root=Files.createTempDirectory("ug-aim-shot-backlog-");var trace=new ShootoutAimDiagnostics();trace.sync(true,root,0,settings(60),"unused");
-  var field=ShootoutAimDiagnostics.class.getDeclaredField("writer");field.setAccessible(true);var writer=(ZombieShootLogger)field.get(trace);
+  var field=com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.ShootoutAimDiagnostics.class.getDeclaredField("writer");field.setAccessible(true);var writer=(com.kuangsanfeng.ultimategarden.client.platform.persistence.log.JsonlWriter)field.get(trace);
   check(!writer.offer(ShootoutAimDiagnostics.FILE,Map.of("oversize",Collections.nCopies(500001,1))));trace.sync(true,root,1,settings(60),"unused");check(!trace.active());trace.shutdown();var rows=read(root);check(of(rows,"START").size()==1&&of(rows,"END").size()==1);check(of(rows,"END").getFirst().get("writeError").getAsString().equals("QUEUE_BACKLOG_LIMIT"));
   var base=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client");String controller=Files.readString(base.resolve("macro/zombie_shoot/ZombieShootoutController.java"));
   check(controller.split("model\\.solve\\(",-1).length-1==2);check(controller.contains("aimDiagnostics.solution(t.tag,solution,\"REGULAR\",tick)"));check(controller.contains("aimDiagnostics.solution(t.tag,fire,\"FIRE_RECHECK\",tick)"));
   check(controller.contains("captureGateError(solution,error,yaw,pitch)"));check(controller.contains("diagnosticManualAttempt=aimDiagnostics.nextAttempt()"));check(controller.contains("diagnosticCollisionReason=\"OBSTACLE_HIT\""));
-  String mouse=Files.readString(base.resolve("macro/zombie_shoot/ShootoutMouseInput.java"));check(mouse.indexOf("m.shootout$turn(dt)")<mouse.indexOf("diagnostics.applied(sequence"));check(mouse.indexOf("diagnostics.applied(sequence")<mouse.indexOf("observer.consumed(c.player"));check(mouse.contains("ZERO_QUANTIZED"));
-  String diagnostic=Files.readString(base.resolve("macro/zombie_shoot/ShootoutAimDiagnostics.java"));for(String forbidden:List.of(".solve(","ShootoutAimCompletion.error(","mouse.aim(","mouse.click("))check(!diagnostic.contains(forbidden));
+  String mouse=Files.readString(base.resolve("platform/input/view/NativeViewInput.java"));check(mouse.indexOf("m.shootout$turn(dt)")<mouse.indexOf("diagnostics.applied(sequence"));check(mouse.indexOf("diagnostics.applied(sequence")<mouse.indexOf("observer.consumed(c.player"));check(mouse.contains("ZERO_QUANTIZED"));
+  String diagnostic=Files.readString(base.resolve("platform/persistence/log/zombie_shoot/ShootoutAimDiagnostics.java"));for(String forbidden:List.of(".solve(","ShootoutAimCompletion.error(","mouse.aim(","mouse.click("))check(!diagnostic.contains(forbidden));
   System.out.println("PASS: "+checks+" synthetic 20/60 Hz trace linkage, zero submissions, gate sampling, append batches, close/backlog, configuration and unchanged solve-count checks. Not Verified In-Game; no reproduction of the reported 60 Hz failure is claimed.");
  }
 }

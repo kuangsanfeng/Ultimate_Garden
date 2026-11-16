@@ -1,5 +1,6 @@
 package net.minecraft.client;
 
+
 import org.lwjgl.glfw.GLFW;
 
 /** Models the verified setScreen/grabMouse recursion; no native window. */

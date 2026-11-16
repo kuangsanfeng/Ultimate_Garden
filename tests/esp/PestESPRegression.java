@@ -1,7 +1,10 @@
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.PestConfig;
 import java.util.*;
-import com.kuangsanfeng.ultimategarden.client.config.*;
-import com.kuangsanfeng.ultimategarden.client.macro.farm.pest.PestESP;
-import com.kuangsanfeng.ultimategarden.client.macro.esp.ESPTarget;
+
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.PestESP;
+import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPTarget;
 import net.minecraft.world.entity.EntityType;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext;
 public final class PestESPRegression {

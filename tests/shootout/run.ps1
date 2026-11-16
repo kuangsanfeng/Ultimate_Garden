@@ -54,7 +54,7 @@ gradle.projectsEvaluated {
  & "$env:JAVA_HOME/bin/java.exe" -cp ("build/shootout-audit/classes;"+$shootoutClasspath) AimShotDiagnosticsRegression
  if ($LASTEXITCODE -ne 0) { throw 'Aim/shot diagnostics regression failed' }
  New-Item -ItemType Directory -Force build/shootout-audit/input | Out-Null
- & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $shootoutClasspath -d build/shootout-audit/input tests/shootout/stubs/net/minecraft/client/Minecraft.java src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/ShootoutMouseInput.java tests/shootout/ShootoutInputRegression.java
+ & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $shootoutClasspath -d build/shootout-audit/input tests/shootout/stubs/net/minecraft/client/Minecraft.java src/client/java/com/kuangsanfeng/ultimategarden/client/macro/zombie_shoot/aim/ShootoutMouseInput.java src/client/java/com/kuangsanfeng/ultimategarden/client/platform/input/view/NativeViewInput.java tests/shootout/ShootoutInputRegression.java
  if ($LASTEXITCODE -ne 0) { throw 'Input test compilation failed' }
  & "$env:JAVA_HOME/bin/java.exe" -cp ("build/shootout-audit/input;"+$shootoutClasspath) ShootoutInputRegression
  if ($LASTEXITCODE -ne 0) { throw 'Input regression failed' }

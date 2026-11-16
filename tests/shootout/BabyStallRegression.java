@@ -1,6 +1,12 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
-import com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig;
-import static com.kuangsanfeng.ultimategarden.client.config.ZombieShootoutConfig.Setting.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutBabyStall;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutModel;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutCandidateSelection;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutPolicy;
+
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig;
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 import com.google.gson.*;
 import net.minecraft.world.phys.Vec3;
 import java.nio.file.*;
@@ -71,7 +77,7 @@ public final class BabyStallRegression {
   check(source.contains("relockRound.select(rescanned"));check(source.contains("if(target.last==tick)continue"));check(source.contains("!current.round.regularEligible()"));
   check(source.contains("if(t.stall.stalled())return t.entity.position()"));check(source.contains("if(z.isBaby())target.stall.observe"));check(source.contains("model.speeds.get(type),config().get(BABY_STALL_WINDOW)"));
   check(source.contains("flight->t.lamp!=null?initial:aimPoint(t,wait+latency+flight)"));check(source.contains("flight->firingTarget.lamp!=null?initial:aimPoint(firingTarget,1+latency+flight)"));
-  String menu=Files.readString(Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/ui/screen/UltimateGardenScreen.java"));
+  String menu=Files.readString(Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/menu/GardenMenuAdapter.java"));
   check(menu.indexOf("if(setting.window())shootoutInput(setting,0)")<menu.indexOf("Setting.BABY_STALL_WINDOW,0"));check(menu.indexOf("Setting.BABY_STALL_RATIO,0")<menu.indexOf("sampling.finishContent(cursor)"));
   System.out.println("PASS: "+checks+" continuous X/Z stall, reversal, gaps/recovery, stationary ballistics, configuration and empty-queue rescan checks. Not Verified In-Game.");
  }

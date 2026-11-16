@@ -1,4 +1,9 @@
-import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.*;
+
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ShootoutAutoStart;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput;
+import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutArrowConfirmation;
+
 import net.minecraft.world.phys.Vec3;
 import java.util.*;
 import java.nio.file.*;

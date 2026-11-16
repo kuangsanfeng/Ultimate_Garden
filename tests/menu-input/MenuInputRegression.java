@@ -1,5 +1,9 @@
-import com.kuangsanfeng.ultimategarden.client.input.*;
-import com.kuangsanfeng.ultimategarden.client.scheduler.ActionScheduler;
+
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualKeyboard;
+import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualMouse;
+
+import com.kuangsanfeng.ultimategarden.client.runtime.scheduler.ActionScheduler;
 import net.minecraft.client.Minecraft;
 import java.util.Set;
 

@@ -1,4 +1,5 @@
 package net.minecraft.client;
+
 public final class Minecraft {
  public static final Minecraft INSTANCE=new Minecraft();
  public Object level=new Object(), player=new Object(), screen;

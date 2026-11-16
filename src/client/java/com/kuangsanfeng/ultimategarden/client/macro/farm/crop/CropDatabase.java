@@ -1,7 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client.macro.farm.crop;
 
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
-import com.kuangsanfeng.ultimategarden.client.config.CropDefinition;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.farm.CropDefinition;
 
 /** Compatibility adapter; contains no static crop parameters. */
 public final class CropDatabase {
