@@ -2,7 +2,7 @@ package com.kuangsanfeng.ultimategarden.client.runtime.feature.adapters;
 import com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry;
 import com.kuangsanfeng.ultimategarden.client.macro.farm.FarmController;
 import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.ZombieShootCollector;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.ZombieShootCollector;
 import com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController;
 import java.util.Map;
 /** Business lifecycle and snapshot assembly; no additional event or tick registration. */

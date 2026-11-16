@@ -32,7 +32,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
     private static final com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry features=new com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry();
     public static com.kuangsanfeng.ultimategarden.client.runtime.feature.FeatureRegistry getFeatureRegistry(){return features;}
     private static net.minecraft.client.User observedUser;
-    private static com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPManager espManager;
+    private static com.kuangsanfeng.ultimategarden.client.function.esp.ESPManager espManager;
 
 
 	// Compatibility: this pre-existing mouse-click queue has no tick driver.
@@ -54,10 +54,10 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 
         observedUser = Minecraft.getInstance().getUser();
         configManager = new ConfigManager(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("ultimategarden"), accountIdentity(observedUser));
-        espManager = new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.ESPManager(configManager);
-        var pestESP = new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.PestESP(configManager.getPestConfig());
+        espManager = new com.kuangsanfeng.ultimategarden.client.function.esp.ESPManager(configManager);
+        var pestESP = new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PestESP(configManager.getPestConfig());
         espManager.register(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig.SILVERFISH, pestESP::collect);
-        new com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
+        new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
         espManager.initialize();
 
 

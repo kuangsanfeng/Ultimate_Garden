@@ -1,6 +1,6 @@
 
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.CollectionGate;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.CollectionSession;
+import com.kuangsanfeng.ultimategarden.client.function.collection.CollectionGate;
+import com.kuangsanfeng.ultimategarden.client.function.collection.CollectionSession;
 
 import java.util.*;
 public class CollectionRegression {

@@ -1,5 +1,5 @@
 
-import com.kuangsanfeng.ultimategarden.client.runtime.world.observation.sampling.TimedWindow;
+import com.kuangsanfeng.ultimategarden.client.function.observation.sampling.TimedWindow;
 import java.util.*;
 public class WindowRegression {
  record S(long t,double v){}

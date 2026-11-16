@@ -19,7 +19,7 @@ import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.shot.ShootoutSh
 import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.model.ShootoutSpeed;
 import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutTargetLoss;
 import com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.targeting.ShootoutTargetRound;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.compat.ZombieShootCollector;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.compat.ZombieShootCollector;
 import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat.ZombieShootSnapshot;
 
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
@@ -70,7 +70,7 @@ public final class ZombieShootoutController {
  private AimPlan selectionPlan;
  private final ShootoutCandidateSelection.Relock<Target> relockRound=new ShootoutCandidateSelection.Relock<>();
  private final Set<Target> rejectedThisTick=Collections.newSetFromMap(new IdentityHashMap<>());
- private final com.kuangsanfeng.ultimategarden.client.runtime.world.observation.entity.EntityObservationTracker runtimeIdentities=new com.kuangsanfeng.ultimategarden.client.runtime.world.observation.entity.EntityObservationTracker();
+ private final com.kuangsanfeng.ultimategarden.client.function.observation.entity.EntityObservationTracker runtimeIdentities=new com.kuangsanfeng.ultimategarden.client.function.observation.entity.EntityObservationTracker();
  private final ShootoutTargetLoss targetLoss=new ShootoutTargetLoss();
  private final ShootoutAimCorrection aimCorrection=new ShootoutAimCorrection();
  private final ShootoutAimDiagnostics aimDiagnostics=new ShootoutAimDiagnostics();
@@ -310,7 +310,7 @@ public final class ZombieShootoutController {
 
  }catch(Exception e){diagnosticGate("AUTO","EXCEPTION",hudSolution,false,true);stop("ERROR: "+e.getMessage());state=State.ERROR;com.kuangsanfeng.ultimategarden.Ultimate_Garden.LOGGER.error("Shootout stopped",e);}}
  private static net.minecraft.world.level.BlockGetter localView(net.minecraft.client.multiplayer.ClientLevel level,BlockPos center){
- return new com.kuangsanfeng.ultimategarden.client.runtime.world.observation.query.LoadedWorldView(level,p->{if(Math.abs(p.getX()-center.getX())>3||Math.abs(p.getY()-center.getY())>3||Math.abs(p.getZ()-center.getZ())>3||!level.hasChunkAt(p))throw new IllegalStateException("LOCAL_GEOMETRY_UNKNOWN");});
+ return new com.kuangsanfeng.ultimategarden.client.function.observation.query.LoadedWorldView(level,p->{if(Math.abs(p.getX()-center.getX())>3||Math.abs(p.getY()-center.getY())>3||Math.abs(p.getZ()-center.getZ())>3||!level.hasChunkAt(p))throw new IllegalStateException("LOCAL_GEOMETRY_UNKNOWN");});
  }
  private boolean collisionCheck(Target t,ShootoutModel.Solution solution,double delay,double yaw,double pitch){diagnosticCollisionReason="TARGET_VOLUME_MISS";var c=Minecraft.getInstance();var eye=c.player.getEyePosition();var end=bounds(t,delay+solution.ticks());var center=BlockPos.containing(end.getCenter());var collision=new ArrayList<AABB>();var geometry=localView(c.level,center);double arrowRadius=net.minecraft.world.entity.EntityType.ARROW.getDimensions().width()/2;
   // Disabling obstruction checks does not disable validation against the target's hit volume.

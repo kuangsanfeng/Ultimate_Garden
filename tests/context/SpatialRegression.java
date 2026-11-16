@@ -1,7 +1,7 @@
 
-import com.kuangsanfeng.ultimategarden.client.runtime.world.observation.query.ObservationCache;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.observation.query.ScanBudget;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.observation.query.SpatialQueries;
+import com.kuangsanfeng.ultimategarden.client.function.observation.query.ObservationCache;
+import com.kuangsanfeng.ultimategarden.client.function.observation.query.ScanBudget;
+import com.kuangsanfeng.ultimategarden.client.function.observation.query.SpatialQueries;
 
 import java.util.*;
 public class SpatialRegression {

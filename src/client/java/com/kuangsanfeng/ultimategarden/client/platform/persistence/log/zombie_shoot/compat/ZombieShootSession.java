@@ -1,5 +1,5 @@
 package com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.ZombieShootCoordinateSystem;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.ZombieShootCoordinateSystem;
 
 import java.nio.file.Path;import java.util.Set;import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootLogCategory;
 public final class ZombieShootSession extends com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.ZombieShootSession {

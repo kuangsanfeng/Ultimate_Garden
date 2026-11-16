@@ -1,5 +1,5 @@
 
-import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.adapters.PestESP.Detection;
+import com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PestESP.Detection;
 import java.util.*;
 
 public final class PestDetectionRegression {

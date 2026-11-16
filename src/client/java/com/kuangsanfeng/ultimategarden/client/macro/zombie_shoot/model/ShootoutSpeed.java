@@ -3,7 +3,7 @@ import java.util.*;
 /** Signed arc-length observations. Default exits exactly when the window matures. */
 public final class ShootoutSpeed {
  private record Sample(long tick,double speed){}
- private final com.kuangsanfeng.ultimategarden.client.runtime.world.observation.sampling.TimedWindow<Sample> samples=new com.kuangsanfeng.ultimategarden.client.runtime.world.observation.sampling.TimedWindow<>(256,Sample::tick);private long first=-1,last=-1;private double previous;private String path;private boolean defaultRetired;
+ private final com.kuangsanfeng.ultimategarden.client.function.observation.sampling.TimedWindow<Sample> samples=new com.kuangsanfeng.ultimategarden.client.function.observation.sampling.TimedWindow<>(256,Sample::tick);private long first=-1,last=-1;private double previous;private String path;private boolean defaultRetired;
  public enum Direction { FORWARD,BACKWARD,STATIONARY,UNKNOWN }
  public record Estimate(double signedSpeed,boolean reliable,int count,double speedMagnitude,Direction direction){}
  /** Mean of valid measured arc-length speeds only; no initial/default sample. */

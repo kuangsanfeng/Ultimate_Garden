@@ -700,7 +700,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         var logs=new CollapsibleSection(contentX,contentTop+cursor,contentWidth,cursor,language.text(title),state,GardenMenuAdapter.this::palette,help,helpText(title),()->{
             help.clear();clearFocus();setDragging(false);positionContent();
         },58);
-        var collector=com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.compat.ZombieShootCollector.INSTANCE;
+        var collector=com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.compat.ZombieShootCollector.INSTANCE;
         currentSection=shootout;place(logs,cursor,()->true);sections.add(logs);
         place(new ToggleSwitch(contentX+contentWidth-54,contentTop+cursor+(logs.getHeight()-24)/2,language.text(title),GardenMenuAdapter.this::palette,collector::logsEnabled,()->act(()->collector.setLogsEnabled(!collector.logsEnabled()))),cursor+(logs.getHeight()-24)/2,()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
         currentSection=logs;cursor+=logs.getHeight()+CollapsibleSection.CONTENT_GAP;
@@ -800,14 +800,14 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         toggle(LanguageKeys.component(name, "enabled"), component::isEnabled, () -> {
             component.setEnabled(!component.isEnabled()); saved(configs.save(ConfigManager.Module.ESP));
         }, () -> true);
-        var modes = Arrays.stream(com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPColorMode.values())
+        var modes = Arrays.stream(com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPColorMode.values())
                 .map(mode -> new Choice(mode.name(), "ui.ultimategarden." + mode.name().toLowerCase(Locale.ROOT), true)).toList();
         dropdown(LanguageKeys.component(name, "mode"), component.getColorMode().name(), modes, value -> {
-            component.setColorMode(com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPColorMode.valueOf(value));
+            component.setColorMode(com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPColorMode.valueOf(value));
             saved(configs.save(ConfigManager.Module.ESP)); build();
         }, () -> true);
         espInput(LanguageKeys.component(name, "color"), targetId + "." + name + ".color", component.getColor(), component::setColor,
-                () -> component.getColorMode() == com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPColorMode.SOLID);
+                () -> component.getColorMode() == com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPColorMode.SOLID);
         espInput(LanguageKeys.component(name, "alpha"), targetId + "." + name + ".alpha", Float.toString(component.getAlpha()),
                 value -> component.setAlpha(Float.parseFloat(value)), () -> true);
         if (line) espInput(LanguageKeys.component(name, "width"), targetId + "." + name + ".lineWidth", Float.toString(component.getLineWidth()),

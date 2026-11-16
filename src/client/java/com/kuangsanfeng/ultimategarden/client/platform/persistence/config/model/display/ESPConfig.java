@@ -1,7 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPColorMode;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPStyle;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.esp.style.ESPTargetStyle;
+import com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPColorMode;
+import com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPStyle;
+import com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPTargetStyle;
 
 
 import com.google.gson.*;

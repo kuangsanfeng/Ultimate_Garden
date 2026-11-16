@@ -1,5 +1,5 @@
 
-import com.kuangsanfeng.ultimategarden.client.runtime.world.observation.entity.EntityObservationTracker;
+import com.kuangsanfeng.ultimategarden.client.function.observation.entity.EntityObservationTracker;
 import java.util.*;
 public class EntityRegression {
  public static void main(String[] args){

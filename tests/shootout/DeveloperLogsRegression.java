@@ -10,11 +10,11 @@ import com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.
 import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat.ZombieShootLogger;
 import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat.ZombieShootSession;
 import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.zombie_shoot.compat.ZombieShootSnapshot;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.ZombieShootClassifier;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.ZombieShootCoordinateSystem;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.compat.ZombieShootCollector;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.collection.zombie_shoot.compat.ZombieShootLogGate;
-import com.kuangsanfeng.ultimategarden.client.runtime.world.observation.entity.ZombieShootEntityTracker;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.ZombieShootClassifier;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.ZombieShootCoordinateSystem;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.compat.ZombieShootCollector;
+import com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.compat.ZombieShootLogGate;
+import com.kuangsanfeng.ultimategarden.client.function.observation.entity.ZombieShootEntityTracker;
 
 import static com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootoutConfig.Setting.*;
 
@@ -83,7 +83,7 @@ public final class DeveloperLogsRegression {
   check(controller.contains("if(config().isOcclusionCheckEnabled())for(int x=-3"));check(controller.contains("if(!collisionCheck(t,fire"));check(controller.contains("var targetBox=bounds(t,delay+step).inflate(arrowRadius)"));check(controller.contains("ZombieShootCollector.INSTANCE.update(running)"));check(controller.contains("aimDiagnostics.end(tick,why);diagnosticManualAttempt=0;ZombieShootCollector.INSTANCE.stop()"));
   String select=controller.substring(controller.indexOf(" private Target select()"),controller.indexOf(" private Vec3 feet("));check(!select.contains("collisionCheck(")&&!select.contains("OcclusionAnalyzer"));
   String manual=controller.substring(controller.indexOf(" public boolean blockManualShot("),controller.indexOf(" private record Shot("));check(!manual.contains("OcclusionCheck"));
-  String collector=Files.readString(base.resolve("runtime/world/collection/zombie_shoot/ZombieShootCollector.java"));check(!collector.contains("END_CLIENT_TICK.register"));check(collector.contains("if(!gate.collecting(macroRunning)){stop();return;}"));check(collector.contains("if(!enable")||collector.contains("if(failed)return"));
+  String collector=Files.readString(base.resolve("function/collection/zombie_shoot/ZombieShootCollector.java"));check(!collector.contains("END_CLIENT_TICK.register"));check(collector.contains("if(!gate.collecting(macroRunning)){stop();return;}"));check(collector.contains("if(!enable")||collector.contains("if(failed)return"));
   String menu=Files.readString(base.resolve("platform/ui/adapters/menu/GardenMenuAdapter.java"));check(menu.contains("automation.autoShootEffective()&&!configs.isPendingRestart")&&menu.contains("2*CollapsibleSection.NESTED_INDENT"));
   for(String key:List.of("developer_options","developer.carnival","developer.shootout","developer.shootout.logs"))check(menu.contains("\"ui.ultimategarden."+key+"\""));
   check(menu.contains("collector.logsEnabled()&&!configs.isPendingRestart"));check(menu.contains("config.logEnabled(category)"));

@@ -5,7 +5,7 @@ import java.util.ArrayDeque;
 /** Per-entity, bounded, continuous X/Z observations. Seconds are measured with a monotonic clock. */
 public final class ShootoutBabyStall {
  private record Sample(long nanos,double x,double z,double distance){}
- private final com.kuangsanfeng.ultimategarden.client.runtime.world.observation.sampling.TimedWindow<Sample> samples=new com.kuangsanfeng.ultimategarden.client.runtime.world.observation.sampling.TimedWindow<>(256,Sample::nanos);
+ private final com.kuangsanfeng.ultimategarden.client.function.observation.sampling.TimedWindow<Sample> samples=new com.kuangsanfeng.ultimategarden.client.function.observation.sampling.TimedWindow<>(256,Sample::nanos);
  private long lastTick=-1;private double windowSeconds=-1;private boolean stalled,ready;
  public boolean stalled(){return ready&&stalled;}
  public boolean ready(){return ready;}
