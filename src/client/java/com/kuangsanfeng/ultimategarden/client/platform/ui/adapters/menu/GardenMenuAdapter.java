@@ -120,7 +120,40 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         }
         else menuPauseOwned = farm.beginUltimateGardenMenu();
     }
+    private final com.kuangsanfeng.ultimategarden.client.function.mapping.MappingConfirmation mappingConfirmation=new com.kuangsanfeng.ultimategarden.client.function.mapping.MappingConfirmation();
+    private CollapsibleSection mappingSection;
+    private record MappingContext(Object world,String name,Object target) {}
+    private Object mappingContext(String operation){
+        var m=com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE;var status=m.snapshot();
+        return new MappingContext(m.worldIdentity(),status.worldName(),"reset".equals(operation)?status.current():null);
+    }
+    private void mappingDanger(String label,String operation,Runnable action){
+        var m=com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE;
+        int h=Math.max(48,font.split(Component.literal(language.text("ui.ultimategarden.mapping.confirm")),Math.max(20,sectionWidth(currentSection)-16)).size()*10+12);
+        place(new com.kuangsanfeng.ultimategarden.client.platform.ui.widget.MappingConfirmButton(sectionX(currentSection),contentTop+cursor,sectionWidth(currentSection),h,
+            language.text(label),language.text("ui.ultimategarden.mapping.confirm"),this::palette,mappingConfirmation,()->mappingContext(operation),operation,()->act(action)),cursor,()->m.snapshot().config()!=null&&!m.snapshot().busy());cursor+=h+8;
+    }
+    private void mappingSettings(CollapsibleSection parent){
+        var m=com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE;
+        var outer=nestedDelaySection("ui.ultimategarden.mapping.title",parent);
+        var panel=nestedDelaySection("ui.ultimategarden.mapping.current_status",outer);mappingSection=panel;
+        info("ui.ultimategarden.mapping.world",()->m.snapshot().worldName().isBlank()?language.text("ui.ultimategarden.mapping.unknown"):m.snapshot().worldName());
+        info("ui.ultimategarden.mapping.origin",()->m.snapshot().config()==null?language.text("ui.ultimategarden.mapping.unknown"):m.snapshot().config().origin().toString());
+        info("ui.ultimategarden.mapping.relative",()->{var st=m.snapshot();return st.config()==null||st.current()==null?language.text("ui.ultimategarden.mapping.unknown"):st.config().relativeX(st.current().x())+", "+st.config().relativeZ(st.current().z());});
+        info("ui.ultimategarden.mapping.status",()->{var st=m.snapshot();String text=language.optional("ui.ultimategarden.mapping.status."+st.message());return (st.recording()?language.text("ui.ultimategarden.mapping.status.RECORDING")+" / ":"")+(text.isBlank()?st.message():text);});
+        info("ui.ultimategarden.mapping.active_layer",()->m.snapshot().config()==null?language.text("ui.ultimategarden.mapping.festival.NONE"):language.text("ui.ultimategarden.mapping.festival."+m.snapshot().config().selectedFestival().name()));
+        dropdown("ui.ultimategarden.mapping.festival",m.requestedFestival().name(),Arrays.stream(com.kuangsanfeng.ultimategarden.client.function.mapping.Festival.values()).map(f->new Choice(f.name(),"ui.ultimategarden.mapping.festival."+f.name(),true)).toList(),value->{m.chooseFestival(com.kuangsanfeng.ultimategarden.client.function.mapping.Festival.valueOf(value));build();},()->m.snapshot().config()!=null&&!m.snapshot().busy());
+        button("ui.ultimategarden.mapping.create",false,m::createFestival,()->m.snapshot().config()!=null&&!m.snapshot().busy()&&m.requestedFestival()!=com.kuangsanfeng.ultimategarden.client.function.mapping.Festival.NONE&&!m.snapshot().config().festivals().contains(m.requestedFestival()));
+        button("ui.ultimategarden.mapping.delete_chunk",false,m::deleteCurrent,()->m.snapshot().config()!=null&&!m.snapshot().busy());
+        mappingDanger("ui.ultimategarden.mapping.reset","reset",()->m.resetOrigin(m.snapshot().current()));
+        mappingDanger("ui.ultimategarden.mapping.delete_world","delete",m::deleteWorld);
+        panel.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=outer;
+        var replay=nestedDelaySection("ui.ultimategarden.mapping.replay",outer);
+        button("ui.ultimategarden.mapping.open_replay",false,()->{mappingConfirmation.cancel();minecraft.setScreen(new com.kuangsanfeng.ultimategarden.client.platform.ui.screen.MappingReplayScreen((UltimateGardenScreen)this,configs));},()->true);
+        replay.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=outer;outer.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
+    }
     @Override public void removed() {
+        mappingConfirmation.cancel();
         copyConfirmation = null; copyInProgress = null;
         help.clear();
         if (!adjustingHud && !closeHandled) { closeHandled = true; if (menuPauseOwned) farm.endUltimateGardenMenu(); }
@@ -137,6 +170,8 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         minecraft.setScreen(null);
     }
     @Override public void tick() {
+        if(mappingSection==null||!mappingSection.state().isContentVisible())mappingConfirmation.cancel();
+        else if(mappingConfirmation.operation()!=null)mappingConfirmation.validate(mappingContext(mappingConfirmation.operation()));
         if (!MacroKeyBindings.isMenuKeyPhysicallyDown()) menuKeyHeld = false;
         if (minecraft.player == null || minecraft.level == null) { choices = null; farm.abortForWorldChange(); onClose(); }
         if (copyInProgress != null && extractedFrames > copyRequestedFrame) executeAccountCopy();
@@ -171,6 +206,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         build();
     }
     private void build() {
+        mappingConfirmation.cancel();mappingSection=null;
         help.clear(); routeInputs.clear();
         clearFocus(); clearWidgets(); fixed.clear(); content.clear(); cards.clear(); labels.clear(); dividers.clear(); cursor = 0;
         sections.clear(); headingCounts.clear(); currentSection = null; progressSection = null;
@@ -248,7 +284,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         var state = sectionStates.computeIfAbsent(page, ignored -> new HashMap<>())
                 .computeIfAbsent(key, ignored -> new CollapsibleSection.State());
         var section = new CollapsibleSection(contentX, contentTop + cursor, contentWidth, cursor, language.text(title), state, this::palette, help, description, () -> {
-            help.clear(); clearFocus(); setDragging(false); positionContent();
+            mappingConfirmation.cancel(); help.clear(); clearFocus(); setDragging(false); positionContent();
         });
         place(section, cursor, () -> true);
         sections.add(section); currentSection = section; cursor += section.getHeight() + CollapsibleSection.CONTENT_GAP;
@@ -369,7 +405,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
                 .computeIfAbsent(title, ignored -> new CollapsibleSection.State(parent.state()));
         var section = new CollapsibleSection(contentX-headerOutset, contentTop + cursor, contentWidth+headerOutset, cursor,
                 language.text(title), state, this::palette, help, helpText(title), () -> {
-            help.clear(); clearFocus(); setDragging(false); positionContent();
+            mappingConfirmation.cancel(); help.clear(); clearFocus(); setDragging(false); positionContent();
         });
         currentSection = parent;
         place(section, cursor, enabled);
@@ -693,6 +729,22 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private final class DeveloperPageAdapter {
     private void developerSettings(){
         heading("ui.ultimategarden.developer_options");var developer=currentSection;
+        mappingSettings(developer);
+        var instant=nestedDelaySection("ui.ultimategarden.instant.title",developer);
+        var test=com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE;
+        button("ui.ultimategarden.instant.toggle",false,()->test.toggle(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.MENU),()->true);
+        info("ui.ultimategarden.instant.status",test::status);
+        var instantConfig=configs.getGeneralConfig().instantTransmission();
+        dropdown("ui.ultimategarden.instant.strategy",instantConfig.strategy().name(),Arrays.stream(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.routing.RouteStrategy.values()).map(v->new Choice(v.name(),"ui.ultimategarden.instant.strategy."+v.name(),true)).toList(),value->{instantConfig.setStrategy(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.routing.RouteStrategy.valueOf(value));saved(configs.save(ConfigManager.Module.GENERAL));build();},()->!test.running()&&!configs.isPendingRestart(ConfigManager.Module.GENERAL));
+        for(var field:com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.InstantTransmissionConfig.Setting.values()){
+            input("ui.ultimategarden.instant."+field.name(),Double.toString(instantConfig.get(field)),value->act(()->{
+                instantConfig.set(field,Double.parseDouble(value));saved(configs.save(ConfigManager.Module.GENERAL));
+            }),()->!test.running()&&!configs.isPendingRestart(ConfigManager.Module.GENERAL),"\u00b0",0);
+        }
+        input("ui.ultimategarden.instant.distance_bonus_note",instantConfig.distanceBonusNote(),value->act(()->{
+            instantConfig.setDistanceBonusNote(value);saved(configs.save(ConfigManager.Module.GENERAL));
+        }),()->!test.running()&&!configs.isPendingRestart(ConfigManager.Module.GENERAL),"",0);
+        instant.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=developer;
         var carnival=nestedDelaySection("ui.ultimategarden.developer.carnival",developer);
         var shootout=nestedDelaySection("ui.ultimategarden.developer.shootout",carnival);
         String title="ui.ultimategarden.developer.shootout.logs";
@@ -727,32 +779,28 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             adjustingHud=true;
             com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.begin((UltimateGardenScreen)GardenMenuAdapter.this);
         }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
-        toggle("ui.ultimategarden.hud.show", hud::isShowHud, () -> {
-            hud.setShowHud(!hud.isShowHud()); saved(configs.save(ConfigManager.Module.HUD));
-        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
-        toggle("ui.ultimategarden.hud.only_running", hud::isFarmOnlyWhileRunning, () -> {
-            hud.setFarmOnlyWhileRunning(!hud.isFarmOnlyWhileRunning()); saved(configs.save(ConfigManager.Module.HUD));
-        }, () -> hud.isShowHud() && !configs.isPendingRestart(ConfigManager.Module.HUD), CollapsibleSection.NESTED_INDENT);
-        toggle("ui.ultimategarden.hud.show_zombie", hud::isShowZombieShootoutHud, () -> {
-            hud.setShowZombieShootoutHud(!hud.isShowZombieShootoutHud()); saved(configs.save(ConfigManager.Module.HUD));
-        }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
-        toggle("ui.ultimategarden.hud.only_running", hud::isZombieOnlyWhileRunning, () -> {
-            hud.setZombieOnlyWhileRunning(!hud.isZombieOnlyWhileRunning()); saved(configs.save(ConfigManager.Module.HUD));
-        }, () -> hud.isShowZombieShootoutHud() && !configs.isPendingRestart(ConfigManager.Module.HUD), CollapsibleSection.NESTED_INDENT);
-        var display = nestedDelaySection("ui.ultimategarden.hud.display_mode", parent);
-        dropdown("ui.ultimategarden.hud.mode", hud.getMode().name(), Arrays.stream(HudConfig.Mode.values())
-                .map(mode -> new Choice(mode.name(), "ui.ultimategarden.hud.mode." + mode.name(), true)).toList(),
-                value -> { hud.setMode(HudConfig.Mode.valueOf(value)); saved(configs.save(ConfigManager.Module.HUD)); build(); }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD));
-        display.finishContent(cursor); cursor += CollapsibleSection.SECTION_GAP; currentSection = parent;
-        for (boolean compact : new boolean[]{true,false}) {
-            var section = nestedDelaySection(compact ? "ui.ultimategarden.hud.compact_content" : "ui.ultimategarden.hud.detail_content", parent);
-            for (HudConfig.Item item : HudConfig.Item.values()) {
-                toggle("ui.ultimategarden.hud.item." + item.name(), () -> compact ? hud.compact(item) : hud.detail(item), () -> {
-                    if (compact) hud.setCompact(item,!hud.compact(item)); else hud.setDetail(item,!hud.detail(item));
-                    saved(configs.save(ConfigManager.Module.HUD));
-                }, () -> !configs.isPendingRestart(ConfigManager.Module.HUD) && (compact || !hud.compact(item)));
+        for(var id:HudConfig.HudId.values()){
+            String prefix="ui.ultimategarden.hud.panel."+id.name();
+            var panel=nestedDelaySection(prefix,parent);
+            String showKey=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.show";case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.show_zombie";case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.show_instant_transmission";case MAPPING->"ui.ultimategarden.hud.show_mapping";};
+            toggle(showKey,()->hud.enabled(id),()->{hud.enabled(id,!hud.enabled(id));saved(configs.save(ConfigManager.Module.HUD));},()->!configs.isPendingRestart(ConfigManager.Module.HUD));
+            toggle("ui.ultimategarden.hud.only_running",()->hud.onlyRunning(id),()->{hud.onlyRunning(id,!hud.onlyRunning(id));saved(configs.save(ConfigManager.Module.HUD));},()->hud.enabled(id)&&!configs.isPendingRestart(ConfigManager.Module.HUD),CollapsibleSection.NESTED_INDENT);
+            dropdown("ui.ultimategarden.hud.display_mode",hud.mode(id).name(),Arrays.stream(HudConfig.Mode.values()).map(mode->new Choice(mode.name(),"ui.ultimategarden.hud.mode."+mode.name(),true)).toList(),value->{hud.mode(id,HudConfig.Mode.valueOf(value));saved(configs.save(ConfigManager.Module.HUD));build();},()->!configs.isPendingRestart(ConfigManager.Module.HUD));
+            for(boolean compact:new boolean[]{true,false}){
+                var section=nestedDelaySection(prefix+(compact?".compact_content":".detail_content"),panel);
+                CollapsibleSection world=null;if(id==HudConfig.HudId.MAPPING)world=nestedDelaySection(prefix+(compact?".compact_world":".detail_world"),section);
+                for(String key:HudConfig.fields(id)){
+                    if(id==HudConfig.HudId.MAPPING&&key.equals("recording_origin")){
+                        world.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;
+                        world=nestedDelaySection(prefix+(compact?".compact_recording":".detail_recording"),section);
+                    }
+                    String label=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.item."+key;case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.field.ZOMBIE_SHOOTOUT."+key;case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.field.INSTANT_TRANSMISSION."+key;case MAPPING->"ui.ultimategarden.mapping_hud."+key;};
+                    toggle(label,()->compact?hud.compact(id,key):hud.detail(id,key),()->{hud.content(id,key,compact,!(compact?hud.compact(id,key):hud.detail(id,key)));saved(configs.save(ConfigManager.Module.HUD));},()->!configs.isPendingRestart(ConfigManager.Module.HUD)&&(compact||!hud.compact(id,key)));
+                }
+                if(world!=null){world.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;}
+                section.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=panel;
             }
-            section.finishContent(cursor); cursor += CollapsibleSection.SECTION_GAP; currentSection = parent;
+            panel.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
         }
     }
     }
@@ -792,7 +840,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
                 .computeIfAbsent("esp.component." + targetId + "." + name, ignored -> new CollapsibleSection.State(parent.state()));
         var section = new CollapsibleSection(contentX, contentTop + cursor, contentWidth, cursor,
                 language.text(titleKey), state, GardenMenuAdapter.this::palette, help, helpText(titleKey), () -> {
-            help.clear(); clearFocus(); setDragging(false); positionContent();
+            mappingConfirmation.cancel(); help.clear(); clearFocus(); setDragging(false); positionContent();
         });
         // The header belongs to the target; the controls belong to the component.
         place(section, cursor, () -> true);

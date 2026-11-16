@@ -23,6 +23,9 @@ public final class LanguageKeys {
         case "Loadout" -> "ui.ultimategarden.loadout";
         case "Select crop" -> "ui.ultimategarden.select_crop";
         case "Toggle Zombie Shootout" -> "ui.ultimategarden.shootout.hotkey";
+        case "Initialize Mapping" -> "ui.ultimategarden.mapping.initialize";
+        case "Toggle Mapping Recording" -> "ui.ultimategarden.mapping.toggle";
+        case "Redraw Current Chunk" -> "ui.ultimategarden.mapping.redraw";
         case "Toggle HUD" -> "ui.ultimategarden.toggle_hud";
         case "Mouse focus" -> "ui.ultimategarden.mouse_focus";
         case "Open Ultimate Garden Menu" -> "ui.ultimategarden.open_ultimate_garden_menu";

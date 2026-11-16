@@ -1,6 +1,8 @@
 package com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model;
 
 public final class GeneralConfig {
+    private final InstantTransmissionConfig instantTransmission=new InstantTransmissionConfig();
+    public InstantTransmissionConfig instantTransmission(){return instantTransmission;}
     public enum Hint { macroStart, macroPause, macroReset, macroInitialized, lineCompleted, timeTesterTicks,
         pestTimerStart, pestTimerReset, pestTimerDone, pestLoadoutChange, focusReleased, focusRestored,
         cropSelectionInitialization, hotkeyHelp, commandHelpErrors }
@@ -35,5 +37,5 @@ public final class GeneralConfig {
     public int getSchemaVersion() { return 1; }
     public boolean isShowModChatHints() { return showModChatHints; }
     public void setShowModChatHints(boolean value) { showModChatHints = value; }
-    public void resetToDefault() { hints.addAll(java.util.EnumSet.allOf(Hint.class)); showModChatHints = true; autoPauseFarmWhenOpeningMenu = true; autoResumeFarmAfterGuiClose = false; }
+    public void resetToDefault() { instantTransmission.reset(); hints.addAll(java.util.EnumSet.allOf(Hint.class)); showModChatHints = true; autoPauseFarmWhenOpeningMenu = true; autoResumeFarmAfterGuiClose = false; }
 }

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Spider\u0027s Den",
+  "origin": {
+    "x": -208,
+    "y": 0,
+    "z": -240
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

@@ -9,6 +9,9 @@ public final class UIConfig {
     private String accentColor = "#1B978C";
     private LanguageType language = LanguageType.ENGLISH;
     private int menuTransparency;
+    private boolean mappingReplayShowChunkBorders = true;
+    public boolean isMappingReplayShowChunkBorders() { return mappingReplayShowChunkBorders; }
+    public void setMappingReplayShowChunkBorders(boolean value) { mappingReplayShowChunkBorders = value; }
     public int getMenuTransparency() { return menuTransparency; }
     public void setMenuTransparency(int value) {
         if (value < 0 || value > 100) throw new IllegalArgumentException("Menu transparency must be 0..100");
@@ -25,5 +28,5 @@ public final class UIConfig {
             throw new IllegalArgumentException("Invalid accent color");
         accentColor = color;
     }
-    public void resetToDefault() { uiThemeMode = Theme.SYSTEM; accentColor = "#1B978C"; language = LanguageType.ENGLISH; menuTransparency = 0; }
+    public void resetToDefault() { uiThemeMode = Theme.SYSTEM; accentColor = "#1B978C"; language = LanguageType.ENGLISH; menuTransparency = 0; mappingReplayShowChunkBorders = true; }
 }

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Torrhus Canyon",
+  "origin": {
+    "x": -720,
+    "y": 0,
+    "z": 128
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

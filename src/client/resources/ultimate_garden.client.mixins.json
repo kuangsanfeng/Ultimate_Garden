@@ -1,26 +1,30 @@
 {
-	"required": true,
-	"package": "com.kuangsanfeng.ultimategarden.client.mixin",
-	"compatibilityLevel": "JAVA_25",
-	"client": [
-		"ExampleClientMixin",
-		"KeyMappingAccessor",
-		"KeyboardHandlerAccessor",
-		"WindowsInputMixin",
-		"InventoryInputMixin",
-		"MenuFarmInputMixin",
-		"WindowsFocusMixin",
-		"WindowsPauseMixin",
-		"WindowsMouseMixin",
-		"WindowsMissTimeMixin",
-		"ShootoutMouseAccessor",
-		"ShootoutAimFrameMixin",
-		"ShootoutPongMixin"
-	],
-	"injectors": {
-		"defaultRequire": 1
-	},
-	"overwrites": {
-		"requireAnnotations": true
-	}
+  "required": true,
+  "package": "com.kuangsanfeng.ultimategarden.client.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "ExampleClientMixin",
+    "KeyMappingAccessor",
+    "KeyboardHandlerAccessor",
+    "WindowsInputMixin",
+    "InventoryInputMixin",
+    "MenuFarmInputMixin",
+    "WindowsFocusMixin",
+    "WindowsPauseMixin",
+    "WindowsMouseMixin",
+    "WindowsMissTimeMixin",
+    "ShootoutMouseAccessor",
+    "ShootoutAimFrameMixin",
+    "ShootoutPongMixin",
+    "TransmissionPositionMixin",
+    "TransmissionMovementInputMixin",
+    "WorldInfoConnectionAccessor",
+    "MappingReplayBackgroundMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
 }

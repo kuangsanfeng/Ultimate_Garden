@@ -375,6 +375,13 @@ public final class FarmController implements MacroManager.Module {
             default -> command.hasActionFailed() ? "ACTION_FAILED" : "STOPPED";
         };
     }
+    /** Read-only input reservation; a standalone Pest countdown and menu editability are excluded. */
+    public record InputOwnership(boolean running,boolean heldInput,boolean actionPending) {
+        public boolean occupied(){return running||heldInput||actionPending;}
+    }
+    public InputOwnership inputOwnership() {
+        return new InputOwnership(state.isRunning(),input.hasHeldInput()||windowsInputInterceptor.isLocallyEnabled(),command.hasPendingWork()||!menuActions.isEmpty());
+    }
     public boolean canEditRouteConfiguration() {
         return (menuPause.canChangeRoute() || (!menuPause.isActive() && isOwnMenuVisible() && !state.isRunning())) && !command.hasPendingWork() && !command.isPestLoadoutTimerRunning() && menuActions.isEmpty();
     }

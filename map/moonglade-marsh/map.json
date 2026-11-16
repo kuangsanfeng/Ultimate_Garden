@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Moonglade Marsh",
+  "origin": {
+    "x": -544,
+    "y": 0,
+    "z": -32
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

@@ -1,0 +1,2 @@
+package com.kuangsanfeng.ultimategarden.client.function.mapping;
+public final class MappingController {public static final MappingController INSTANCE=new MappingController(); public boolean recording;public com.kuangsanfeng.ultimategarden.client.function.mapping.MappingRecordingSnapshot recordingSnapshot(){return new com.kuangsanfeng.ultimategarden.client.function.mapping.MappingRecordingSnapshot("",null,null,recording,java.util.Set.of(),java.util.Set.of(),java.util.Set.of(),java.util.Set.of());}public boolean running(){return recording;}}

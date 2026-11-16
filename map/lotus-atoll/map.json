@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Lotus Atoll",
+  "origin": {
+    "x": -16,
+    "y": 0,
+    "z": 0
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

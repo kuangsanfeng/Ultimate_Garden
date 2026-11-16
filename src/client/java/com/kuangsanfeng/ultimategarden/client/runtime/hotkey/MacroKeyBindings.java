@@ -32,7 +32,11 @@ public final class MacroKeyBindings {
             new Binding("Cancel pest timer", "Cancel the current pest loadout timer.", PEST_TIMER_CANCEL_KEY),
             new Binding("Loadout", "Execute /loadout", LOADOUT_KEY),
             new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
+            new Binding("Toggle Instant Transmission Test", "Toggle the displacement test.", TRANSMISSION_KEY),
             new Binding("Toggle Zombie Shootout", "Start or stop Zombie Shootout.", SHOOTOUT_KEY),
+            new Binding("Initialize Mapping", "Initialize the base map.", MAPPING_INIT_KEY),
+            new Binding("Toggle Mapping Recording", "Start or stop chunk recording.", MAPPING_TOGGLE_KEY),
+            new Binding("Redraw Current Chunk", "Replace the current map chunk.", MAPPING_REDRAW_KEY),
             new Binding("Toggle HUD", "Show or hide the HUD.", HUD_TOGGLE_KEY),
             new Binding("Mouse focus", "Toggle cursor release.", WINDOW_FOCUS_KEY),
             new Binding("Open Ultimate Garden Menu", "Open menu; " + getMenuKeyName() + " closes it outside text input.", OPEN_MENU_KEY));
@@ -66,6 +70,12 @@ public final class MacroKeyBindings {
     // Key Mapping
     // =========================================================
 
+    private static final KeyMapping MAPPING_INIT_KEY = register("mapping_initialize", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyMapping MAPPING_TOGGLE_KEY = register("mapping_toggle", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyMapping MAPPING_REDRAW_KEY = register("mapping_redraw", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyEdge MAPPING_INIT_EDGE = new KeyEdge(), MAPPING_TOGGLE_EDGE = new KeyEdge(), MAPPING_REDRAW_EDGE = new KeyEdge();
+    private static final KeyMapping TRANSMISSION_KEY = register("toggle_instant_transmission", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyEdge TRANSMISSION_EDGE = new KeyEdge();
     private static final KeyMapping SHOOTOUT_KEY = register("toggle_zombie_shootout", GLFW.GLFW_KEY_UNKNOWN);
     private static final KeyEdge SHOOTOUT_EDGE = new KeyEdge();
     private static final KeyMapping HUD_TOGGLE_KEY = register("toggle_hud", GLFW.GLFW_KEY_UNKNOWN);
@@ -365,6 +375,15 @@ public final class MacroKeyBindings {
                             configs.save(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.ConfigManager.Module.HUD);
                         }
                     }
+                    boolean mappingInit=MAPPING_INIT_EDGE.rising(isPressed(MAPPING_INIT_KEY)), mappingToggle=MAPPING_TOGGLE_EDGE.rising(isPressed(MAPPING_TOGGLE_KEY)), mappingRedraw=MAPPING_REDRAW_EDGE.rising(isPressed(MAPPING_REDRAW_KEY));
+                    while(MAPPING_INIT_KEY.consumeClick()){} while(MAPPING_TOGGLE_KEY.consumeClick()){} while(MAPPING_REDRAW_KEY.consumeClick()){}
+                    if(client.screen==null && !com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()){
+                        var mapping=com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE;
+                        if(mappingInit)mapping.initialize(); if(mappingToggle)mapping.toggleRecording(); if(mappingRedraw)mapping.redraw();
+                    }
+                    boolean transmissionToggle=TRANSMISSION_EDGE.rising(isPressed(TRANSMISSION_KEY));
+                    while(TRANSMISSION_KEY.consumeClick()){}
+                    if(transmissionToggle && hudInputAllowed) com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.toggle(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.HOTKEY);
                     boolean shootoutToggle=SHOOTOUT_EDGE.rising(isPressed(SHOOTOUT_KEY));
                     while(SHOOTOUT_KEY.consumeClick()){}
                     if(shootoutToggle && hudInputAllowed && !com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive())

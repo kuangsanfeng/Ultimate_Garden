@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "The Farming Islands",
+  "origin": {
+    "x": 112,
+    "y": 0,
+    "z": -208
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

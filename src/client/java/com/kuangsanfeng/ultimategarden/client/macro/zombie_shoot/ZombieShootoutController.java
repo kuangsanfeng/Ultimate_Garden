@@ -188,7 +188,7 @@ public final class ZombieShootoutController {
  }
  private ZombieShootoutConfig config(){return Ultimate_GardenClient.getConfigManager().getZombieShootoutConfig();}
  public void toggle(){if(running)stop("MANUAL_STOP");else start();}
- public void start(){cancelAutoStart();if(running)return;var c=Minecraft.getInstance();try{
+ public void start(){cancelAutoStart();if(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.running())return;if(running)return;var c=Minecraft.getInstance();try{
   if(Ultimate_GardenClient.getConfigManager().isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT))throw new IllegalStateException("CONFIG_RESTART_REQUIRED");
   var farm=Ultimate_GardenClient.getFarmController();if(farm.shouldPauseByHotkey()||farm.getCommand().hasPendingWork())throw new IllegalStateException("FARM_BUSY");
   if(c.player==null||c.level==null)throw new IllegalStateException("WORLD_UNAVAILABLE");

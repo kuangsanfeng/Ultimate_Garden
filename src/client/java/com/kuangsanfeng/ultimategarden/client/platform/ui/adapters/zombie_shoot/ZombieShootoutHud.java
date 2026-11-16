@@ -18,7 +18,7 @@ import java.util.Locale;
 
 /** Read-only debug view. Never solves, aims, clicks, or advances a macro state. */
 public class ZombieShootoutHud {
-    private record Row(String label, String value, int color) { }
+    private record Row(String key,String label, String value, int color) { }
     private final ConfigManager configs;
     private final LanguageManager language;
     public ZombieShootoutHud(ConfigManager configs) {
@@ -30,7 +30,7 @@ public class ZombieShootoutHud {
         return value == null || !Double.isFinite(value) ? text("none") : String.format(Locale.ROOT, "%.2f%s", value, unit);
     }
     private String angles(Double yaw, Double pitch) { return number(yaw, "°") + " / " + number(pitch, "°"); }
-    private void add(List<Row> rows, String key, String value) { rows.add(new Row(text(key), value, 0xffffffff)); }
+    private void add(List<Row> rows, String key, String value) { rows.add(new Row(key,text(key), value, 0xffffffff)); }
     public void render(GuiGraphicsExtractor g) {
         var client = Minecraft.getInstance();
         boolean editing=HudAdjustmentController.isActive();
@@ -50,18 +50,20 @@ public class ZombieShootoutHud {
         add(rows, "current_angles", angles((double)client.player.getYRot(), (double)client.player.getXRot()));
         add(rows, "target_angles", angles(s.targetYaw(), s.targetPitch()));
         add(rows, "aim_error", number(s.aimError(), "°"));
-        rows.add(new Row(text("aim_ready"), text(s.aimReady() ? "on" : "off"), s.aimReady() ? enabled : disabled));
+        rows.add(new Row("aim_ready",text("aim_ready"), text(s.aimReady() ? "on" : "off"), s.aimReady() ? enabled : disabled));
         add(rows, "tolerance", number(s.tolerance(), "°"));
         add(rows, "correction", number(s.correctionThreshold(), "°"));
         add(rows, "aim_mode", s.aimMode() == null ? text("none") : text("mode." + s.aimMode()));
         add(rows, "cooldown", number(s.cooldownSeconds(), " s") + " / " + number(s.remainingSeconds(), " s"));
         String confirmation = text(s.confirmationEnabled() ? "on" : "off");
         if (s.confirmationEnabled() && !s.confirmationState().equals("IDLE")) confirmation += " / " + text("confirmation." + s.confirmationState());
-        rows.add(new Row(text("confirmation"), confirmation, s.confirmationEnabled() ? enabled : disabled));
-        rows.add(new Row(text("attempt"), text("attempt." + s.attemptState()), s.attemptState().equals("IDLE") ? 0xffffffff : enabled));
+        rows.add(new Row("confirmation",text("confirmation"), confirmation, s.confirmationEnabled() ? enabled : disabled));
+        rows.add(new Row("attempt",text("attempt"), text("attempt." + s.attemptState()), s.attemptState().equals("IDLE") ? 0xffffffff : enabled));
         add(rows, "ping", s.ping() == null ? text(controller.pingStatus().equals("MEASURING") ? "measuring" : "unavailable") : number(s.ping(), " ms"));
         add(rows, "latency", number(s.latencyTicks(), " tick"));
-        int width = 288, height = 59;
+        var hud=configs.getHudConfig();var id=com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.HudId.ZOMBIE_SHOOTOUT;
+        rows.removeIf(row->!hud.visible(id,row.key()));boolean showStatus=hud.visible(id,"status");
+        int width = 288, height = showStatus?59:40;
         for (var row : rows) {
             width = Math.max(width, client.font.width(row.label()) + 22);
             width = Math.max(width, client.font.width(row.value()) + 22);
@@ -83,9 +85,9 @@ public class ZombieShootoutHud {
         g.pose().scale(scale);
         HudPanel.background(g, width, height, s.running() ? enabled : 0xffed6669);
         HudPanel.title(g, "Zombie Shootout");
-        RoundedRect.fill(g, 11, 29, 6, 6, 3, accent);
-        g.text(client.font, text("state." + s.state().name()), 23, 28, accent, false);
-        int rowY = 47;
+        if(showStatus){RoundedRect.fill(g, 11, 29, 6, 6, 3, accent);
+        g.text(client.font, text("state." + s.state().name()), 23, 28, accent, false);}
+        int rowY = showStatus?47:28;
         for (var row : rows) {
             int rh = HudPanel.rowHeight(row.label(), row.value(), width);
             HudPanel.row(g, row.label(), row.value(), width, rowY, rh, row.color());

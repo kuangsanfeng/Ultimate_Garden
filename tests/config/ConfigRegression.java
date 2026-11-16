@@ -15,6 +15,15 @@ public final class ConfigRegression {
     public static void main(String[] args) throws Exception {
         Path dir = Files.createTempDirectory("ultimate-garden-config-test-");
         ConfigManager manager = new ConfigManager(dir);
+        check(manager.getUIConfig().isMappingReplayShowChunkBorders());
+        manager.getUIConfig().setMappingReplayShowChunkBorders(false);
+        check(manager.saveUIConfig());
+        manager=new ConfigManager(dir);
+        check(!manager.getUIConfig().isMappingReplayShowChunkBorders());
+        var uiDocument=com.google.gson.JsonParser.parseString(Files.readString(dir.resolve("ui.json"))).getAsJsonObject();
+        uiDocument.remove("mappingReplayShowChunkBorders");Files.writeString(dir.resolve("ui.json"),uiDocument.toString());
+        manager=new ConfigManager(dir);
+        check(manager.getUIConfig().isMappingReplayShowChunkBorders());
         check(Files.exists(dir.resolve("crops.json")));
         check(!manager.getGeneralConfig().isAutoResumeFarmAfterGuiClose());
         manager.getGeneralConfig().setAutoResumeFarmAfterGuiClose(true);

@@ -24,6 +24,8 @@ public class VirtualInput {
     private boolean suspended;
     private final java.util.Set<String> actionKeys = new java.util.HashSet<>();
     private boolean actionAttack;
+    /** Only this instance's virtual holds, never physical key state. */
+    public boolean hasHeldInput() { return keyboard.hasHeldKeys() || mouse.isLeftDown(); }
     public record HeldActions(java.util.Set<String> keys, boolean attack) { }
 
     /** Reapply only current virtual holds; do not select slots or restart a route. */

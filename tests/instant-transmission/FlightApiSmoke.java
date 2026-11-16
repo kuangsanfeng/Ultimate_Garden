@@ -1,0 +1,3 @@
+import com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.*;
+import com.kuangsanfeng.ultimategarden.client.function.instant_transmission.routing.*;
+public final class FlightApiSmoke {public static void main(String[] args){var start=new Point(.5,0,.5);var result=new FlightModel().predict(start,new Point(-17.5,27,18.5),45,-45,3,Capability.standard());if(result.error()!=0)throw new AssertionError();var route=new RoutePlanner().plan(start,new Point(.5,0,24.5),Capability.standard(),RouteStrategy.DIRECT_AIM,Terrain.UNKNOWN);if(route.points().size()!=2)throw new AssertionError();System.out.println("PASS: pure flight/routing compiled and executed with JDK alone, no Minecraft/Fabric/Gson classpath.");}}

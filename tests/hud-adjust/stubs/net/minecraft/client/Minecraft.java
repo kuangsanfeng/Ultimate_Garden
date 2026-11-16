@@ -2,7 +2,11 @@ package net.minecraft.client;
 
 public final class Minecraft {
  public static final Minecraft INSTANCE=new Minecraft();
- public Object level=new Object(), player=new Object(), screen;
+ public Object level=new Object(), screen;public Player player=new Player();
+ public static class Player {public float getYRot(){return 0;}public float getXRot(){return 0;}}
+ public final Font font=new Font();public final Options options=new Options();
+ public static final class Font {public int width(String value){return value.length()*6;}}
+ public static final class Options {public boolean hideGui;}
  public final Window window=new Window();
  public static Minecraft getInstance(){return INSTANCE;}
  public Window getWindow(){return window;}

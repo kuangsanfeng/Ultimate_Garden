@@ -1,0 +1,3 @@
+package com.kuangsanfeng.ultimategarden.client.platform.input.view;
+import net.minecraft.client.Minecraft;
+public final class NativeViewInput {public static int aims,clicks,cancels;public static final java.util.List<String> trace=new java.util.ArrayList<>();public static boolean dispatching(){return false;}public double aim(Minecraft c,double y,double p,double peak,double curve,double dt){aims++;trace.add("aim");return 1;}public boolean click(Minecraft c){clicks++;trace.add("click");return true;}public void resetAim(){}public void consumed(){}public void cancel(Minecraft c){cancels++;trace.add("cancel");}}

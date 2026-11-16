@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Gold Mine",
+  "origin": {
+    "x": -16,
+    "y": 0,
+    "z": -304
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

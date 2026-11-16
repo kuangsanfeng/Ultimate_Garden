@@ -87,7 +87,7 @@ public final class LanguageRegression {
         }
         Path screen=Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/menu/GardenMenuAdapter.java");
         Matcher refs=Pattern.compile("\"(ui\\.ultimategarden\\.[^\"]+)\"").matcher(Files.readString(screen));
-        Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.","ui.ultimategarden.shootout.","ui.ultimategarden.view_check.","ui.ultimategarden.developer.shootout.log.");
+        Set<String> prefixes=Set.of("ui.ultimategarden.","ui.ultimategarden.mode.","ui.ultimategarden.field.","ui.ultimategarden.account.file.","ui.ultimategarden.random_delay.","ui.ultimategarden.hud.mode.","ui.ultimategarden.hud.item.","ui.ultimategarden.shootout.","ui.ultimategarden.view_check.","ui.ultimategarden.developer.shootout.log.","ui.ultimategarden.instant.","ui.ultimategarden.instant.strategy.","ui.ultimategarden.hud.panel.","ui.ultimategarden.hud.field.ZOMBIE_SHOOTOUT.","ui.ultimategarden.hud.field.INSTANT_TRANSMISSION.","ui.ultimategarden.mapping_hud.","ui.ultimategarden.mapping.","ui.ultimategarden.mapping.status.","ui.ultimategarden.mapping.festival.","ui.ultimategarden.replay.");
         while(refs.find())if(!prefixes.contains(refs.group(1)) && !refs.group(1).equals("ui.ultimategarden.hint."))check(english.has(refs.group(1)));
         for(var category:com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootLogCategory.values()){
             check(english.has("ui.ultimategarden.developer.shootout.log."+category.name()));

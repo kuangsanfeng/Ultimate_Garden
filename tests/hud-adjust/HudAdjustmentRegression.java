@@ -66,6 +66,21 @@ public final class HudAdjustmentRegression {
   for(var id:HudConfig.HudId.values())check(restored.bounds(id).equals(hud.bounds(id)));
   check(!restored.isShowHud()&&!restored.isShowZombieShootoutHud());
   check(restored.isFarmOnlyWhileRunning()&&restored.isZombieOnlyWhileRunning());
+  hud.setShowInstantTransmissionHud(false);
+  var farmSnapshot=hud.bounds(HudConfig.HudId.FARM_MACRO);var zombieSnapshot=hud.bounds(HudConfig.HudId.ZOMBIE_SHOOTOUT);
+  c.screen=menu;HudAdjustmentController.begin(menu);
+  HudAdjustmentController.layout(HudConfig.HudId.INSTANT_TRANSMISSION,300,400,300,180,150,90);
+  HudAdjustmentController.move(450,480);HudAdjustmentController.button(0,1);
+  check(HudAdjustmentController.selected()==HudConfig.HudId.INSTANT_TRANSMISSION);
+  HudAdjustmentController.move(480,500);HudAdjustmentController.button(0,0);
+  var transmissionMoved=hud.bounds(HudConfig.HudId.INSTANT_TRANSMISSION);check(transmissionMoved.x()==.33);
+  HudAdjustmentController.move(630,600);HudAdjustmentController.button(0,1);
+  HudAdjustmentController.move(650,620);HudAdjustmentController.button(0,0);
+  check(hud.bounds(HudConfig.HudId.INSTANT_TRANSMISSION).width()>.3);
+  check(hud.bounds(HudConfig.HudId.FARM_MACRO).equals(farmSnapshot));check(hud.bounds(HudConfig.HudId.ZOMBIE_SHOOTOUT).equals(zombieSnapshot));
+  HudAdjustmentController.finish(true);
+  check(new ConfigManager(root).getHudConfig().bounds(HudConfig.HudId.INSTANT_TRANSMISSION).equals(hud.bounds(HudConfig.HudId.INSTANT_TRANSMISSION)));
+  check(!hud.isShowInstantTransmissionHud()&&!new ConfigManager(root).getHudConfig().isShowInstantTransmissionHud());
   // Changing GUI resolution changes screen geometry, never the stored normalized bounds.
   c.window.w=500;c.window.h=350;c.screen=menu;HudAdjustmentController.begin(menu);
   HudAdjustmentController.layout(HudConfig.HudId.FARM_MACRO,hud.x()*500,hud.y()*350,hud.width()*500,hud.height()*350,50,35);

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Deep Caverns",
+  "origin": {
+    "x": 32,
+    "y": 0,
+    "z": 16
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

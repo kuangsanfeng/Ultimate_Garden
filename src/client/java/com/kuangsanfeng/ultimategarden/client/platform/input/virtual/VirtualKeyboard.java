@@ -36,6 +36,27 @@ public class VirtualKeyboard {
         this.minecraft = minecraft;
     }
 
+    public boolean hasHeldKeys() { return !pressedKeys.isEmpty(); }
+    /** Read-only observation of this keyboard's holds and the current bound hardware keys. */
+    public java.util.Map<String,Object> diagnosticState() {
+        var held=new java.util.LinkedHashMap<String,Object>();
+        var physical=new java.util.LinkedHashMap<String,Object>();
+        for(String name:java.util.List.of("W","A","S","D","SPACE","SHIFT")) {
+            KeyMapping mapping=findKeyMapping(name);held.put(name,mapping==null?null:pressedKeys.contains(mapping));
+            Boolean down=null;
+            try { if(mapping!=null) {
+                var key=((KeyMappingAccessor)mapping).getKey();
+                if(key.getValue()>=0) {
+                    long window=minecraft.getWindow().handle();
+                    if(key.getType()==InputConstants.Type.KEYSYM) down=GLFW.glfwGetKey(window,key.getValue())==GLFW.GLFW_PRESS;
+                    else if(key.getType()==InputConstants.Type.MOUSE) down=GLFW.glfwGetMouseButton(window,key.getValue())==GLFW.GLFW_PRESS;
+                }
+            } } catch(RuntimeException unavailable) { down=null; }
+            physical.put(name,down);
+        }
+        var result=new java.util.LinkedHashMap<String,Object>();result.put("virtualHeld",held);result.put("physicalBoundKeys",physical);
+        return result;
+    }
     public void reapplyHeldState() { for (KeyMapping mapping : pressedKeys) mapping.setDown(true); }
     private boolean routesToGame() {
         return minecraft.screen == null || minecraft.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen menu && menu.keepsFarmingInput();

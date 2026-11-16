@@ -8,6 +8,7 @@ public final class VirtualKeyboard {
     public void setInputAllowed(BooleanSupplier allowed) { }
     public void keyDown(String key) { held.add(key); nativeKeys.add(key); }
     public void keyUp(String key) { held.remove(key); nativeKeys.remove(key); }
+    public boolean hasHeldKeys() { return !held.isEmpty(); }
     public void reapplyHeldState() { nativeKeys.addAll(held); }
     public void releaseAll() { held.clear(); nativeKeys.clear(); }
     public void keyClick(String key) { }

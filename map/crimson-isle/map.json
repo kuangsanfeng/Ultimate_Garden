@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Crimson Isle",
+  "origin": {
+    "x": -368,
+    "y": 0,
+    "z": -432
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

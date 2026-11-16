@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "The End",
+  "origin": {
+    "x": -512,
+    "y": 0,
+    "z": -288
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

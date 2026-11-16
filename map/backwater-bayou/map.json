@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "Backwater Bayou",
+  "origin": {
+    "x": -16,
+    "y": 0,
+    "z": -16
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

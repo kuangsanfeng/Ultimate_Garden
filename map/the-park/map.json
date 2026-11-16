@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "worldName": "The Park",
+  "origin": {
+    "x": -272,
+    "y": 0,
+    "z": -32
+  },
+  "maxY": 256,
+  "festivals": [
+    "NONE"
+  ],
+  "selectedFestival": "NONE"
+}

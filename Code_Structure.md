@@ -1302,3 +1302,598 @@ ui/adapters/GardenMenuAdapter承接界面装配，按功能分为Farm/Pest/Shoot
 - 与执行前快照逐文件对照，生产 Java 文本仅有包名及路径映射变化；源码和测试未遗留旧包名或旧路径。资源文件未变，`git diff --check` 通过。
 - 分支仍为 `master`，HEAD 与上述起点一致。未执行提交或推送。
 - 本次未进行游戏内验证；输入、网络与服务器交互的实机表现仍需手动验收，回归脚本通过不等同于 Hypixel 实测。
+
+
+## 15. Instant Transmission 位移采集（本地测试分支）
+
+基线为 master / 6be9b78；开始时工作区干净，本地 origin/master 与 master 一致。在 test/Instant-Transmission-dataCollect 开发，master 指针不变。本项不自动合并、提交或推送。
+
+### 15.1 入口、配置与公共能力
+
+| 位置 | 职责与调用关系 |
+|---|---|
+| [InstantTransmissionController](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java) | 客户端线程单例；start/toggle/stop 为菜单和热键的统一入口；tick 负责试验、归位、采样，frame 仅推进公共鼠标视角。 |
+| [TransmissionTrial](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/TransmissionTrial.java) | 计划点击 Tick、派发计数、响应观察、XZ 稳定段与落地分离；200 Tick 有界观察。 |
+| [InstantTransmissionConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/model/InstantTransmissionConfig.java) | GeneralConfig 持有；保存于现有账号隔离 general.json 的 instantTransmission 对象，沿用 Schema、校验、备份与原子写入。六项角度参数及可选 distanceBonusNote 持久化，运行状态不保存。 |
+| [TransmissionLog](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/log/TransmissionLog.java) | 业务事件经 CollectionSession 和 JsonlWriter 转为只读快照；有界后台队列写入，END 后拒收，异步排空关闭；退出客户端提供有界等待。 |
+| [TransmissionPositionMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/TransmissionPositionMixin.java) | 在原生 handleMovePlayer 已切回客户端线程、应用位置前取坐标，RETURN 后取坐标；同 Tick 多次更新各自记录，不取消包或修改处理结果。 |
+
+菜单：Settings → Developer Options → Instant Transmission，提供启停、状态、六项角度输入及装备距离加成备注。运行期间固定参数，输入控件禁用。默认 Yaw 0→45 / 5°，Pitch 0→-90 / -5°；未整除时补终点且只出现一次。启动校验有限角度、正步长和有序范围，并限制总试验数量。热键 Toggle Instant Transmission Test 默认 None，沿用 MacroKeyBindings 上升沿和文本输入保护。
+
+视角：沿用 ShootoutAimFrameMixin 所在的原生鼠标消费前帧回调，调用 NativeViewInput.aim → ViewRotationPlanner，使用公共 Tanh 规划、灵敏度、反转、50 ms 步间上限及原生消费后读回；业务不直接写视角。热栏通过 VirtualKeyboard.slot(2)，观察第二格实际被选中后才使用 NativeViewInput.click 的完整 Press/Release。WindowsInputInterceptor 的现有 external owner 回调组合本测试所有权；Farm 和 Shootout 互斥启动，测试不改 Focus 设置。
+
+### 15.2 流程与采样
+
+启动固定脚部所在基准方块与预期站立 Y → 菜单启动时等待关闭菜单 → 实际对齐 0/0 → 切第二格并确认 → 向下复位 → 核对基准 XZ 中心和 Y（容差 0.01）→ 固定本组角度 → 收齐两个完整 Tick → 首击。
+
+按 Yaw、Pitch、1/2/3 次点击组遍历，默认 570 组。END_CLIENT_TICK 同一阶段在相对 Tick 0、2、4 派发；不因等待前次位置更新而推迟组内点击，也不追补到同一 Tick。TimedWindow 只保存两条预采样，首击纳入 -2/-1，记录 0 至响应及落地或超时。组间先落地、归正 0/0，再按 XZ 差使用 W/A/S/D 回到基准方块；释放移动后向下使用一次，标为 RESET。为处理竖直视向的 Yaw 不唯一，测试角对齐先通过公共链路对齐本组 Yaw / Pitch 0，再对齐本组 Pitch。最后一组结束直接释放所有权，不复位；默认最后测试角为 +45/-90。
+
+位置应用事件保留应用前后原始 XYZ，位移超过 0.05 格标为可辨识位置更新；这不是服务端技能成功认证。最后一次派发后必须观察到新响应，XZ 两个连续 Tick 稳定（0.01 格）才给出暂定终点；记录稳定段起点，再以 onGround 记录首个落地样本。响应重置稳定段，避免垂直传送沿用传送前的 Y。多击响应不足时等待有界观察，标为 LAST_USE_UNCONFIRMED 或 NO_IDENTIFIABLE_RESPONSE，不把计划次数改成观测次数。自然下落本身不作为传送证据。单击恰有一次可辨识更新仅提供配对候选，仍不能证明因果；多击统一标为配对未确认。
+
+### 15.3 日志、清理及验证边界
+
+实际文件：当前游戏实例下 logs/ultimategarden/instant transmission/instant-transmission.jsonl，追加写入并保留历史。每批 START/END 有绝对时间戳、batchId、单调 elapsedMs 和 Tick；每组 trialId 关联 TRIAL_START、RIGHT_CLICK、SNAPSHOT、POSITION_UPDATE、RESULT。分别保留计划次数/计划 Tick、实际派发数/时刻、可辨识更新数、原始坐标/速度/实际角度/输入状态、暂定终点及落地点；使用成功次数为 UNCONFIRMED，地形截断为 UNKNOWN。批次参数另有 PARAMETERS；中断用 CANCEL_OR_FINISH 和 END 记录原因与部分进度，不伪造完整结果。
+
+GUI/失焦/鼠标释放/暂停、槽位变化、冲突任务、世界/连接/账号变化、手动停止、归位卡住、状态超时或日志失败均进入统一 stop，取消后续点击和转向，释放本实例键盘持键、清空窗口/试验/世界引用，结束采集并排空已接受日志。排空中的写入器完成前不接受新批次，避免批次交错。
+
+[独立回归入口](tests/instant-transmission/run.ps1)覆盖角度端点、570 组 0/2/4 时序、前一次稳定段不能结束后一次点击、垂直更新、稳定段起点/落地分离、两条预采样、配置保存、JSONL 精度与单次 END，以及公共输入接线静态检查。测试结果及构建输出保存在忽略目录 .gradle/instant-audit/。尚未进行 SkyBlock 实机验证：技能是否接受点击、Mana/地形影响、向下复位的服务器行为、网络延迟下多击配对及最终实际角度均须手动验收；本地模拟通过不等同于服务器实测。
+
+本次验证结果：JDK 25 下 clean build --offline 通过；新增 instant-transmission 回归 1,748 项通过，既有 context、config、gui、route、menu-input、focus、hints、hud-adjust、esp、shootout 共 10 组脚本全部退出码 0；最后加入键盘会话代号防止旧回调跨批次后，再次 build 与专属回归通过。git diff --check 通过。新增中文及英文键一致、文档新增源码链接有效。结果见 .gradle/instant-audit/final-results.tsv，最后补验见 generation-build.txt / generation-test.txt。未执行 SkyBlock 实机验证。
+
+
+### 15.4 RESET 跳跃后向下归中修复
+
+仅调整 RESET：首次归中和组间归中仍共用 SETTLE 分支。在公共鼠标链路确认 Pitch +90°、完成原有稳定等待后，释放移动键，以 VirtualKeyboard.keyDown("SPACE") 发起一次跳跃，进入 RESET_JUMP；下一客户端 Tick 先 keyUp("SPACE")，再读取 onGround 与实际 Y。只有 onGround == false 且 Y 高于起跳前，才通过原有 beginTrial(1) → NativeViewInput.click 发起一次标记为 RESET 的右键。预采样窗口保持滚动，右键后仍沿用 RESET_WAIT 的响应、落地及基准 XZ/Y 核对。
+
+[TransmissionResetJump](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/TransmissionResetJump.java)仅持有本次 RESET 的起跳 Y、Tick、单调起点和一次性许可。未离地最多等待 20 Tick / 1 秒；首次观测离地却未高于起跳点、超时、视角失准或空中右键被占用时进入既有统一 stop 失败收尾，不重跳、不补点。stop 清除许可并沿用 keyboard.releaseAll() 释放跳跃键，停止后不能由旧等待发出右键。
+
+修改入口为 InstantTransmissionController.tick()/stop() 和 RESET 专用许可；正式 TEST 分支、TransmissionTrial.due() 以及 0/2/4 Tick 调度未改。TransmissionRegression 新增离地前禁点、单次许可、未起跳/错过窗口、取消后禁点与重复 RESET 检查，并核对一次跳跃按下、释放顺序及统一 Stop 清理接线。SkyBlock 的实际起跳消费、空中 AOTE 响应和落地归中仍为 Not Verified In-Game。
+
+本次 RESET 修复验证：JDK 25 的 build --offline 通过；instant-transmission 回归 1,809 项检查通过（含新增 61 项 RESET 判定/接线检查），context 与 shootout 回归退出码均为 0。执行前文件哈希对照确认仅修改控制器、RESET 专用许可、测试和本文档，既有正式试验调度与落地核对代码未变。证据保存在 .gradle/instant-reset-audit/，不进入版本控制。
+
+
+### 15.5 RESET 起跳高度阈值调整
+
+本项替代 15.4 中“离地且 Y 高于起跳前即可右键”的旧触发条件。[TransmissionResetJump.update()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/TransmissionResetJump.java)在起跳前记录脚部 startY，离地后低于 4.0 格保持 WAIT；仅在 onGround == false 且 currentY - startY >= 4.0 的首个客户端 Tick 返回一次 CLICK，兼容单 Tick 跨越阈值。未达到阈值便落地返回 FAILED，原有未起跳/超时安全失败仍保留。clear() 同时清除起跳高度、空中标记与待触发许可，中途停止后不会补发。
+
+控制器原有 Pitch +90° 对齐检查、一次跳跃及释放、RESET 右键派发、落地等待、基准 XZ/Y 校验与正式测试 0/2/4 Tick 调度均未修改。[TransmissionRegression](tests/instant-transmission/TransmissionRegression.java)覆盖阈值以下（含紧邻 4.0 的浮点值）、恰好 4.0、跨越 4.0、地面高度不足以触发、低跳落地失败、单次放行与停止取消。JDK 25 的 build --offline 通过，专属回归共 1,824 项检查通过；输出位于 .gradle/instant-reset-height-audit/。SkyBlock 实际跳跃高度和空中 AOTE 响应仍为 Not Verified In-Game；本次未改变跳跃能力或高度。
+
+
+### 15.6 正式 Pitch 扫描改为向上
+
+[InstantTransmissionConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/model/InstantTransmissionConfig.java)的正式测试默认三元组改为 PITCH_START=0、PITCH_END=-90、PITCH_STEP=-5；Yaw 默认仍为 0→+45 / +5。菜单直接读取同一配置模型。axis() 支持升降序：步长必须有限非零、符号与非零范围方向一致；起止相同仅测一次，未整除时补终点且不重复。保留原有样本数量上限。默认仍为 10×19×3=570 组，最后计划视角为 +45/-90。
+
+load() 仅在持久化对象中显式存在数值型的旧默认 Pitch 三元组 0/+90/+5 时迁移为 0/-90/-5，通过原有 General 模块的修复备份和原子保存回写；保留 Yaw、备注及其他配置，自定义 Pitch 三元组不迁移。缺失字段采用新默认值。本次只读检查 run/config 中两个 general.json，均没有 instantTransmission Pitch 字段，不需要直接改写运行配置文件。
+
+启动对齐仍为 Yaw 0 / Pitch 0；RESET 仍对齐 +90°，单次跳跃后在空中且脚部相对高度 >=4.0 时向下使用 AOTE。控制器、RESET 专用许可、右键和 0/2/4 Tick 调度均未改。
+
+验证：JDK 25 的 build --offline 通过；专属回归 1,873 项通过，涵盖完整默认降序、非整除终点、相等端点、错误符号/零步长拒绝、旧默认迁移回写与备份、自定义保留、最后 +45/-90 计划角度和 RESET +90 接线；config 回归通过。执行前后哈希核对范围为配置模型、专属测试与本文档。结果保存在 .gradle/instant-pitch-audit/。最终实际视角和 SkyBlock 响应仍为 Not Verified In-Game。
+
+
+### 15.7 Instant Transmission 测试 HUD
+
+HUD 标题固定为 Instant Transmission。[InstantTransmissionHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/instant_transmission/InstantTransmissionHud.java)由 Ultimate_GardenClient 使用 UiRegistry.hud("instant_transmission_status", ...) 注册，复用 HudPanel 的深色半透明背景、标题、白色两列文字和分隔线。正常游戏由独立 Show Instant Transmission HUD 开关控制（默认开启）；停止后保留结果直到下次成功启动。隐藏原生 HUD 或打开 Mod 菜单时沿用已有显示规则；布局编辑模式可预览。
+
+[InstantTransmissionController.hudSnapshot()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java)提供[不可变 TransmissionHudSnapshot](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/TransmissionHudSnapshot.java)：按固定计划计算组序号/总组数，区分正式点击组和 RESET；读取正式目标/实际角度、归中对齐角度、起跳相对高度、预采样数、trial.actual/trial.planned、trial.updates 及距首击 Tick。RESET 高度通过 TransmissionResetJump.relativeHeight() 只读取得，既不改许可也不重置起跳点。阶段展示从原状态和采样器已有条件派生，区分点击序列、等待位移稳定及等待落地，不驱动业务状态。
+
+停止前只复制标量和字符串，保留真实停止原因及最近 RESULT；自然完成使用最后一组试验快照，避免组索引递增及 trial 清空后丢失最后角度/计数。缓存只持有两份不可变显示快照和结果字符串，不保留实体、世界、输入或历史轨迹，下一次启动重置。原有输入、角度、时序、响应判定和清理顺序不变。
+
+[TransmissionHudContent](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/instant_transmission/TransmissionHudContent.java)负责纯展示转换，使用 transmission_hud.* 双语键；具体阶段只显示相关详情。实际派发数与可辨识位置更新数分行显示，不把位置更新计数当成技能成功次数。超时、复位校验、缺少明确位移及手动停止等原因使用对应翻译；未知原因保留原始代码。
+
+布局复用 HudAdjustmentController，以 HudId.INSTANT_TRANSMISSION 隔离位置与大小；账号 hud.json 新增 instantTransmissionBounds {x,y,width,height}，沿用归一化坐标、校验、保存、旧配置兼容机制，Farm/Shootout 的布局及开关不变。通过 Settings → HUD → Adjust HUD Position & Size 编辑，新增面板默认位于屏幕下方中部。
+
+验证：JDK 25 的 build --offline 通过；instant-transmission 回归 1,914 项通过，覆盖阶段切换、高度、目标/实际角度、派发与更新计数分离、最终结果及原因保留、双语和只读展示接线；hud-adjust 回归 134 项通过，含新 HUD 的实际编辑控制器拖动/缩放、独立性与保存恢复（原生边界使用 stubs）。config、gui、context、shootout 回归均通过。控制器移除 HUD 专用观测/复制代码后，与本轮修改前源码一致（已考虑换行格式）；git diff --check 通过。输出保存在 .gradle/instant-hud-audit/。未做真实游戏中的面板视觉与 SkyBlock 阶段联动验证。
+
+
+### 15.8 Instant Transmission HUD 独立显示开关与正常渲染修复
+
+原正常渲染入口要求 snapshot.available() 为 true，因而未开始试验时被提前返回；布局预览绕过该条件。同时 Settings → HUD 没有对应显示开关。本次保留原有 UiRegistry 注册，仅修正自身入口。
+
+Settings → HUD 新增 Show Instant Transmission HUD / 显示瞬间传送 HUD，使用现有 Toggle、Hint、保存反馈和模块保护机制。账号 hud.json 的 showInstantTransmissionHud 默认 true，旧配置缺失时亦为 true；仅接受布尔值，保持其他 HUD 开关及 INSTANT_TRANSMISSION 的位置/尺寸不变。
+
+[HudConfig.showTransmission(editing)](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/model/display/HudConfig.java)返回 editing || showInstantTransmissionHud；[InstantTransmissionHud.render()](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/instant_transmission/InstantTransmissionHud.java)每帧读取同一配置源，不再受试验是否开始/运行或 available 标记限制。有效游戏环境下开启显示、关闭隐藏；仍沿用原生隐藏 HUD、Mod 菜单等既有环境条件。编辑模式始终允许预览；退出编辑恢复保存的显示值。切换开关不会修改控制器或最终快照，停止/结束后的最后状态和原因继续保留。
+
+[TransmissionHudRenderRegression](tests/hud-adjust/TransmissionHudRenderRegression.java)直接执行生产渲染入口，以游戏/绘图 stubs 捕获是否绘制、标题及原因文字，覆盖未启动显示、开关即时生效、手动停止/完成、关闭时预览、退出后隐藏、布局不变及重新加载。原编辑回归追加关闭状态下拖动/缩放与保存值保留验证。JDK 25 的 build --offline、hud-adjust（135 项编辑检查 + 27 项渲染检查）、config、gui 和 instant-transmission（1,914 项）均通过；证据在 .gradle/instant-hud-toggle-audit/。原生游戏画面尚未实测，stubs 检查不等同于实机视觉验证。
+
+
+### 15.9 Instant Transmission 输入冲突与启动诊断修复
+
+本项移除 InstantTransmissionController 对 !FarmController.canEditRouteConfiguration() 的冲突判定，保留该 API 原有的路线编辑用途。[FarmController.inputOwnership()](src/client/java/com/kuangsanfeng/ultimategarden/client/macro/farm/FarmController.java)新增只读 InputOwnership：running 为 FarmState.isRunning()，heldInput 为本实例 VirtualInput.hasHeldInput() 或 WindowsInputInterceptor.isLocallyEnabled()，actionPending 为 command.hasPendingWork() 或尚未执行的菜单动作。VirtualInput 查询自身 VirtualKeyboard 的持键集合和 VirtualMouse.leftDown；isLocallyEnabled() 仅读取 Farm 使用的本地拦截预留，不读取包含外部所有者的 shouldBlockInput()，避免把 Instant Transmission 自己算作 Farm 占用。两者均为只读查询，不读取玩家物理按键。只有这些运行/持有/动作条件占用输入；菜单开关、路线可编辑性及独立 Pest 倒计时不参与。倒计时触发待执行 Loadout 后，沿动作队列的实际状态产生冲突。未改变 Farm 路线、动作、计时器及释放语义。
+
+[TransmissionInputCheck](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/TransmissionInputCheck.java)接收判定点一次读取的值，供 startFailure()/runtimeFailure() 共用 ownerFailure()，依次区分 Farm、Shootout 和 HUD 编辑器。运行期不再要求 onGround（RESET 跳跃仍须正常运行）；启动须落地。世界/连接引用缺失与变化分别报告，不再用原笼统的 INVALID_WORLD_GROUND_OR_INPUT_CONFLICT。可归因的视角控制前提（玩家死亡、屏幕/叠加层、暂停、失焦、鼠标未捕获）也各有原因码。
+
+[InstantTransmissionController.start(StartSource)/waitForMenu()/usable()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java)使用同一检查快照。菜单按钮标记 MENU，热键标记 HOTKEY，旧入口保留 API。普通游戏热键请求立即校验；有屏幕时进入 WAIT_GUI，此时 running=true，HUD 仍显示等待关闭菜单，不创建虚拟键盘或采集批次。关闭菜单后等待原有原生/Farm 鼠标恢复完成（屏幕/叠加层关闭、非暂停、窗口有效且鼠标已捕获），再读取并校验落地与占用，安全通过后 activate() → START_ALIGN。等待期间真实上下文丢失/变化或已明确的争用安全终止；不新增 grabMouse、Focus 修改或输入恢复捷径。
+
+| 原因码 | 判据 |
+|---|---|
+| PLAYER_UNAVAILABLE / WORLD_UNAVAILABLE / CONNECTION_UNAVAILABLE | 相应引用为空 |
+| PLAYER_NOT_ON_GROUND | 启动校验时未落地 |
+| INPUT_CONFLICT_FARM / INPUT_CONFLICT_SHOOTOUT / INPUT_CONFLICT_HUD_EDITOR | 对应实际占用来源 |
+| WORLD_CHANGED / CONNECTION_CHANGED / ACCOUNT_CHANGED | 会话引用变化或已有上下文事件 |
+| PLAYER_NOT_ALIVE / SCREEN_OPEN / OVERLAY_ACTIVE / CLIENT_PAUSED / WINDOW_INACTIVE / MOUSE_NOT_CAPTURED | 运行期已观测到的控制前提失效 |
+| GUI_WAIT_TIMEOUT / GUI_RESTORE_TIMEOUT | 等待关闭菜单或鼠标恢复超时 |
+
+拒绝启动统一走 reject()，用新的 TransmissionHudSnapshot.rejected() 覆盖旧 finalHud，不继承上一轮进度或错误。异常停止仍走统一 stop()，只取消本测试的视角/右键、释放本实例持键；不暂停、取消或清理 Farm/Shootout。不可变快照新增 terminationStage，保留旧构造器兼容；前端同时显示 START_REJECTED（拒绝启动）、RUNNING_STOP（运行中停止）等终止阶段、原阶段及原因。菜单 status、HUD 与 lastDiagnostic 使用同一原因码。
+
+每次拒绝或异常停止在统一出口诊断一次：source、stage、phase、code，以及当时的引用可用性/变化、onGround、屏幕类型、Farm 运行/持键/动作标志、Shootout/HUD 编辑占用、暂停、焦点及鼠标捕获等只读值。已有批次写 FAILURE_DIAGNOSTIC 到原 instant-transmission.jsonl；尚未建立批次时写一条 Mod WARN 到当前游戏 latest.log，不为拒绝启动新建采集批次。正常完成/手动停止保留原结束记录；后续停止态 Tick/帧不重复诊断。日志异常不阻止本测试输入清理。
+
+验证：JDK 25 的 build --offline 通过。[instant-start/run.ps1](tests/instant-start/run.ps1)执行生产控制器，游戏、所有者输入边界和日志使用 stubs，93 项覆盖正常热键启动、菜单关闭/鼠标恢复、独立 Pest 倒计时、Loadout 动作出现后的运行期争用、各子条件错误码、新失败覆盖旧结果、停止清理和诊断去重。instant-transmission 1,946 项、menu-input 73 项及 hud-adjust/config/gui/route/context/shootout/focus/hints/esp 全部通过，共 12 组回归退出码 0。记录在 .gradle/instant-start-audit/。尚待 SkyBlock 实机确认：同站位菜单/热键两入口的原生鼠标恢复、实际 Pest Loadout 触发时的争用与现场原因展示；本地 stubs 不等同于服务器验证。
+
+WAIT_GUI 在本次请求中已属于 running 状态，等待期间或关闭后校验失败通过统一 stop() 标为 RUNNING_STOP，并保留 WAIT_GUI 阶段；尚未进入该等待状态就被拒绝的请求标为 START_REJECTED。输入本地/外部所有权分离另经 focus 回归验证，最终为 196 项通过。末次复验见 final-build.txt、final-start.txt、final-instant-transmission.txt、final-focus.txt；初次完整 12 组结果保留在 results.tsv。
+
+
+### 15.10 Instant Transmission RESET 归位诊断（只读观测）
+
+本次仅增加记录；保留原有 WALK 方块归属判断、按键提交顺序、一次跳跃、相对起跳高度达到 4 格且仍在空中的右键门槛、正式试验 0/2/4 Tick 调度，以及停止和落地校验行为。没有修复或预判“走过头”的原因。
+
+**入口与生命周期**
+
+- [InstantTransmissionController](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java) 的 `beginResetDiagnostics()/resetDiagnosticSnapshot()` 提供现场只读数据。首次激活时创建初始 RESET 窗口；后续在 `observe()` 确认正式试验落地时开启下一窗口，关联上一组 `previousTrialId`。`BASE_CONFIRMED` 或统一 `stop()` 结束窗口。尚在等待正式试验响应的落地阶段也持续记录。
+- [TransmissionResetDiagnostics](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/log/TransmissionResetDiagnostics.java) 持有一个 `resetId`、最近观测、最多六个计划按键、最近一次原生输入及一个固定阶段 Tick 样本；无历史轨迹集合。结束时清除临时引用。
+- `tick()` 在原有 END_CLIENT_TICK 控制器入口、Tick 递增后、状态机推进前采样，阶段为 `END_CLIENT_TICK_BEFORE_TEST`。仅在 RESET 窗口写 `RESET_TICK`。窗口在该 Tick 中途开启时，补写同 Tick 已缓存的固定阶段样本（`windowOpenedThisTick`）；窗口外只保留一份内存快照，不写逐 Tick 明细。
+- `enter()`、`submitResetKey()/releaseResetKeys()`、跳跃、`dispatch()`、落地校验在各自原有决策或输入位置补充记录。输入包装仍只调用原来的虚拟输入一次。
+
+**事件与字段**
+
+| 事件 | 实际记录 |
+|---|---|
+| `RESET_BEGIN / RESET_STATE_CHANGE / RESET_END` | resetId、previousTrialId、前后状态、原因及现场坐标/视角 |
+| `RESET_TICK` | 状态、Tick、脚部/速度 XYZ、onGround、实际/目标 Yaw/Pitch、所在 blockX/Z、基准方块、期望中心、带符号 deltaX/Z、insideBaseBlock、归位谓词和结果 |
+| `RESET_BASE_ENTER / RESET_BASE_EXIT` | 首次观测到跨界时的前后快照、方块坐标、速度和按键；表示客户端观测到的边界，不能推断两次采样之间不可见的轨迹 |
+| `RESET_INPUT_SUBMITTED / RESET_INPUT_RELEASE / RESET_WALK_DECISION` | 原始提交/释放请求、前后键状态、提交原因；WALK 决策记录原代码实际使用的 floor(X/Z) 判据、结果及停止/继续走动分支 |
+| `RESET_JUMP_ISSUED / RESET_AIRBORNE / RESET_HEIGHT_GATE` | 跳跃提交、首次观测离地、权威 takeoffY、相对高度、原 resetJump.update() 返回的动作及 4 格判据 |
+| `RESET_RIGHT_CLICK` | 点击前现场、计划与实际 Tick、方块、水平速度、Pitch、相对高度、槽位与实际 dispatched 结果；保留原 RIGHT_CLICK |
+| `RESET_POSITION_CHECK` | 当前/期望 XYZ、各轴误差、各轴 0.01 容差、xzCentered、yMatches、landingObserved、原失败表达式及原错误码 |
+| `POSITION_UPDATE` | 原生应用前后 XYZ、当前状态、递增事件顺序及现场；范围扩展至无 trial 的归位期，同次更新仍只发一条事件。仅原有 trial 存在时调用其 response()，不改变正式传送响应计数 |
+
+普通现场的 `returnPredicateUsedForControl=false` 表示只读几何观察，WALK 实际决策事件为 true；不能把两者混为控制指令。现场保留未取整原始浮点值，字段不可读取时为 null/未知或 observationAvailable=false。
+
+**输入阶段与时间对齐**
+
+[VirtualKeyboard.diagnosticState()](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/input/virtual/VirtualKeyboard.java) 只读本实例虚拟持键集合，并按实际键位绑定查询 GLFW 物理状态；不支持或无法读取的绑定为未知。控制器另记录当前 KeyMapping 状态和本 Tick 计划持键，不能把 KeyMapping 直接视为物理输入来源。
+
+[TransmissionMovementInputMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/TransmissionMovementInputMixin.java) 在本地玩家 `KeyboardInput.tick` RETURN 读取原生 keyPresses 和移动向量，阶段 `KEYBOARD_INPUT_TICK_RETURN`；它不取消输入、不修改玩家或按键。该位置表示原生键盘读取完成，后续自动跳跃/移动处理可能继续改变运动，不能宣称它是最终物理位移。Mixin 仅在当前 RESET 窗口采样，并在客户端 Mixin JSON 中注册一次。
+
+原生读取发生在控制器 END_CLIENT_TICK 递增之前，因此记录 nativeConsumedClientTick = controllerTickAtCallback + 1；END 阶段提交的输入记录 planAppliesFromClientTick = submissionTick + 1。每条保留自身阶段与 Tick，避免把刚提交但未消费的键当作本 Tick 已实际运动的输入。
+
+**文件与写入机制**
+
+沿用当前游戏实例下 `logs/ultimategarden/instant transmission/instant-transmission.jsonl`，使用现有 [TransmissionLog](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/log/TransmissionLog.java)、CollectionSession 和有界 JsonlWriter，不新建文件类别，不覆盖历史记录。保留原 START/END、TRIAL_START、SNAPSHOT、RIGHT_CLICK、RESULT 等结构；新增批次内递增 `eventSequence`、RESET 关联字段。普通记录的 `elapsedMs` 表示写入提交时间；新增现场（包括嵌套前后快照）的 `sampleElapsedMs` 表示实际采样时间，均相对该批次单调起点，不输出新增的绝对单调时钟值。START/END 仍保留原绝对时间戳。
+
+END 增加 `droppedAtClose/writtenAtClose/errorsAtClose/writerErrorAtClose`，它们是关闭请求时读数，非后台排空后的最终计数；后台结束若有丢样/错误，由原 Mod logger 报告最终统计。观测异常不阻断业务输入清理；已接受记录仍按原有关闭/后台排空流程处理。
+
+**验证与复现材料**
+
+JDK 25 的 `gradlew.bat build --offline` 成功。12 组现有回归 instant-transmission、instant-start、context、menu-input、focus、config、gui、hud-adjust、route、shootout、hints、esp 均退出 0。专项为 1,947 项既有传送检查、112 项 RESET JSONL/阶段/精度/边界/写入统计检查，以及 169 项生产控制器启动与归位观测检查（Minecraft、输入与部分日志边界使用 stubs）。
+
+[StartRegression](tests/instant-start/StartRegression.java) 以生产控制器模拟：正式落地 → 走动 → 进入基准方块 → 松键 → 漂出到 Z=12.5529 → 跳跃达到 4 格 → RESET 右键 → 服务端位置应用 Z=12.5 → 落地 XZ 失败/Y 通过。验证窗口外位置更新不漏记/重复、停止后无新增记录、日志捕获开关不改变输入调用序列。额外使用本轮修改前控制器与修改后控制器执行同一场景，完整虚拟输入序列及最终状态一致。证据保存在忽略目录 `.gradle/instant-reset-diagnostics-audit/`。这些检查证明调用顺序及计数保持，不能证明日志零性能开销或真实游戏调度完全无扰动。
+
+Not Verified In-Game：真实 Mixin 加载与原生输入消费、物理按键干扰、惯性、Hypixel 位置修正及日志负载。下次复现请打包完整 `instant-transmission.jsonl`（保留 START 至 END、RESET 与正式试验记录），不要仅截取失败行；若缺 END 或提示写入错误，同时提供对应游戏实例的 `logs/latest.log`。
+
+
+### 15.11 Instant Transmission 日志实际视角回环
+
+[TransmissionLog.event()/relativeTimes()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/log/TransmissionLog.java) 在提交 JSONL 的边界递归复制数据，仅对实际视角字段 `yaw`、`pitch` 应用 `wrapLoggedAngle()`：先 `degrees % 360.0`，大于 180 减 360，小于等于 -180 加 360，输出范围为 **(-180°, +180°]**。不四舍五入，不丢弃跨界余量，不钳制 Pitch 到 ±90°；当前日志入口原本亦无此钳制。普通 Tick 快照、RIGHT_CLICK、RESET_TICK，以及归位事件中嵌套的 before/after/site 和列表快照统一经过该边界。
+
+公共 `ViewAngles.wrap()` 的端点为 [-180°, 180°)，与本次日志约定不同，因此不直接复用或改变它；控制器、输入规划、玩家视角、目标 targetYaw/targetPitch、配置/菜单及测试状态流程均保持原实现。归一化只写入复制后的日志数据，不修改调用方快照。
+
+验证：JDK 25 的 `gradlew.bat build --offline` 成功；[TransmissionRegression.angleLogChecks()](tests/instant-transmission/TransmissionRegression.java) 新增 294 项真实 JSONL 写入检查，覆盖正反跨界、±180 端点、多圈累计、小数精度、实际可达 Pitch -90/0/+90、合成越界 Pitch 不钳制、嵌套快照及原数据/目标角度保持。instant-transmission 共 2,241 项加 112 项 RESET 日志检查通过；instant-start 的 169 项生产控制器回归通过。验证输出位于 `.gradle/instant-log-angles-audit/`。未进行新的 SkyBlock 实机采集；本次仅改变日志数值表示，日志目录与批次格式不变。
+
+
+### 15.12 Instant Transmission RESET 滑行预测与停稳纠偏
+
+[TransmissionCoastPrediction.predict()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/TransmissionCoastPrediction.java) 为 RESET 专用纯计算：从脚部 X/Z 和直接读取的水平速度（格/Tick）开始，**先检查 hypot(vx,vz) >= 0.003，再累加位置，最后将两个速度分量乘 0.546**，循环至低于阈值。低于阈值时累加 Tick 数 N=0；等价位移系数为 (1-0.546^N)/(1-0.546)。保留两轴符号及 double 精度，不额外预衰减速度，不读取其他方块摩擦参数。
+
+**采样与决策入口**
+
+[InstantTransmissionController.returnWalk()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java) 继续由原 END_CLIENT_TICK 调用，使用当前 Tick 原生玩家运动完成后的 position/getDeltaMovement，在提交下一 Tick 的 W/A/S/D 前预测。已核对当前依赖源码：Fabric 的 MinecraftMixin 在 Minecraft.tick RETURN 发出 END_CLIENT_TICK；该方法内的 level.tickEntities 已先执行。没有新增帧/Tick 驱动、额外位置包或新的输入实现。
+
+WALK 内部增加 ReturnPhase（不另建 Macro 状态机）：
+
+| 内部阶段 | 行为与退出 |
+|---|---|
+| APPROACH | 预测停点 floor(X/Z) 在基准方块内时立即释放持键，本 Tick 不再按下；沿当前速度方向已越过远侧边界时也释放；预测仍未到达则复用原 W/A/S/D 方向继续走 |
+| COAST | 不提交移动，等待 onGround、水平速率 <0.003 且连续两次 Tick 的相邻 XZ 位移 <=0.01；记录实际停点。实际在基准方块内才进入 DOWN_ALIGN；否则用原公共视角链路对齐 0°/0° 后微调 |
+| PULSE | 只向实际越出方块的坐标轴短按一 Tick 的对应移动键，下一 Tick 释放并回 COAST。一次短按后必须再次停稳才能决定下一次 |
+| WAIT_LANDING | 空中已越出基准方块时取消待归中使用，释放输入，等落地后回 COAST；不在空中补点 AOTE |
+
+纠偏对齐完成时再次读取位置和速度；若已被位置修正带回方块内或尚未停稳，就重新等稳，不盲目发出短按。保留原 WALK 无进展检查与 30 秒超时尺度，并把一次归位的 30 秒截止时间跨微调/转向重试保留，防止反复切阶段刷新等待期限；成功归中或停止时清理相关临时状态。
+
+SETTLE 起跳前复核基准方块、落地和水平速率；未通过则返回归位，不发出跳跃。RESET_JUMP 中若空中方块归属错误，跳过右键，转入落地恢复；仍在基准方块内且达到原相对起跳高度 >=4.0 的门槛才继续原 AOTE 使用。首次 RESET 和组间 RESET 共用这些检查。使用后的 XZ 中心/Y 高度 0.01 校验保持；正式试验 beginTrial()/dispatch()、0/2/4 Tick 使用计划和采样代码未改变。
+
+**沿用日志，新增归位字段**
+
+- `RESET_WALK_DECISION`：改为记录预测停点的实际控制判据、初始水平速度、coastTicks、是否越过远侧及松键/继续走动决定。普通现场的实际 insideBaseBlock 仍为只读观察，不与预测判据混淆。
+- `RESET_COAST_DECISION`：松键 decisionTick、初始水平速度、predictedStop、coastTicks、retention、stopSpeed、原因和 microAdjustments。
+- `RESET_ACTUAL_STOP`：关联 decisionTick、预测/实测 XZ、actual-predicted 的有符号 predictionError、稳定 Tick 数及微调次数。
+- `RESET_MICRO_ADJUST`：每次短按计数、预测停点及一 Tick 脉冲长度。已有逐 Tick RESET 现场额外包含 returnPhase/microAdjustments；保留 resetId、previousTrialId、输入提交/消费和位置更新记录。文件仍是 `logs/ultimategarden/instant transmission/instant-transmission.jsonl`。
+
+**定向验证**
+
+[tests/instant-start/run.ps1 -ReturnOnly](tests/instant-start/run.ps1) 运行 [ReturnRegression](tests/instant-start/ReturnRegression.java) 的 178 项定向检查及既有 [StartRegression.resetTraceChecks()](tests/instant-start/StartRegression.java) 的 93 项归位日志检查。只覆盖本次归位链路，游戏/输入边界使用 stubs。
+
+| 用户提供的实测输入回放（基准 Z=[17,18)） | 计算结果 | 决策 |
+|---|---|---|
+| Tick 78：Z=18.450080871，vZ=-0.471337605 | N=9，Zstop=17.416369550092842 | 当前仍在块外也立即松键 |
+| Tick 79：Z=17.586743253，vZ=-0.471382394 | N=9，Zstop=16.552933703358576 | 已越过远侧，先松键停稳 |
+
+另覆盖两轴合速、零速/阈值边界、几何级数等价性、预测误差落在相邻方块后的多次独立短按、转向期间位置修正、起跳前越界、达到 4 格时越界不右键、恢复后合法使用、微调持键时停止释放及归位超时清理。JDK 25 的 `gradlew.bat build --offline` 成功，定向回归退出 0；证据在忽略目录 `.gradle/instant-return-audit/`。本次是提供数值的本地回放与模拟，未新增 SkyBlock 实机采集；真实地面滑行误差、位置修正及微调收敛效果仍为 Not Verified In-Game。
+
+
+### 15.13 Instant Transmission 背向中心直线回程
+
+InstantTransmissionController 的正式落地 → alignReturn() → RETURN_ALIGN → WALK → COAST 回程改为：每段从实际脚部到基准方块中心建立固定 Leg，以 ViewAngles.wrap(degrees(atan2(dx,-dz)))、Pitch 0 调用现有公共鼠标对齐；对齐期间释放移动键，普通回程仅持有 S。已在方块内且落地停稳时直接进入原 DOWN_ALIGN。TransmissionCoastPrediction.leg() 以水平单位方向与基准方块 XZ 矩形求入口/出口距离；预测停点沿该方向的投影达到远侧出口才算越过整块，跨过单轴中心不再构成 PREDICTED_OVERSHOT。
+
+保持原 END_CLIENT_TICK 滑行公式与停稳条件。实际停稳在方块外时，gap() 计算到矩形边界的距离；gap>=0.5 重开正常回程，gap<0.5 才用重新对齐后的单 Tick S 脉冲，随后释放、预测滑行、停稳复核。原起跳 4 格、归中右键、落地中心/高度校验及正式采集不变。沿用归位日志，新增 RESET_RETURN_LEG 的起点、单位方向、入口/出口距离、gap 和 micro 分类。
+
+定向验证：双轴样例 (-18.5,16.5) → (-17.5,4.5) 的 Yaw=+4.763641690726178°，S 方向为 +X/-Z；覆盖单轴跨中心仍未越过出口、整块越过、停稳在块内、gap<0.5、gap=0.5 和 gap>0.5。JDK 25 build --offline 与 tests/instant-start/run.ps1 -ReturnOnly 通过（204 项定向检查、93 项归位日志检查）。测试驱动仅在 stubs 中模拟公共鼠标完成对齐后读回的新回程角度，未直接设置生产玩家视角。真实鼠标对齐、斜向 S 行走及滑行/短脉冲收敛仍为 Not Verified In-Game。输出见 .gradle/instant-return-audit/backwards-build.txt 与 backwards-test.txt。
+
+
+## 16. Instant Transmission 公共模型、规划与调试迁移（2026-11-16）
+
+### 16.1 基线与保存记录
+
+旧调试分支 `test/Instant-Transmission-dataCollect` 原 HEAD 为 `6be9b78ff9d7b443cf583d7daca8fd3f1674a063`。核对工作区改动属于 Instant Transmission 及必要的输入所有权、配置、HUD/测试接线后，完整保存在本地分支 **test/Instant-Transmission**，提交 **4c85591f40d52d8ea9f2dfe306edc9924e19e586**。此后切回 master，以同一 `6be9b78` 为基线按文件差异迁移；master 的 HEAD 未移动，本节正式实现尚未提交，未推送。前述第 15 章为调试演进记录，路径已同步至当前实现；行为调整的时间顺序仍保留。
+
+### 16.2 当前目录与依赖
+
+```text
+client/function/instant_transmission/
+├── flight/
+│   ├── Point.java
+│   ├── Capability.java
+│   ├── FlightResult.java
+│   └── FlightModel.java
+├── routing/
+│   ├── RouteStrategy.java
+│   ├── RouteResult.java
+│   ├── PlanningStrategy.java
+│   ├── RoutePlanner.java
+│   ├── Terrain.java
+│   ├── ClientTerrain.java
+│   └── strategy/
+│       ├── DirectAimStrategy.java
+│       ├── DropAlignStrategy.java
+│       ├── UpperHemisphereStrategy.java
+│       └── FixedRouteSearch.java
+└── debug/
+    ├── InstantTransmissionController.java
+    ├── DebugTerrain.java
+    ├── TransmissionTrial.java
+    ├── TransmissionResetJump.java
+    ├── TransmissionCoastPrediction.java
+    ├── TransmissionInputCheck.java
+    ├── TransmissionHudSnapshot.java
+    └── log/
+        ├── TransmissionLog.java
+        └── TransmissionResetDiagnostics.java
+```
+
+公共数值入口为 [FlightModel.displacement/predict/solve/candidates](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/flight/FlightModel.java)，公共规划入口为 [RoutePlanner.plan](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/routing/RoutePlanner.java)。flight 不访问游戏；三个 strategy 只依赖 flight 和 Terrain 抽象；ClientTerrain 为可选客户端适配器。各调用持有独立的能力参数、结果和有限候选，不建立全局世界缓存或自动执行任务。debug 调用这些入口，拥有自己的输入、试验、采样与日志生命周期。
+
+### 16.3 飞行模型与状态
+
+- 单位：Point 为脚部世界坐标（block）；Yaw/Pitch 为度；Capability.distance 为名义格数，maxClicks 为硬上限，budget 为有限候选生成/比较预算，tolerance 为三维命中误差容差。Capability.standard() 使用距离 12、最多 32 次、预算 200000、误差 0.001，调用方可覆盖。
+- 固定角度单次位移按方向 (-cos(p)sin(y), -sin(p), cos(p)cos(y)) 计算，水平逐轴 floor(projected+0.5)。12 格向上 5° 网格优先使用用户提供的 19 项 dy 表；其他向上 12 格角度使用 floor(-12sin(p)+0.62)。向下或其他距离采用基础投影最近整数估计，不把 0.62 用于向下。整数向量不归一化为 12 格。
+- predict() 对一组固定角度直接叠加 D，返回逐次点、末点、实际三维误差，以及 ALREADY_REACHED/HIT_TARGET/APPROXIMATE/OUT_OF_MODEL/UNSUPPORTED 等结果。落在同一方块不抹去坐标误差。传送后的下落不属于 flight。
+- MEASURED 仅标记中心 XZ 起步、12 格、Yaw 0–45°、向上已测 5° 网格及其已知方向；其他输入标为 ESTIMATED；超过 3 次额外标记 EXTRAPOLATED。非中心起点按相对离散位移估计，未宣称服务器会如何吸附到方块。
+- solve()/candidates() 优先加入几何直瞄，按离散位移去重；有限 Pitch 候选包含 1° 网格、实测角度及拟合边界，Yaw 包含量化边界和区间中点。按目标距离、步长及 maxClicks 限制点击比较。精确误差优先，其后误差/点击数，遍历顺序稳定。结果明确为“已检查候选中的最优”，不是连续角域的全局完备证明；候选生成或比较截断均通过 budgetExhausted 暴露。确定超过保守能力上界标 OUT_OF_MODEL。
+
+### 16.4 三种路线与地形
+
+| 策略 | 选择与结果 |
+|---|---|
+| DROP_ALIGN / 高位对齐降落 | 固定角度候选末点必须处在目标 XZ 方块列且 Y 在目标站立高度至 +12（含两端）；优先直接落到该层，再按较低抬升/较少点击选择。输出 lastTransmission 与独立 landing；落地误差按实际 XZ 保留。检查传送净空、竖直下降通道和支撑，中途平台判阻挡 |
+| UPPER_HEMISPHERE_NEAREST / 上半球最近点 | 末点三维距离 <=6 且 Y>=目标；包含零次候选。比较全部预算内合格候选，按误差/点击数选择，不在首次入球时结束 |
+| DIRECT_AIM / 直瞄传送 | 默认策略，当前点已在 6 格内则零次；否则逐段几何直瞄、预测一次，再由预测点继续，首次进入 6 格即停止。检测零位移、重复点、已知阻挡和上限，不搜索其他角度。实际执行调用方可取首段后从真实位置重规划 |
+
+[Terrain](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/routing/Terrain.java) 明确 CLEAR/BLOCKED/UNKNOWN；无地形时可离线规划，但返回 GEOMETRIC_UNKNOWN，不能声称可执行成功。上半球/直瞄未掌握自然下落支撑时 landing 为 null，不虚构落地点。有限候选无结果的原因写明 NO_CHECKED_DIRECT_CANDIDATE，预算截断与普通候选失败区分。
+
+[ClientTerrain](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/routing/ClientTerrain.java) 只在客户端线程使用当前 ClientLevel，复用 LoadedWorldView 已加载查询保护，按 0.6×1.8 玩家净空与碰撞形状 AABB 筛选，路径采样间隔至多 0.25 格，路径/格点预算固定有界；未加载、邻居查询越界或预算不足为 UNKNOWN，不当作空气。下降路径撞到中间平台或缺少目标支撑为 BLOCKED。CLEAR 仅表示客户端几何检查通过，服务器遇墙的拒绝/截短/吸附仍未实测。DebugTerrain.current() 每次从当前世界创建适配器，不持有跨世界缓存。
+
+### 16.5 调试、菜单、HUD、日志迁移对应
+
+| 原调试职责 | 当前入口/处理 |
+|---|---|
+| 角度扫描、1/2/3 点击组、0/2/4 Tick 调度、实际事件 | [debug/InstantTransmissionController](src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java)、TransmissionTrial；保留原状态机与两个 Tick 预采样 |
+| 回程背向中心 S、滑行预测、起跳 4 格、归中 | debug/TransmissionCoastPrediction、TransmissionResetJump 及控制器原方法，未并入路线搜索或改变执行角度 |
+| 实际逐包位置更新/输入消费 | 原 TransmissionPositionMixin/TransmissionMovementInputMixin 保持包名，仅导入新 debug 控制器；继续在原生实际应用/读取位置观察 |
+| 预测与路线记录 | beginTrial() 增加 recordPrediction()，用同一次计划角度/次数调用公共模型，并调用所选 RoutePlanner；新增 PREDICTION。flight/route 与 RIGHT_CLICK、POSITION_UPDATE、RESULT 的观测值分开。预测不可用记录 PREDICTION_UNAVAILABLE，不取消原试验 |
+| 原始与归位日志 | debug/log 的业务适配器调用原 platform/persistence/log/JsonlWriter、CollectionSession；实际文件仍为 logs/ultimategarden/instant transmission/instant-transmission.jsonl，保留 START/END、精度、顺序、丢样与排空 |
+| 菜单和热键 | 原 Settings → Developer Options → Instant Transmission、MacroKeyBindings 的 Toggle Instant Transmission Test（None）保留，同一 toggle/start/stop |
+| HUD | 原 InstantTransmissionHud/TransmissionHudContent 仍在 platform/ui/adapters/instant_transmission，消费只读 TransmissionHudSnapshot，不推进业务 |
+
+HUD 直接参考 [MacroStatusHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/hud/MacroStatusHud.java) 与 [ZombieShootoutHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/hud/ZombieShootoutHud.java)，继续使用 Ultimate_GardenClient → UiRegistry.hud 注册、HudPanel 绘制、HudAdjustmentController 编辑与 HudConfig.HudId。原 Instant Transmission 标题、阶段、进度、角度、高度、预采样、点击/位置更新计数和最终原因均保留。Settings → HUD 的独立 showInstantTransmissionHud 默认 true，关闭后编辑预览仍可用；HUD 启用不启动测试。
+
+[InstantTransmissionConfig.strategy](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/model/InstantTransmissionConfig.java) 持久化至原账号 general.json 的 instantTransmission.strategy；默认 DIRECT_AIM，缺失沿用默认，非法值校验修复；原六个角度字段、distanceBonusNote 及旧默认迁移仍保留。Developer Options 原功能折叠组增加单选 dropdown，使用稳定枚举值及中英名称，运行时不可更改本轮参数。HUD 配置仍由 hud.json 管理，不与策略共享开关或创建新偏好文件。
+
+### 16.6 验证和限制
+
+- JDK 25 `gradlew.bat build --offline` 成功。flight 与 routing 的纯类（不含可选 ClientTerrain）还以纯 JDK、无 Minecraft/Fabric/Gson classpath 独立编译执行 [FlightApiSmoke](tests/instant-transmission/FlightApiSmoke.java) 成功。
+- [FlightRoutingRegression](tests/instant-transmission/FlightRoutingRegression.java) 67 项：四个给定向量、完整 dy 表、3 次固定角度点列、非归一化实际向量、中心/非中心及外推置信、精确坐标误差、策略持久化、+12/-上限、平台拒绝、半径 6 边界/下半球排除/全候选最近点、直瞄入球停止、零位移、重复点、上限、未知地形及预算。
+- instant-transmission 原 2241 项与 RESET JSONL 112 项通过；instant-start 186 项，回程 204 项与日志追踪 93 项通过。hud-adjust、gui、config、menu-input、focus 相关脚本均退出 0。HUD 的 135 项生产编辑检查与 27 项生产渲染检查包括开关即时生效、隐藏时预览、重载、停止后最终结果；图形与游戏边界使用 stubs。账号测试中的符号链接用例因当前环境创建能力不可用而跳过，并非迁移失败。
+- 保存提交的 debug 控制器经包名归一化、移除新增预测 hook 后与当前源码逐字一致，证明原调试控制流程未被路线模型替换。生产接线旧包/路径在 src/tests 的 Java/PowerShell/Python 中已无残留。结果在忽略目录 .gradle/instant-production-audit/。
+- Not Verified In-Game：菜单/HUD 实际视觉、原生鼠标/按键与 Mixin 的完整运行、AOTE 位移/墙体响应、真实地形平台净空、非中心吸附和超出采样范围的预测。其他 Yaw、未测 Pitch、向下、不同能力距离及 >3 次均按上述估计/外推标记；没有追加点击速度实验或网络探测。
+
+
+## 17. 四个 HUD 的独立显示配置与 Mapping 世界信息（2026-11-16）
+
+### 菜单和配置
+
+[GardenMenuAdapter.HudPageAdapter.hudSettings()](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/menu/GardenMenuAdapter.java) 在 Settings → HUD 保留全局 Adjust HUD Position & Size，然后按 HudId 建立 Farm Macro HUD、Zombie Shootout HUD、Instant Transmission HUD、Mapping HUD 四个独立折叠子节。每节依次为 Show、Only Show While Running、Display Mode、Compact Mode Content、Detail Mode Additional Content。内容折叠使用包含 HUD ID 的唯一键，避免四节共用展开状态；Mapping 内容设置下仅有“世界信息”分组。Only Show While Running 仅在自身 Show 开启时可编辑，禁用不清除原值。
+
+[HudConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/model/display/HudConfig.java) 保留 Farm 的原 displayMode、compact、detail、bounds 和开关字段；新增 panels.ZOMBIE_SHOOTOUT / INSTANT_TRANSMISSION / MAPPING 保存各自模式及内容选择，Mapping 的 show 和 Instant/Mapping 的 onlyRunning 也在对应 panel 中。Farm/Shootout 的真实运行态和 Only 设置沿用原定义。Mapping 新增独立 mappingBounds，加入同一个 HudId/编辑器机制，没有新增布局系统或偏好文件。
+
+缺失新字段时，Zombie Shootout 与 Instant Transmission 的 compact 默认包含原来实际渲染的全部字段，附加字段为空，保持原显示。Instant 的 Only Show While Running 默认 false；Mapping Show 默认 false、Only 默认 false，启用后可在待机查看信息。内容选择由 fields(id)、mode(id)、content()/visible(id,key) 统一查询；详细模式为简洁与额外字段的并集，同一行只绘制一次。新字段仍由现有账号 hud.json 校验及原子保存路径管理；不保存世界观测数据。
+
+### 渲染入口
+
+- [ZombieShootoutHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/zombie_shoot/ZombieShootoutHud.java) 给现有行附加稳定字段 ID，并按自身配置筛选；状态标题行也可隐藏，不影响控制器。
+- [InstantTransmissionHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/instant_transmission/InstantTransmissionHud.java) 从当前只读快照 running() 判定显隐，停止和待机在 Only=true 时隐藏，Only=false 时保留原最终结果展示。[TransmissionHudContent.rows()](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/instant_transmission/TransmissionHudContent.java) 增加字段选择器，阶段相关行仍只在原阶段出现。
+- [MappingHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/MappingHud.java) 在 Ultimate_GardenClient 中通过原 UiRegistry.hud 注册，沿用 HudPanel、字体、主题和拖动/缩放预览。唯一内容分组为世界信息，六个字段各有开关；未知值使用双语“未知/Unknown”。taskRunning() 当前明确返回 false，是未来任务状态的绑定点；没有创建 Mapping 任务、扫描器或功能页。
+- 编辑模式绕过各 HUD 的 Show/Only 限制以预览，不改写开关；退出后恢复实际显示规则。布局以各自归一化 bounds 保存，互不改变。
+
+### 世界上下文来源与失效
+
+[MappingWorldContext](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoService.java) 仅在 END_CLIENT_TICK 复制现有服务器地址和维度到只读标量快照；利用 ClientContextEvents 的世界/账号变化、断线及退出通知清空。[MappingContextState](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoState.java) 以世界与连接对象身份保护快照读取，因此新世界/连接尚未完成一次 Tick 更新时也不会返回旧值。
+
+当前源码没有可复用的 Hypixel 游戏类型、岛屿/大区、子区域或服务器实例 ID 来源，这四项保持未知；不把原版生存/创造模式当作 Hypixel 游戏类型，不解析聊天，不发命令或网络请求。实例标识未被伪造或缓存。HUD 渲染只消费快照，不执行识别/扫描；本次没有地图文件读写、边界编辑、3D 预览或路线规划接入。
+
+### 验证
+
+JDK 25 的 build --offline 成功；hud-adjust、config、gui 回归通过，Instant Transmission 原有相关回归也通过。新增 [HudPanelsRegression](tests/hud-adjust/HudPanelsRegression.java) 666 项覆盖各面板字段/模式隔离、双语字段目录、生产 Zombie Shootout/Instant/Mapping 渲染筛选、内容并集去重、运行/停止显隐、Mapping 隐藏时预览、独立拖动/缩放和重载、世界/连接身份变化与清空。另有 137 项生产编辑器检查及 27 项原 Instant HUD 渲染检查通过；游戏、输入和绘图边界使用 stubs。菜单构建代码核对四节都独立拥有显示/内容控件，全局编辑入口保留；原 SectionLayout 回归覆盖嵌套折叠。
+
+结果在 .gradle/hud-panels-audit/。Not Verified In-Game：四个折叠子节的实际视觉、原生游戏渲染与拖动手感、真实联机切世界/实例时序。当前未实现的 Hypixel 字段仅验证未知回退，未声称已取得服务器位置数据。当前分支及已有其他功能改动保留，未执行提交或推送。
+
+
+## 18. Mapping HUD 官方位置事件与六项世界信息（2026-11-16）
+
+本节补全第 17 章的未知字段；HUD 排版、字段筛选、Only Show While Running 与布局配置不变。只扩展现有世界上下文，不增加地图扫描、地图文件或功能页。
+
+### 官方依赖与接线
+
+build.gradle 使用非重映射 Loom 的标准 implementation 引入 `maven.modrinth:1A2mKfBx:SlqCF6Or`，仓库为 https://api.modrinth.com/maven 。已检查下载的官方 JAR 元数据：版本 1.0.2+build.1+mc26.1，mod ID 为 hypixel-mod-api，Minecraft 依赖 >=26.1，内嵌 mod-api-1.0.2.jar。Modrinth POM 不暴露内嵌核心类给 javac，因此另以 compileOnly 从官方 Hypixel Maven 暴露 net.hypixel:mod-api:1.0.2，不在运行时重复装载核心库。fabric.mod.json 增加 hypixel-mod-api >=1.0.2 必需依赖；发行运行环境仍须安装兼容的官方 Fabric Mod，不能仅安装 Java 核心库。
+
+[MappingWorldContext.register()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoService.java) 保留原客户端初始化入口，一次性调用 HypixelModAPI.createHandler(ClientboundLocationPacket.class, ...) 和 subscribeToEventPacket(...)。连接确认使用官方 FabricModAPI 实例的 isConnectedToHypixel() 状态，不凭 sidebar 的 SKYBLOCK 文本单独认定其他服务器是 Hypixel。只订阅官方位置事件，不定时发送 /locraw 或探测命令。
+
+处理器复制 serverName、serverType.name()、mode、map，再经 Minecraft.execute() 回到客户端线程，由 [MappingContextState.acceptLocation()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoState.java) 校验捕获的连接对象及回调代际；断线/账号清理会递增代际，排队期间已经换连接或失效的旧回调不再更新当前数据。
+
+### 六项数据及回退
+
+| HUD 字段 | 当前实际来源与回退 |
+|---|---|
+| 服务器地址 | Minecraft.getCurrentServer().ip；不是实例名 |
+| 游戏类型 | 官方 getServerType().map(ServerType::name) 优先；仅官方连接状态已确认 Hypixel 时，当前可见 sidebar 标题清洗后完全匹配 SKYBLOCK / SKYBLOCK CO-OP / SKYBLOCK GUEST，才回退 SKYBLOCK |
+| 岛屿/大区 | 仅 SKYBLOCK：getListedOnlinePlayers() → gui.getTabList().getNameForDisplay(info).getString() → 完整 Area: 行；缺失时用官方 mode，已明确的 hub → Hub、dynamic → Private Island，其他 ID 原样显示 |
+| 子区域 | 仅 SKYBLOCK：实际 sidebar 的可见行中，以 U+23E3 或 U+0444 开头的非空文字；不把 map 当子区域。每 Tick 刷新，同行更新无需新的位置事件 |
+| Minecraft 维度 | level.dimension().identifier().toString()，非 Hypixel 也保留 |
+| 服务器实例 ID | 官方 getServerName() 原样优先；缺失且 SKYBLOCK 时，再取 Tab Server: mini/mega 名，最后尝试 sidebar 日期行 ^数字/数字/数字 + m/M编号，分别生成 mini/mega，保留编号字母 |
+
+sidebar 选择与本地 26.1.2 原版 Gui 源码一致：先按玩家所属队伍颜色查询 DisplaySlot.teamColorToSlot，无槽位/目标时回退 SIDEBAR。listPlayerScores() 跳过隐藏行，按分值降序、owner 大小写不敏感排序并限前 15 行，重建 PlayerTeam.formatNameForTeam(..., entry.ownerName()) 文本。**当前映射必须用 scoreboard.getPlayersTeam(entry.owner()) 按玩家名查询所属队伍；getPlayerTeam(name) 是按队伍名查询，不能替代。**
+
+[MappingLocationText](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoText.java) 集中清洗残留 § 格式码、Unicode 空白，保留区域符号和其他 Unicode，执行精确匹配。未匹配、空字段及非 SkyBlock 区域均为 null，由原 HUD 显示“未知”。map 与原始 mode 只保留在内部不可变快照，不新增 HUD 行或日志文件。
+
+### 生命周期与发布
+
+END_CLIENT_TICK 读取当前 Tab/sidebar、地址与维度，构建不可变 Snapshot；只有八项标量（含内部 mode/map）实际改变才替换快照。渲染阶段仍只调用 guarded snapshot，不解析聊天、读取记分板或发请求。
+
+同实例持续更新 Tab/sidebar；新的实例、类型或 mode 事件替换整份官方 Location，并立即清除旧子区域。保留上一帧文本作为隔离基线：旧文本未刷新时不将它填回；若能从 Tab/日期行读出实例名，还要求与官方实例一致。Tab 不可用时允许用新事件的 mode 回退。世界变化立即使旧世界快照不可读并隔离旧文本；同一连接的最新官方事件保留，避免新事件先于世界对象替换时丢失。断线、账号变化、退出或非 Hypixel 会话清除官方与文本字段；非 Hypixel 仍可显示地址和维度。所有状态有界，不持久化位置数据。
+
+### 验证与实机边界
+
+JDK 25 的 build --offline 通过；hud-adjust 回归通过，包括原 137 项布局、27 项 Instant HUD、666 项面板检查。新增 [MappingLocationRegression](tests/hud-adjust/MappingLocationRegression.java) 的 55 项覆盖颜色/Unicode、三个精确标题、Area/模式回退、官方类型与实例优先、m/M 日期规则、Hub/Village → 同 Hub 子区域 → Garden、回大厅清空、空 map 替换、快照去重、换世界文本隔离、断线及旧连接/旧代际拒收。原生 sidebar 的队伍选择/排序/显示名拼接已核对当前源 JAR，并通过实际编译；测试不等于已登录 Hypixel 接收官方事件。
+
+结果在 .gradle/mapping-location-audit/。Not Verified In-Game：官方 Fabric Mod 在实际游戏会话中的事件到达顺序、真实 Tab/记分板更新和跨实例过渡。尚待验收：在 SkyBlock 观察 Hub/Village，走到同实例其他子区域；转 Garden；回大厅和断线。预期区域随可见数据更新、实例始终优先使用官方 serverName，过渡期间宁可未知也不恢复旧子区域。未改 HUD 外观/配置或接入后续 Mapping 功能。
+
+
+## 19. Mapping 类型与实例只取官方事件（2026-11-16）
+
+本节替代第 18 章的游戏类型、实例 ID 文本回退规则。既有官方 Fabric 依赖 `maven.modrinth:1A2mKfBx:SlqCF6Or` 与 hypixel-mod-api 运行依赖保留，不另写网络实现。
+
+[MappingWorldContext.register()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoService.java) 继续在客户端初始化时仅注册一次 ClientboundLocationPacket handler 和订阅；HUD Show 不参与订阅生命周期。重连由官方 API 的 Hello 机制恢复订阅，本模块不重复注册。移除对 FabricModAPI 实现实例的入口查找，当前连接收到官方 Location 才开始读取相关 Tab/sidebar 文本；类型直接使用 getServerType().map(ServerType::name)，实例直接使用 getServerName()。等待事件或字段为空时保持 null，由 HUD 显示未知。
+
+[MappingLocationText](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoText.java) 删除 SKYBLOCK 标题识别、Server: 行及 m/M 日期实例解析；不再读取 sidebar 标题用于推断。Tab Area 优先、官方 mode 缺省显示，以及 U+23E3/U+0444 子区域提取保留；同实例仍逐 Tick 更新。地址、维度、HUD 排版/内容开关与运行态配置未变，没有 /locraw 轮询。
+
+[MappingContextState](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoState.java) 收到新实例时立即清除旧大区和子区域，隔离旧文本至内容刷新；Tab Area 缺失仍可使用当前官方事件 mode。官方类型缺失不会从 mode 或可见标题反推 SKYBLOCK；官方实例名缺失不会从 Tab/sidebar 补值。保留客户端线程发布、值未变不换快照、连接身份/代际检查和断线清理。内部 map 继续只作诊断数据。
+
+JDK 25 build --offline 成功；hud-adjust 通过原 137 项布局、27 项 Instant HUD、666 项面板测试，以及重写后的 51 项官方来源专用检查。覆盖未收位置包、缺类型、缺实例名、误导性文本、Hub/子区域/Garden 更新、旧文本隔离、断线和迟到回调；文本不能填补官方缺失的类型/实例。证据位于 .gradle/mapping-official-only-audit/。Not Verified In-Game：实际 Hypixel 位置事件、重连 Hello 与 Tab/sidebar 更新时序。
+
+
+## 20. 公共世界信息模块 function/world（2026-11-16）
+
+### 公共读取入口与职责
+
+原 MappingWorldContext、MappingContextState、MappingLocationText 的识别职责从 platform/context 迁入以下包，不保留第二套接线。第 17–19 章为历史演进说明，对应链接已指向当前实现。
+
+```text
+client/function/world/
+├── WorldInfoService.java   原生数据采集、官方事件与生命周期装配
+├── WorldInfoSnapshot.java  不可变的当前世界信息
+├── WorldInfoState.java     合并、连接归属、文本失效与去重发布
+└── WorldInfoText.java      格式清洗、Area/子区域提取和 mode 显示名
+```
+
+其他客户端功能统一调用 [WorldInfoService.snapshot()](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoService.java)，返回 [WorldInfoSnapshot](src/client/java/com/kuangsanfeng/ultimategarden/client/function/world/WorldInfoSnapshot.java)。该调用仅返回一个 volatile 发布的不可变记录；不访问 Minecraft，不采样、不解析、不发请求。全局可变状态私有，外部没有修改当前快照的接口。世界模块不依赖项目 HUD、菜单、偏好或绘图类。
+
+Snapshot 字段：
+
+| 字段 | 来源 |
+|---|---|
+| server、dimension | 当前原版服务器地址与 Minecraft 维度 |
+| gameType、instance | 官方 Location 的 serverType.name()、serverName；不通过文本推断 |
+| mode、map、lobbyName | 官方 Location 的 mode/map/lobbyName 原始可空值 |
+| environment | 官方 Hello.getEnvironment().name()，如 PRODUCTION/BETA/TEST |
+| island | 新鲜 Tab Area 优先，其次当前官方 mode 的既有显示名/原始 ID |
+| subArea | SkyBlock 可见 sidebar 的 U+23E3/U+0444 行，Tick 持续刷新 |
+
+缺失值仍为 null。新快照字段没有增加 HUD 行、菜单或配置键；MappingHud 继续用六个原字段键显示未知。
+
+### 装配、连接身份与清理
+
+Ultimate_GardenClient 原初始化位置改为调用 WorldInfoService.register()。保留单次 Location handler/订阅，新增单次 Hello handler；官方 API 自行根据重连 Hello 恢复位置事件订阅。HUD 开关不参与任何采集或订阅条件。
+
+已核对 26.1.2 原版：Minecraft.getConnection() 在 player 未建立时为空，Hello 可以在 CONFIGURATION 阶段到达。因此通过 [WorldInfoConnectionAccessor](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/WorldInfoConnectionAccessor.java) 只读取得 ClientCommonPacketListenerImpl.connection，利用现有 Fabric CONFIGURATION/PLAY INIT 事件绑定同一底层 Connection。该访问器不改输入或网络行为。CONFIGURATION、PLAY 监听器替换而底层连接未变时，保留已确认的 environment。
+
+两个官方处理器复制包字段并通过 Minecraft.execute 在客户端线程合并；底层连接身份、有效连接状态和 generation 共同拒绝旧回调。Location 在同一连接内替换完整位置字段（包括空 lobby/map），不清除环境；实例切换立即使旧区域文本失效，等待新 Tab/sidebar 刷新。世界对象切换期间保留当前连接的最新官方事件，避免事件先于世界替换时丢失数据；旧世界显示快照及旧文本失效。真实断线（含 CONFIGURATION 断线）、新底层连接或单人世界会清除旧 Hypixel 信息。客户端退出统一释放当前状态。
+
+采集仍为 END_CLIENT_TICK。CONFIGURATION 中尚无世界时只失效世界显示，保留连接级 Hello；PLAY 有世界后合并地址、维度和文本。sidebar 的队伍颜色选择、隐藏行排除、排序、15 行限制与原版显示名格式化继续使用上一版实现；没有新增聊天解析、/locraw、地图扫描、文件或规划入口。
+
+### Mapping HUD 接线与验证
+
+[MappingHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/MappingHud.java) 仅将旧读取入口替换为 WorldInfoService.snapshot()，继续负责字段选择、Unknown 文本、面板绘制与布局。初始化注册独立于 Show/Only 设置，所以所有 HUD 关闭时其他功能仍可消费最新世界状态。
+
+JDK 25 的 build --offline 成功。hud-adjust 脚本通过 137 项布局、27 项 Instant HUD、666 项面板/Mapping 渲染和 76 项世界来源/生命周期定向检查。世界检查包含 Hub 内子区域更新且实例不变、Hub→Garden、环境跨实例/世界保留、lobby/map 空值替换、旧 Hello/Location 回调拒绝、单人/连接清理、快照只读去重，以及 HUD 禁用不影响状态更新。源码核对 function/world 无项目 UI/配置依赖，snapshot() 体为直接读取；旧生产包与测试引用已迁移。测试证据在 .gradle/world-info-audit/。
+
+Not Verified In-Game：新只读连接 Mixin 的运行时加载、真实 Hello 在 CONFIGURATION/PLAY 的时序、实际 Hypixel 切实例/重连及 Tab/sidebar 刷新。自动检查使用真实纯状态实现与游戏/绘图 stubs，不能替代线上验收。本次未提交、推送或切换分支。
+
+## 21. Developer Options → Mapping 区块记录与本地地图（本次新增）
+
+### 模块、装配与只读来源
+
+- [MappingController](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingController.java) 的 `register()` 由 `Ultimate_GardenClient.onInitializeClient()` 在现有 `WorldInfoService.register()` 后调用一次。使用项目当前 Fabric API **0.155.2+26.1.2** 的 `ClientChunkEvents.CHUNK_LOAD / CHUNK_UNLOAD` 和 `ClientTickEvents.END_CLIENT_TICK`；未升级依赖，也未引入 Forge/NeoForge。
+- Mapping 只消费 `WorldInfoService.snapshot().island()` 的已解析大区名称。目录由 [MappingNames.key](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingNames.java) 规范化：`Hub → hub`。Hub 的不同大厅、重新连接和 Village 等子区域均复用同一地图；子区域、实例、服务器地址、模式及整份世界快照不进入 Mapping 持久化。
+- 区块加载事件从客户端初始化起持续维护当前缓存的坐标集合，即使记录关闭也保留已加载范围。开始时优先玩家区块，之后 [MappingCandidates.next](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingCandidates.java) 仅从该集合选择未保存、未等待写入、未被本轮删除抑制的候选。每 Tick 最多捕获一个完整区块，最多两个待保存快照。
+- `readChunk()` 按本地 Loom 26.1.2 原版源码使用 `ClientChunkCache.getChunk(x,z,ChunkStatus.FULL,false)`，跳过 null / `EmptyLevelChunk`；扫描高度取地图配置。仅在客户端线程读取方块注册名与完整 Properties，复制成不可变 [ChunkSnapshot](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/ChunkSnapshot.java)。Mapping 没有网络发送、命令、视距修改、移动或强制加载入口。
+
+### 存储、坐标与 .litematic
+
+- [MapConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MapConfig.java) 字段仅为 `schemaVersion=1`、`worldName`、`origin{x,y,z}`、`maxY`（不含）、`festivals` 和 `selectedFestival`。世界身份只有 `worldName`，不另存稳定键或实时上下文。
+- 根目录是 `Minecraft.gameDirectory/config/ultimategarden/map/`；例如 `config/ultimategarden/map/hub/map.json`、`Hub 0 0.litematic`、`Spooky Festival/Hub 1 -1.litematic`。初始化原点为玩家当前区块最小 X/Z 和当前维度 `getMinY()`；上界为 `getMinY()+getHeight()`。所有层共享唯一原点和高度范围。
+- `MapConfig.relativeX/relativeZ` 使用绝对区块坐标减原点区块坐标，负数按 `Math.floorDiv` 处理。文件局部 `(x,y,z)` 只进行一次换算：`world=(origin.x+16*i+x, origin.y+y, origin.z+16*j+z)`；NBT 不另存绝对位置。
+- [LitematicIO](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/LitematicIO.java) 按目标 Litematica **0.27.14** 实际 JAR 写 `Version=7 / SubVersion=1`，数据版本来自运行时 `SharedConstants.getCurrentVersion().dataVersion().version()`。使用原版 `NbtIo.writeCompressed/readCompressed` 的 Gzip Java NBT；一份文件一个 `Chunk` 区域，Position=(0,0,0)，Size=(16,H,16)。
+- 调色板空气索引为 0，保留注册名及 Properties。索引 `((y*16)+z)*16+x`，X 最快；位宽 `max(2,ceil(log2(paletteSize)))`，连续低位优先、允许跨 long，长度 `ceil(count*bits/64)`。读取验证尺寸、数组长度和索引，并保留调色板原顺序；缺文件用 `Optional.empty()` 表示未知，与真实空气区分。
+- Metadata 的时间标签固定为 0，不写实际日期；不记录实体、方块实体内容或待执行 Tick。压缩先写完整临时文件，再替换目标。配置损坏、缺失配置却已有区块、名称冲突、路径越界或符号链接均拒绝静默重新初始化。
+
+### 会话、节日层与管理操作
+
+- 单个有界 IO worker（队列 8）负责文件操作；主线程只提交不可变快照。写入绑定仓库、配置、所选层、会话 epoch 和区块 revision；最终替换/移除覆盖文件时在提交锁内复核。停止、世界对象/连接/大区变化、换层、删除、重设原点会使旧任务失效。卸载或同坐标重新加载递增 revision；旧数据不能提交成新加载区块。
+- [MapRepository](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MapRepository.java) 的 `initialize()` 先在临时目录保存首个 None 区块和有效 map.json，再发布目录。重复初始化有效地图不写盘，不改变原点或状态。重绘允许记录停止时使用。
+- [Festival](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/Festival.java) 集中定义稳定枚举 ID 和不随语言变化的目录名：None、Spooky Festival、Season of Jerry、Season of Jerry&New Year Celebration、Harvest Feast、Years of the Seal/Witch/Pig。
+- **当前自动候选明确为 None**：现有 world 服务无经过验证的“正在进行的节日”数据源，官方 Hypixel Mod API 1.0.2 位置事件也无节日字段。本次未添加日历解析、查询、轮询或自动打开页面；未凭活动名字推断组合层。将来有明确的被动活动来源后，才可添加兼容别名的预选适配。
+- `chooseFestival()` 选择已创建层时停止旧会话并持久化选择；未创建层仅作菜单候选，必须点击 `createFestival()`。同世界同节日只创建一次，空层也写入配置。初始化始终 None。
+- `MapRepository.write()` 对节日快照逐格比较实际状态和属性，不比较调色板编号或压缩字节；不同写完整覆盖，相同重绘移除旧覆盖，无基础块时报 `BASE_CHUNK_REQUIRED`。公共磁盘读取 `read(config,layer,cx,cz)` 优先覆盖再回退 None，两者缺失返回未知。
+- `resetOrigin()` 停止记录，对基础和所有节日层按 `i'=i+oldChunkX-newChunkX`、`j'=j+oldChunkZ-newChunkZ` 重新编号；先把所有旧文件移入事务临时位置，防止文件名交换覆盖，最后提交新原点。取消/失败尝试恢复所有旧文件名和旧配置；回滚失败保留事务标记，后续打开会明确拒绝。
+- `deleteCurrent()` 仅删当前层当前块；删除 None 不影响节日文件，删除 (0,0) 不删除 map.json。取消旧写入，在当前连续会话抑制自动补回；显式重绘或下次启动解除抑制。`deleteWorld()` 只删除经安全解析的当前世界 Mapping 目录，保留其他世界和 Minecraft 存档。
+
+### 菜单、热键与 HUD
+
+- `GardenMenuAdapter.DeveloperPageAdapter.developerSettings() → mappingSettings()` 提供 **Settings → Developer Options → Mapping**，沿用折叠、下拉和卡片控件；显示世界、原点、相对区块、记录状态和当前存储层，提供节日选择/创建、重设原点、删除当前区块和删除世界。没有新增 Misc → Mapping 页、扫描预览或路线功能。
+- [MappingConfirmation](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingConfirmation.java) 与 [MappingConfirmButton](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/widget/MappingConfirmButton.java) 复用两项危险操作的交互：首次单击仅进入待确认；随后另一次双击（500ms 内两次点击）才执行。普通底色 #E0F0EF，待确认 #F4DAD9；英文提示完整显示并按宽度换行。绑定世界/操作，重设还绑定目标区块；离开、折叠、切换页面/世界/目标、选择另一危险操作取消。键盘不能绕过鼠标确认。
+- `MacroKeyBindings` 新增三个默认 None 的映射：`mapping_initialize`、`mapping_toggle`、`mapping_redraw`；沿用现有热键菜单及物理按下边沿，在正常游戏且非布局编辑时分别调用 `initialize/toggleRecording/redraw`。删除和重设只有菜单入口。
+- `MappingHud.taskRunning()` 接到 `MappingController.INSTANCE.running()`，既有显示字段、布局、筛选配置不变；“仅运行时显示”现在随真实记录状态变化。语言资源和 `LanguageKeys.hotkey()` 补齐中英名称、状态和 Hint。
+
+### 验证与实机边界
+
+- JDK 25、项目 Fabric/Loom：`gradlew.bat clean build --offline` 通过；最后的小范围变更再运行 build。
+- `tests/mapping/run.ps1` 覆盖临时仓库初始化/重复初始化、负坐标、25 个已观察区块的候选边界与玩家优先、语义比较、节日覆盖/回退、缺基础层拒绝、Hub 重开复用、重设和回滚、删除范围、提交处取消、未知与空气、位打包、持久化字段及三次点击确认。静态接线检查确认非加载查询和 Mapping 零网络发送入口。
+- `tests/mapping/compatibility.ps1` 使用独立下载的 **Litematica 0.27.14（SHA1 8f6916fdc68349c09f55aa400fd93e730b60abd7）+ MaLiLib 0.28.11**，不加入生产依赖。目标位数组对照 2–12 位跨 long；目标解析器读取本 Mod 导出，目标序列化器生成样本再由 Mapping 读取，非对称 XYZ 和楼梯属性通过。测试只注入无图形的目录/注册表上下文，**没有启动真实游戏，也没有操作其蓝图界面**。
+- 既有配置/中英文、GUI、HUD 布局与世界信息、公共 context 回归通过；具体最后结果见本轮交付说明。原有工作区改动保留，未提交或切换分支。
+- 待实机：Hypixel 不同 Hub 大厅/重连与 Garden 切换、真实 ClientChunkEvents 加卸载和仅 25 个缓存区块、记录期间网络抓包、热键与菜单禁用/双击手感、真实 Litematica 0.27.14 GUI 打开导出文件。无已登录客户端，不能把这些写成已通过。
+
+本轮最终验证记录：Mapping 86 项及静态接线检查通过；HUD 布局 137、Instant HUD 27、面板/筛选 667、世界信息 76 项通过；GUI 114/166/26/27、提示 230、输入边界 73 项通过；配置与语言回归（含 4114 项语言检查）及公共 context 各入口通过。最后 build 与 `git diff --check` 通过。保持 `master @ 6be9b78`，原有未提交改动保留；没有提交或推送。账号回归的符号链接创建用例因环境不支持跳过；Mapping 路径安全逻辑已静态核对，真实符号链接场景未动态验证。
+
+## 22. Mapping 离线回放与记录 HUD（2026-11-17）
+
+### 菜单与职责边界
+
+- `GardenMenuAdapter.mappingSettings()` 把 **Settings → Developer Options → Mapping** 分为同级的「当前地图状态」和「地图回放」。原状态信息、节日创建/选择与危险操作继续调用记录器；「删除当前区块」排在「重设基准点」前面。回放打开独立 [MappingReplayScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/screen/MappingReplayScreen.java)，Esc 或原菜单键返回原页面，正在编辑文本时保留原控件输入。
+- 记录器当前世界/层/玩家坐标，与回放所选本地世界/节日/中心/选区分开持有。切换预览地图或节日不调用记录器的层选择、不保存预览中心，也不改变 `map.json` 的唯一原点。没有新增 Misc → Mapping 页、路线规划、边界编辑或网络订阅。
+- 回放配色集中在 Screen 的专用常量：侧栏 #E9F2EE、输入 #F3F8F6、文字 #172C26/#48665C、强调 #1B978C、分隔 #CCDCD5；中列顶底栏共同使用 #192724。侧栏独立裁剪、滚动和空白拖动；本地化长标签、下拉选项及确认文字按可用宽度排版。
+
+### 本地索引、采样和绘制
+
+- [MapRepository.index](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MapRepository.java) 返回指定层已存在文件的唯一相对 `Coordinate(x,z)`；排除临时文件，并复用原安全路径检查。记录器和回放共用此索引，不另复制文件名解析规则。
+- [LocalMapLibrary](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/LocalMapLibrary.java) 只扫描当前实例 `config/ultimategarden/map/` 下的有效配置。目录必须与 worldName 规范化结果一致；坏配置单独报告。普通文件与已创建节日覆盖按坐标去重合成，覆盖优先，缺覆盖读普通层。所有区块仍用原 `LitematicIO` 解码；坏文件/未知方块单独报告并跳过，不生成样板地形。
+- [ReplaySelection.nearest](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplaySelection.java) 按 `max(0,abs(dx)-1)^2+max(0,abs(dz)-1)^2`、原始欧氏平方、Z、X 排序，截取准确的可用区块数量。已核对 Loom 26.1.2 的 `ChunkTrackingView.isInViewDistance/isWithinDistance`；这里使用其距离思想排名，输入仍是精确区块数。大整数先与实际可用数比较，不创建不存在的坐标环。
+- [ReplayMesh](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayMesh.java) 按区块最小 XZ 开始，每 N 格取一根固定采样柱，沿原始 Y 查询最高非空气块；全空气柱不借用旁柱。支持仅外露、向内 2 层和全部 Y；相邻区块数据用于实心接缝剔除。N=1..16，默认 2。新增 `ChunkSnapshot.state()` 提供只读单格访问，避免反复复制整组索引。
+- [ReplayMaterials](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/ReplayMaterials.java) 由完整注册名和 Properties 恢复原版 BlockState，使用 `EmptyBlockGetter` 查询状态体素形状、地图材质颜色和遮挡属性，不读取活世界。预览采用状态形状和材质色；楼梯上下半部等状态影响几何。
+- [ReplayCamera](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayCamera.java) 实现附件的同一正交基底：`(sz*x-sx*z, (sx*x+sz*z)*sin(p)-y*cos(p))`，深度为 `(sx*x+sz*z)*cos(p)+y*sin(p)`。默认 (-2.07,1.52,1.40)；水平长度最多 2.5，Y=0.12..3，接近竖直时保留最后水平朝向。视图的高度居中与 XZ 枢轴都只是显示状态。
+- [ReplayRaster](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayRaster.java) 在后台进行几何深度测试和像素归属记录；不通过强制透明展示隐藏块。透明材质在不透明几何后排序合成。最终图像在客户端线程上传 DynamicTexture；保留原生 16×16 网格、暖色中心框、青色选区及上方 37 GUI 像素空白拖动带。
+- [ReplaySession](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplaySession.java) 持有有界单线程工作队列、128 项解码 LRU、场景 generation 和合并后的最新相机请求。文件分批读取（每批至多 4 个或约 8ms，单个解码完成后检查预算），过期工作按代际丢弃。列表/索引任务不被相机或参数变化误取消。几何只在数据/参数变化时重建，逐帧绘制不读目录、不解码 NBT；关闭页面取消后台任务并释放纹理。
+
+### 原生交互和冻结背景
+
+- 地图/节日来自本地索引；地图默认选当前大区对应的有效地图，否则选本地可用项。换地图清选区并回到中心 (0,0)，换节日清选区并保留中心。
+- [ReplayNumbers](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayNumbers.java) 统一整数提交、最近合法值回退和滚轮钳制。分辨率仅编辑固定 `1 /` 后的分母，区块数无固定业务上限，模糊强度 0..24 默认 9。悬停数字框即可滚轮调整，边界仍消费事件；侧栏空白滚轮不缩放画布，画布滚轮不改相机向量或中心。
+- 缩放目标 0.40..4.60，沿用指数滚轮响应及 85ms 时间缓动；空白横拖按 0.009 rad/GUI 像素旋转。方向键按时间平移，方向与附件一致。左键单选、Ctrl 切换、Shift 真实坐标矩形、Ctrl+Shift 追加；只从当前图像实际呈现的区块选取，像素深度归属优先，空白区域再用逆绘制顺序的投影四边形命中。右键设置临时中心并清平移。
+- [MappingReplayBackgroundMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MappingReplayBackgroundMixin.java) 在原版 `GameRenderer.renderLevel` 返回时，仅对当前回放 Screen 请求一次游戏画面捕获；首次留出世界渲染暖机帧。使用原版 `Screenshot.takeScreenshot` 内存回调，不写截图文件。
+- [ReplayBackdrop](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/ReplayBackdrop.java) 缩放冻结图到 GUI 像素；[ReplayBackground](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayBackground.java) 在独立有界 worker 做灰度及可分离高斯滤波。强度 0 保留灰度。地图和 UI 在滤波后的背景之上绘制，不进入高斯处理；新强度代替旧任务，页面关闭释放背景纹理和原始像素。
+
+### 回放删除与记录器协调
+
+- `MappingController.editLocalMap(worldName,layer,relativeCoordinates,whole)` 接收回放明确选中的本地目标，返回包含删除数与逐项失败原因的 Future。只通过已有安全 MapRepository 路径操作。节日缺覆盖时不删普通文件；删覆盖后重读普通回退，删世界只作用于选中的目录。
+- 删除当前正在记录的同名地图时，先使旧写入代际失效，在原单 IO worker 上串行执行管理任务，再刷新文件索引与 HUD。批量删除的块在当前会话被抑制自动补回；其他世界的回放管理不切换玩家当前记录目标。已接受的管理任务不被世界切换时的采集队列清理误丢弃。
+- 删图沿用 MappingConfirmation 的「首次仅激活、随后另一次双击」流程；退出页面、换地图或另一删除操作清除确认，键盘不能绕过鼠标二次确认。选区删除及删图后刷新合成数据、实际数量和选区，保留具体失败信息。
+
+### Mapping HUD 的地图记录分组
+
+- 新增不可变 [MappingRecordingSnapshot](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingRecordingSnapshot.java)。记录器在 Tick、任务事件及管理回调后发布；HUD 一帧只读取一次，不扫描目录、不读 NBT、不启动任务。
+- 世界信息下新增 6 个独立筛选键：`recording_origin`、`recording_chunk`、`recording_layer`、`recording_status`、`recording_current_state`、`recording_saved`。复用原 HudConfig 的模式、字段开关、布局和持久化；菜单的简洁/详细内容中分别增加「地图记录」分组。
+- [MappingRecordingContent](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/MappingRecordingContent.java) 负责双语格式化。实际工作中和已排队集合互斥，当前实现仍沿用单 IO worker，测试观测为 1 个正在处理 + 1 个排队，不虚构并发。当前块优先级为记录中 → 排队中 → 本层已保存 → 节日沿用普通层 → 未记录。
+- 本层计数只使用实际已提交的本层文件索引；`done` 的本轮已检查记录不充当已保存计数，普通层回退不计入节日覆盖数量。初始化、提交、切层、删除、重设原点和上下文清理刷新索引/快照；失败/取消清除实际在途状态。
+- 未识别世界时 6 项均为 —；已识别但未初始化显示「未初始化」及规定占位；已初始化停止显示「已停止」，没有任务时显示「记录中 · 等待新区块」。新增行参与原 HUD 尺寸、缩放和编辑预览计算，其他 HUD 字段与设置不变。
+
+### 验证记录与边界
+
+- `gradlew.bat clean build --offline` 及最终 build 通过，项目 JDK/Fabric/Loom 版本不变；git diff --check 通过。保持 master @ 6be9b78，未提交、推送或切换分支。
+- `tests/mapping/run.ps1`：原存储 86 项；新增回放 158 项；真实记录器配合受控客户端缓存的 HUD/管理集成通过（包括 1 处理 + 1 排队、脚下已保存时周围继续处理、负坐标、覆盖提交/删除/普通回退、离线所选地图删除隔离）。原已保存 A 的停留、卸载重载、停启仍未重新读取或改写。
+- 回放定向测试包含 1/64/超大区块数、稳定排序、固定采样柱与真实 Y、全空气柱、不同行分辨率/模式、实心接缝、透明深度与重叠命中、方向基底/视角约束/缩放、矩形多选、灰度/高斯、真实楼梯属性，以及视图重置不丢失尚未完成的列表读取。
+- HUD 137/27/733 项及世界信息 76 项、配置/语言（4297 项语言检查）、GUI 与公共 context 回归通过。新的记录状态还验证了未初始化、0 处理且有队列、普通回退不计覆盖数等文本分支。
+- 开发 Fabric 客户端已启动并加载新 Mixin；通过临时客户端测试适配器读取 9 个本地标准 .litematic、显示原生回放、验证无焦点数值滚轮，并取得实际画面（`.gradle/mapping-replay-native/native-replay.png`）。该测试适配器仅通过本次启动参数加载，不进入生产构建；临时地图不来自服务器查询。后续重复冒烟受界面状态变化影响，不能据此声称所有真实交互已验证。
+- 待人工验收：真实地图库的节日覆盖、完整鼠标组合/侧栏拖动、危险操作手感、不同 GUI 缩放、冻结背景的视觉强度、大地图性能和真实 Hypixel 运行期间的 HUD 状态。删除范围和层回退已在隔离目录自动验证；线上 Hypixel 未测试。
+
+## 23. Mapping 回放范围、整单元采样与观察方向修正（2026-11-17）
+
+本节替代第 22 节中精确区块数量、固定最小 XZ 采样柱、正 Y 相机及旧深度选项的规则；第 22 节其余入口、文件管理、后台队列和 HUD 记录仍沿用。工作分支保持 master @ 6be9b78，保留原有未提交内容，本次没有提交或切换分支。
+
+### 渲染距离与采样入口
+
+- [ReplaySelection.withinDistance / inViewDistance](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplaySelection.java) 对节日覆盖与普通层合成后的实际坐标做范围筛选：`dx=max(0,abs(chunkX-centerX)-1)`、`dz` 同理，严格满足 `dx²+dz²<R²`。对照项目 Loom 26.1.2 的 `ChunkTrackingView.isWithinDistance(...,false)`，不再排序取前 N 块。只遍历本地已有坐标，缺块不补空气；使用大整数处理半径平方，极大输入不产生坐标环或溢出。
+- [MappingReplayScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/screen/MappingReplayScreen.java) 使用独立的运行期 `renderDistance="16"`，左栏显示「渲染距离」，状态栏显示实际「已渲染区块」。旧实现的 64 仅是页面内存默认值，没有持久化配置键；本次不将其读为半径 64，不改地图配置、原点或记录层。右键改变预览中心后重建范围，保留无焦点数值框滚轮行为。
+- [ReplaySession.build / BuildJob.batch](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplaySession.java) 仅加载筛选结果，移除范围外邻块的额外解码；分批读取、有界 worker、代际取消和解码缓存仍沿用。换中心、半径或节日层会重新构建范围及边界网格。
+- 新增 [ReplaySampler.sample / depthSamples](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplaySampler.java)：每个 N×N XZ 单元（边缘截断）搜索完整采样空间，按 Y 降序、X 升序、Z 升序选第一个非空气块，返回真实源坐标与完整状态；整个空间为空才无样本。表层选择最高层，向下 2 层扩展到最高样本以下两个原始 Y 层（空气不延长深度），全部遍历完整有效 Y。
+
+### 外露面、深度和相机
+
+- [ReplayMesh.build / exterior](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayMesh.java) 先为实际入选区块建立采样体积，再按相邻状态体素形状剪去被覆盖的面片。表层保留全高度外轮廓，包括范围边缘侧壁、缺块侧壁、地形高度差及外露底面；磁盘中存在但未入选的区块不参与遮挡。同形完整立方体可竖向合并，部分遮挡用矩形差集保留未覆盖部分。
+- 表层之外的两个深度模式按各自采样空间提交额外内部候选面，继续经过 [ReplayRaster](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayRaster.java) 正常背面剔除和深度测试，不改成透视显示；因此不透明实心体的最终可见画面可相同。`Part.depthSamples` 记录采样候选数。[ReplayMaterials.resolve](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/ReplayMaterials.java) 使用原版 `canOcclude()` 与实际体素形状，避免把非整立方体一概当成无遮挡。
+- [ReplayCamera.axis / normalize / basis](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayCamera.java) 将 Y 改为 −3.00..+3.00、步进 0.01。正值俯视、0 平视、负值仰视；全向量接近零时保留最后有效朝向和仰角。水平约束、缩放和投影公式保持原链路，XYZ 指示同步使用同一基底。仰视时区块网格轮廓放在实际底面一侧，外露底面参与正常深度绘制。
+- 新增 [ReplayDepth.options](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayDepth.java)，将当前稳定枚举 ID 放首位，其他按原枚举顺序且不重复。`MappingReplayScreen.openDepthOptions / selectDepth` 只在明确选择不同值时重建场景；当前项、Esc 和外部点击均保持设置、相机及画布，保留选中标记。未改动的相机文本不重复量化，避免打开下拉时引起视角变化。
+- [en_us.json](src/main/resources/assets/ultimate_garden/lang/en_us.json) 与 [zh_cn.json](src/main/resources/assets/ultimate_garden/lang/zh_cn.json) 更新渲染距离、实际数量、分辨率整单元优先级、渲染深度和相机 Y 的名称及原生 Tooltip。深度为 Surface / Surface + 2 Layers / All（表层／向下 2 层／全部）；中文角度按实际方向显示俯角／平视／仰角，英文显示带符号 Elevation。
+
+### 本次验证
+
+- JDK 25，`gradlew.bat build --offline` 通过。`tests/mapping/run.ps1`：存储 86 项、回放 6914 项及真实记录器受控缓存集成通过；包括原版范围逐点对照、R=16 四个指定边界、右键中心的纯范围计算、整单元孤立高块、同高 X/Z 决胜、全空气、边缘截断、三个深度空间、范围外/缺失邻块、实心及不等高接缝、底面和负 Y 光栅。
+- 配置/语言回归通过（语言 4329 项）；HUD 137/27/733 项及世界信息 76 项回归通过。上述存储/记录器检查仍在隔离测试目录执行，不改正式地图。
+- 原生 26.1.2/Fabric 客户端使用仅本次启动加载的临时测试适配器和独立测试地图验证：R=16 纳入 (16,0)/(0,16)、排除 (16,16)/(17,0)，无焦点距离数值框滚轮不改变画布缩放，负 Y 绘制、正/零/负 Y 的双语角度格式、真实像素命中的右键重定中心且原点不变。Surface / Surface + 2 Layers / All 逐一验证首项与选中 ID 一致，Esc、外部点击和重选当前项均不改变图像对象或场景 generation。日志有三条 `REPLAY_RULES_DEPTH_PASS` 和最终 `REPLAY_RULES_NATIVE_PASS`；先前加载屏幕覆盖、未滚到数值框的试验不计为通过。
+- 原生日志保留于 `.gradle/mapping-record-audit/replay-rules-native.txt`，仰视截图为 `.gradle/mapping-replay-rules-native/replay-negative-y.png`。临时地图在验证后清理，测试适配器不进入生产 JAR，实际 UI 配置未改写。完整中英提示字典及占位符由语言回归检查；所有 GUI 缩放下的提示气泡手感、真实大型地图库性能和复杂透明/非整块地形仍待人工观察，未进行线上 Hypixel 测试。
+
+## 24. Mapping 路径统一、实时背景与区块边界开关（2026-11-17）
+
+本节替代第 22 节的冻结背景处理和默认始终绘制边界线规则；地图根目录的现行说明已同步改为下列位置。其余记录、坐标、节日合成、深度与输入规则不变。
+
+### 唯一地图根目录
+
+- 新增 [MappingPaths.root(gameDirectory)](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingPaths.java)，返回当前游戏实例的 `config/ultimategarden/map/`，不依赖账号配置目录，不回退或自动迁移旧目录。有效地图为 `config/ultimategarden/map/<world>/map.json`；普通文件和节日子目录仍沿用原布局与唯一原点。
+- [MappingController.tickWork / editLocalMap](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MappingController.java) 和 [MappingReplayScreen](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/screen/MappingReplayScreen.java) 均调用这个入口。初始化、记录、重绘、普通/节日读取、存储索引与 HUD 快照、区块删除和整图删除因此使用同一根目录。
+- 回放本地列表仍经 [LocalMapLibrary.list](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/LocalMapLibrary.java) 验证名称与目录一致；管理操作仍经 [MapRepository](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/MapRepository.java) 的规范化根目录、目标世界目录和符号链接校验，不能用回放选择删除其他世界或 Mapping 根目录。
+
+### 同帧 GPU 世界背景
+
+- [MappingReplayBackgroundMixin](src/client/java/com/kuangsanfeng/ultimategarden/client/mixin/MappingReplayBackgroundMixin.java) 改在 `GameRenderer.render` 中、原版 `GuiRenderer.render` 调用之前执行 `MappingReplayScreen.processWorldBackground`。此时当前帧世界、实体轮廓及世界后处理已结束，地图、HUD、文字和控件尚未绘制。
+- [ReplayBackdrop.processWorld](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/mapping/ReplayBackdrop.java) 每帧直接使用当前主渲染目标：水平灰度/Gaussian → 垂直 Gaussian → 写回主颜色目标。两个临时 `TextureTarget` 采用 GUI 像素尺寸，两个 `MappableRingBuffer` 传入 UV 步距和当前 sigma；强度仍为 0..24。0 的半径为 0，仍输出实时灰度，不复用首张截图，不做 CPU 读回或后台截图排队。
+- 新增客户端着色器 [mapping_backdrop.vsh](src/client/resources/assets/ultimate_garden/shaders/core/mapping_backdrop.vsh) / [mapping_backdrop.fsh](src/client/resources/assets/ultimate_garden/shaders/core/mapping_backdrop.fsh)，Gaussian 核为 `exp(-0.5*i*i/(sigma*sigma))`、半径 `ceil(3*sigma)`，亮度系数 0.2126/0.7152/0.0722。地图纹理和 UI 在上述处理后正常绘制，保留清晰颜色与边缘。
+- 页面继续 `isPauseScreen=false`，拖动、滚轮和方向键仍由原回放输入路径处理。后台世界没有额外输入。GUI 尺寸变化时重建临时目标，关闭页面释放目标和 uniform ring；没有世界时显示原有深色底，不保留上一世界截图。[ReplayBackground.filter](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayBackground.java) 仅保留为 CPU 数学回归参考，不再驱动运行期背景。
+
+### 边界线偏好与画布重绘
+
+- 左侧依次为「渲染距离 → 显示区块边界 → 高斯模糊强度」。`MappingReplayScreen` 使用现有 [ToggleSwitch](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/widget/ToggleSwitch.java)，英文 Show Chunk Borders；双语标签和 Hint 在现有语言文件中。开关仅影响线条，不影响深度选项或外露侧壁。
+- [UIConfig](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/model/display/UIConfig.java) 新增 `mappingReplayShowChunkBorders=true`，由 [ConfigManager](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/ConfigManager.java) 的原有 UI 配置加载/保存流程处理。首次使用、缺字段及重置默认值均为开启；保存的关闭值在重载后保留，不另建配置文件。
+- `ReplaySession.Request` 带只读边界开关，`MappingReplayScreen.toggleBorders` 保存后只标记画布 dirty；[ReplayRaster.render](src/client/java/com/kuangsanfeng/ultimategarden/client/function/mapping/replay/ReplayRaster.java) 按开关跳过轮廓线像素。已解码地图和 `ReplayMesh` 不失效，像素归属与投影轮廓命中仍计算，已选区块的填色仍绘制；右键居中继续走原范围重建逻辑。
+
+### 本次验证与实际边界
+
+- JDK 25 / Fabric 26.1.2，`gradlew.bat build --offline` 通过。`tests/mapping/run.ps1`：存储 86 项、回放 7478 项及真实记录器受控缓存集成通过，覆盖新目录预置文件的列表、普通/节日回退、HUD 索引、区块/离线整图删除、旧目录不创建，以及边界关闭时命中/选区不变。`tests/config/run.ps1` 通过，包含开关默认、持久化关闭与旧配置缺字段回到开启；语言检查 4341 项通过。
+- 原生客户端使用单独的临时 Fabric 测试适配器、复制出的单人测试世界和新根目录下的隔离地图：世界持续 Tick，背景 worldFrames 持续增加，含移动客户端测试实体的两帧零模糊背景不同且 RGB 三通道相等；强度改为 9 后 GPU 输出变化，实际截图中背景模糊而地图/UI 保持清晰。测试实体不进入服务端存档。
+- 原生真实开关点击、关闭值重载、关闭边界后的选区及右键居中通过；开关切换前后 `ReplaySession.mesh` 对象和 generation 均未变化。普通/节日预览、覆盖删除保留普通文件、整图删除保留邻接世界目录通过。日志有 `MAPPING_LIVE_ZERO_GRAY_DYNAMIC_PASS` 和 `MAPPING_LIVE_NATIVE_PASS`，保留于 `.gradle/mapping-record-audit/live-native.txt`；截图 `.gradle/mapping-live-native/live-background.png`。
+- 开发实例未找到用户手动搬入的正式地图，本次用预先写入新根目录的隔离样本验证；未对正式地图执行删除。原先存在的空旧目录保持相同修改时间且没有新增文件，测试实例另验证旧目录始终未创建。临时地图和复制的测试世界在验证后清理；用户实际运行实例内的既有地图、大地图性能和不同显卡/GUI 缩放仍待人工验收。

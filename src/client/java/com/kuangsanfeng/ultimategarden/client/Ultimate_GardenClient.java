@@ -157,15 +157,22 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         macroManager = new MacroManager(farmController);
         com.kuangsanfeng.ultimategarden.client.runtime.feature.adapters.ClientFeatures.install(features,farmController,com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE);
         com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.register();
-        windowsInputInterceptor.setExternalOwner(com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::intercepting);
+        com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.register();
+        windowsInputInterceptor.setExternalOwner(()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.intercepting()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput());
         windowsInputInterceptor.setExternalMouseOwners(
-                com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingAim,
-                com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingShoot);
-        farmController.setExternalInputOwner(com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE::enabled);
+                ()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.interceptingAim()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput(),
+                ()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.interceptingShoot()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput());
+        farmController.setExternalInputOwner(()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.running());
         var macroHud = new com.kuangsanfeng.ultimategarden.client.platform.ui.hud.MacroStatusHud(configManager, farmController, windowsState);
         com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("macro_status",macroHud::render);
         var shootoutHud = new com.kuangsanfeng.ultimategarden.client.platform.ui.hud.ZombieShootoutHud(configManager);
         com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("zombie_shootout_status",shootoutHud::render);
+        com.kuangsanfeng.ultimategarden.client.function.world.WorldInfoService.register();
+        com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE.register();
+        var mappingHud=new com.kuangsanfeng.ultimategarden.client.platform.ui.adapters.mapping.MappingHud(configManager);
+        com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("mapping",mappingHud::render);
+        var transmissionHud=new com.kuangsanfeng.ultimategarden.client.platform.ui.adapters.instant_transmission.InstantTransmissionHud(configManager);
+        com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("instant_transmission_status",transmissionHud::render);
         net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(
                 (game, screen, width, height) -> farmController.onPlayerScreenOpened(screen));
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.START_CLIENT_TICK.register(game -> com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.tick());

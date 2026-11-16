@@ -15,7 +15,8 @@ public final class MenuInputRegression {
         var game = new Minecraft(); var keys = new VirtualKeyboard();
         var mouse = new VirtualMouse(game,new ActionScheduler());
         var input = new VirtualInput(keys,mouse);
-        input.keyDown("W"); input.keyDown("D"); input.mouseDown();
+        check(!input.hasHeldInput());
+        input.keyDown("W"); input.keyDown("D"); input.mouseDown();check(input.hasHeldInput());
         for (int transition = 0; transition < 20; transition++) {
             keys.nativeKeys.clear(); game.options.keyAttack.setDown(false); // Native Screen/open or grab/setAll.
             check(mouse.isLeftDown());
@@ -29,13 +30,13 @@ public final class MenuInputRegression {
         check(keys.nativeKeys.equals(Set.of("W","D","S")));
         input.keyUp("W"); input.keyUp("D"); input.actionKeyUp("S"); input.mouseUp();
         keys.nativeKeys.clear(); input.reapplyHeldState();
-        check(keys.nativeKeys.isEmpty()); check(!game.options.keyAttack.down);
+        check(keys.nativeKeys.isEmpty()); check(!game.options.keyAttack.down);check(!input.hasHeldInput());
         input.keyDown("A"); input.actionMouseDown();
         input.suspendForMenu();
         input.reapplyHeldState();
-        check(keys.nativeKeys.isEmpty()); check(!game.options.keyAttack.down);
+        check(keys.nativeKeys.isEmpty()); check(!game.options.keyAttack.down);check(!input.hasHeldInput());
         input.resumeAfterMenu(null,false); input.reapplyHeldState();
-        check(keys.nativeKeys.isEmpty()); check(!game.options.keyAttack.down);
+        check(keys.nativeKeys.isEmpty()); check(!game.options.keyAttack.down);check(!input.hasHeldInput());
         System.out.println("PASS: " + checks + " real virtual-input hold/release/Screen-boundary checks; native mappings/window are stubbed.");
     }
 }

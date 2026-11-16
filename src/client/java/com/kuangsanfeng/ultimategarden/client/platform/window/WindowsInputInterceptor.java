@@ -53,6 +53,9 @@ public final class WindowsInputInterceptor {
 
 
 
+    /** The local (Farm) reservation only; excludes external owners and UI routing. */
+    public boolean isLocallyEnabled() { return state.isInputIntercepting(); }
+
     public boolean shouldBlockInput() {
 
         return (state.isInputIntercepting() || externalOwner.getAsBoolean()) && !uiInputAllowed.getAsBoolean();

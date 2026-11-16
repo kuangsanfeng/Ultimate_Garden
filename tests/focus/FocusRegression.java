@@ -111,6 +111,14 @@ public final class FocusRegression {
         check(interceptor.shouldBlockInput());
         check(interceptor.blockMouseButton());
         check(interceptor.blockKeyboard(GLFW.GLFW_KEY_W));
+        var localOwner=new WindowsInputInterceptor(new WindowsState());
+        check(!localOwner.isLocallyEnabled());
+        localOwner.setExternalOwner(()->true);
+        check(localOwner.shouldBlockInput()&&!localOwner.isLocallyEnabled());
+        localOwner.enable();check(localOwner.isLocallyEnabled());
+        localOwner.setUiInputAllowed(()->true);
+        check(localOwner.isLocallyEnabled()&&!localOwner.shouldBlockInput());
+        localOwner.disable();check(!localOwner.isLocallyEnabled());
         System.out.println("PASS: " + checks + " Focus lifecycle checks using real controller and simulated vanilla mouse/window boundaries.");
     }
 }

@@ -221,12 +221,14 @@ public final class ConfigManager {
                             value -> farm.setSelectedSimulatedCropType(textValue(value)),
                             value -> { throw new IllegalArgumentException("Numeric simulated crop requires reselection"); });
                     } else if (module == Module.UI) {
+                        field(document, "mappingReplayShowChunkBorders", null, value -> ui.setMappingReplayShowChunkBorders(boolValue(value)), null);
                         field(document, "menuTransparency", null, value -> ui.setMenuTransparency(intValue(value)), null);
                         field(document, "language", null, value -> ui.setLanguage(com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageType.valueOf(textValue(value))), null);
                         field(document, "uiThemeMode", "theme", value -> ui.setUiThemeMode(UIConfig.Theme.valueOf(textValue(value))), value -> ui.setUiThemeMode(UIConfig.Theme.valueOf(textValue(value))));
                         field(document, "accentColor", null, value -> ui.setAccentColor(textValue(value)), null);
                     } else if (module == Module.GENERAL) {
                         repairedField |= general.loadHints(document);
+                        repairedField |= general.instantTransmission().load(document);
                         field(document, "showModChatHints", null, value -> general.setShowModChatHints(boolValue(value)), null);
                         field(document, "autoPauseFarmWhenOpeningMenu", null, value -> general.setAutoPauseFarmWhenOpeningMenu(boolValue(value)), null);
                         field(document, "autoResumeFarmAfterGuiClose", null, value -> general.setAutoResumeFarmAfterGuiClose(boolValue(value)), null);
@@ -259,6 +261,7 @@ public final class ConfigManager {
             case ZOMBIE_SHOOTOUT -> document = shootout.toJson(document);
             case GENERAL -> {
                 document.add("hint",general.hintsToJson(document));
+                document.add("instantTransmission",general.instantTransmission().toJson());
                 document.addProperty("showModChatHints", general.isShowModChatHints());
                 document.addProperty("autoPauseFarmWhenOpeningMenu", general.isAutoPauseFarmWhenOpeningMenu());
                 document.addProperty("autoResumeFarmAfterGuiClose", general.isAutoResumeFarmAfterGuiClose());
@@ -277,6 +280,7 @@ public final class ConfigManager {
                 document.addProperty("selectedSimulatedCropType", farm.getSelectedSimulatedCropType());
             }
             case UI -> {
+                document.addProperty("mappingReplayShowChunkBorders", ui.isMappingReplayShowChunkBorders());
                 document.addProperty("menuTransparency", ui.getMenuTransparency());
                 document.addProperty("language", ui.getLanguage().name());
                 document.remove("theme");
