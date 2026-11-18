@@ -18,6 +18,7 @@ public final class MappingHud {
   if(c.player==null||c.level==null||!editing&&c.options.hideGui||c.screen instanceof UltimateGardenScreen)return;
   var recorder=com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE.recordingSnapshot();
   var id=HudConfig.HudId.MAPPING;var hud=configs.getHudConfig();if(!hud.show(id,recorder.recording(),editing))return;
+  if(!editing&&!configs.getHudConfig().worldAllows(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.HudId.MAPPING,com.kuangsanfeng.ultimategarden.client.function.world.WorldInfoService.snapshot().island()))return;
   var snapshot=WorldInfoService.snapshot();var rows=new ArrayList<String[]>();
   for(String key:HudConfig.fields(id))if(hud.visible(id,key)){String value=key.startsWith("recording_")?MappingRecordingContent.value(key,recorder,language):snapshot.value(key);rows.add(new String[]{language.text("ui.ultimategarden.mapping_hud."+key),value==null||value.isBlank()?language.text("ui.ultimategarden.mapping_hud.unknown"):value,key.startsWith("recording_")?"recording":"world"});}
   int width=288,height=rows.isEmpty()?30:40;for(var row:rows)width=Math.max(width,Math.max(c.font.width(row[0]),c.font.width(row[1]))+22);

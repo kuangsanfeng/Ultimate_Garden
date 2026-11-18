@@ -47,6 +47,13 @@ public final class HintRegression {
   Minecraft.messages.clear();HintManager.printFor("CropSelect","Not implemented / Coming soon");check(Minecraft.messages.isEmpty());
   general.setHintEnabled(Hint.hotkeyHelp,true);emit("Hotkey");check(Minecraft.messages.stream().anyMatch(s->s.contains("REBOUND-toggle")));
   general.setHintEnabled(Hint.commandHelpErrors,false);emit("Helper");check(Minecraft.messages.isEmpty());emit("WrongCommand");check(Minecraft.messages.isEmpty());
+  for(String group:List.of("macro","pest","focus")) {
+   Hint target=switch(group){case "macro"->Hint.macroStart;case "pest"->Hint.pestTimerStart;default->Hint.focusReleased;};
+   String event=switch(group){case "macro"->"MacroStart";case "pest"->"PestLoadoutTimerStart";default->"FocusRelease";};
+   general.setHintEnabled(target,true);general.setHintGroupEnabled(group,false);emit(event);check(Minecraft.messages.isEmpty());check(general.hintSelected(target));
+   general.setHintGroupEnabled(group,true);emit(event);check(!Minecraft.messages.isEmpty());
+   general.setHintEnabled(target,false);general.setHintGroupEnabled(group,false);general.setHintGroupEnabled(group,true);emit(event);check(Minecraft.messages.isEmpty());
+  }
   general.setShowModChatHints(false);check(configs.save(ConfigManager.Module.GENERAL));
   var loaded=new ConfigManager(path).getGeneralConfig();check(!loaded.isShowModChatHints());check(!loaded.hintEnabled(Hint.cropSelectionInitialization));check(!loaded.hintEnabled(Hint.commandHelpErrors));
   JsonObject old=JsonParser.parseString(Files.readString(path.resolve("general.json"))).getAsJsonObject();old.remove("hint");old.addProperty("extra",9);Files.writeString(path.resolve("general.json"),old.toString());

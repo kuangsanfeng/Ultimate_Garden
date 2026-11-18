@@ -53,7 +53,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 	public void onInitializeClient() {
 
         observedUser = Minecraft.getInstance().getUser();
-        configManager = new ConfigManager(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("ultimategarden"), accountIdentity(observedUser));
+        configManager = new ConfigManager(ConfigManager.userSettingsRoot(), accountIdentity(observedUser));
         espManager = new com.kuangsanfeng.ultimategarden.client.function.esp.ESPManager(configManager);
         var pestESP = new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PestESP(configManager.getPestConfig());
         espManager.register(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig.SILVERFISH, pestESP::collect);

@@ -32,12 +32,20 @@ public final class RandomDelayConfig {
         }
     }
     private final EnumMap<Key, Range> ranges = new EnumMap<>(Key.class);
+    public boolean enabled=true;
+    private final EnumMap<Key,Boolean> switches=new EnumMap<>(Key.class);
+    private java.util.function.BooleanSupplier parentEnabled=()->true;
+    public void setParentEnabled(java.util.function.BooleanSupplier parent){parentEnabled=Objects.requireNonNull(parent);}
+    public boolean ownEnabled(Key key){return switches.getOrDefault(key,true);}
+    public void setEnabled(Key key,boolean value){switches.put(key,value);}
+    public boolean effective(Key key){return enabled&&parentEnabled.getAsBoolean()&&ownEnabled(key);}
     public RandomDelayConfig() { resetToDefault(); }
-    public void resetToDefault() { for (Key key : Key.values()) ranges.put(key, key.defaults); }
+    public void resetToDefault() { enabled=true;switches.clear();for (Key key : Key.values()) ranges.put(key, key.defaults); }
     public Range get(Key key) { return ranges.get(Objects.requireNonNull(key)); }
     public void set(Key key, int minTicks, int maxTicks) { ranges.put(key, new Range(minTicks, maxTicks)); }
     public int sample(Key key) { return sample(key, ThreadLocalRandom.current()); }
     public int sample(Key key, RandomGenerator random) {
+        if(!effective(key))return 0;
         Range range = get(key);
         if (range.minTicks == range.maxTicks) return range.minTicks;
         if (key.totalWeight > 0 && range.equals(key.defaults)) {
@@ -56,10 +64,12 @@ public final class RandomDelayConfig {
     public boolean load(JsonObject source) {
         resetToDefault();
         boolean repaired = false;
+        if(source.has("enabled")){var v=source.get("enabled");if(v.isJsonPrimitive()&&v.getAsJsonPrimitive().isBoolean())enabled=v.getAsBoolean();else repaired=true;}
         for (Key key : Key.values()) {
             if (!source.has(key.name())) continue;
             try {
                 JsonObject value = source.getAsJsonObject(key.name());
+                if(value.has("enabled")){var v=value.get("enabled");if(!v.isJsonPrimitive()||!v.getAsJsonPrimitive().isBoolean())throw new IllegalArgumentException("enabled");setEnabled(key,v.getAsBoolean());}
                 Range fallback = key.defaults;
                 set(key, integer(value, "minTicks", fallback.minTicks), integer(value, "maxTicks", fallback.maxTicks));
             } catch (RuntimeException error) { repaired = true; }
@@ -69,9 +79,11 @@ public final class RandomDelayConfig {
     public JsonObject toJson(JsonObject source) {
         JsonObject result = source.deepCopy();
         result.addProperty("schemaVersion", 1);
+        result.addProperty("enabled",enabled);
         for (Key key : Key.values()) {
             JsonObject value = result.has(key.name()) && result.get(key.name()).isJsonObject()
                     ? result.getAsJsonObject(key.name()) : new JsonObject();
+            value.addProperty("enabled",ownEnabled(key));
             value.addProperty("minTicks", get(key).minTicks);
             value.addProperty("maxTicks", get(key).maxTicks);
             result.add(key.name(), value);

@@ -148,7 +148,7 @@ public class TransmissionRegression {
   var saved=JsonParser.parseString(Files.readString(dir.resolve("general.json"))).getAsJsonObject();check(saved.getAsJsonObject("instantTransmission").get("PITCH_STEP").getAsDouble()==-5);check(saved.get("unrelated").getAsBoolean());
   try(var files=Files.list(dir)){check(files.anyMatch(f->f.getFileName().toString().startsWith("general.json.broken-")));}
   String controller=Files.readString(Path.of("src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java"));
-  check(controller.contains("targetYaw=targetPitch=0"));check(controller.contains("aim(State.DOWN_ALIGN,0,90)"));check(controller.contains("aim(State.TEST_ALIGN,plan.yaws().get(yawIndex),plan.pitches().get(pitchIndex))"));
+  check(controller.contains("targetYaw=targetPitch=0"));check(controller.contains("aim(State.DOWN_ALIGN,yRounding?fixedYaw:0,90)"));check(controller.contains("aim(State.TEST_ALIGN,plan.yaws().get(yawIndex),plan.pitches().get(pitchIndex))"));
  }
  static void resetJumpChecks()throws Exception{
   var gate=new TransmissionResetJump();
@@ -200,6 +200,6 @@ public class TransmissionRegression {
   String stop=source.substring(source.indexOf("public void stop("),source.indexOf("public void register("));
   check(stop.contains("resetJump.clear()")&&stop.contains("releaseResetKeys(\"TEST_STOP_CLEANUP\")"));
   check(source.contains("keyboard.releaseAll();resetDiagnostics.submitted("));
-  check(source.contains("}else beginTrial(group);"));
+  check(source.contains("}else if(yRounding)beginY();else beginTrial(group);"));
  }
 }

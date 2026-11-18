@@ -289,7 +289,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         place(section, cursor, () -> true);
         sections.add(section); currentSection = section; cursor += section.getHeight() + CollapsibleSection.CONTENT_GAP;
     }
-    private int sectionInset(CollapsibleSection section) { return section == null ? 0 : section.state().inset(contentWidth); }
+    private int sectionInset(CollapsibleSection section) { return section == null ? 0 : Math.min((section.state().depth()+1)*CollapsibleSection.NESTED_INDENT,Math.max(0,contentWidth-80)); }
     private int sectionX(CollapsibleSection section) { return contentX + sectionInset(section); }
     private int sectionWidth(CollapsibleSection section) { return Math.max(40,contentWidth - sectionInset(section)); }
     private void info(Supplier<String> value) {
@@ -313,6 +313,11 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         place(new StyledButton(sectionX(currentSection), contentTop + cursor, sectionWidth(currentSection), 26, language.text(label), primary, this::palette, () -> act(action))
                 .withHelp(help, helpText(label)), cursor, enabled);
         cursor += 34;
+    }
+    private void headerToggle(BooleanSupplier value, Runnable action, BooleanSupplier enabled) {
+        int height=currentSection.getHeight();
+        currentSection.attachToggle(value, () -> act(action), enabled);
+        cursor+=currentSection.getHeight()-height;
     }
     private void toggle(String label, BooleanSupplier value, Runnable action, BooleanSupplier enabled) {
         toggle(label, value, action, enabled, 0);
@@ -484,7 +489,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             item.widget().active = expanded && item.enabled().getAsBoolean();
             if (!item.widget().visible && getFocused() == item.widget()) { clearFocus(); setDragging(false); }
             if (item.widget() instanceof EditBox edit) {
-                edit.setEditable(item.widget().active); edit.setTextColor(palette().text());
+                edit.setEditable(item.widget().active); edit.setTextColor(0xff172c26); edit.setTextColorUneditable(0xff60796d);
             }
         }
     }
@@ -521,11 +526,15 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         g.text(font, Component.literal(choices != null ? language.text("ui.ultimategarden.choose_an_option") : language.text("ui.ultimategarden." + page.name().toLowerCase(Locale.ROOT))).withStyle(ChatFormatting.BOLD), contentX, top + 40, p.fg(p.text()), false);
         for (AbstractWidget widget : fixed) widget.extractRenderState(g, mouseX, mouseY, delta);
         g.enableScissor(contentX - 1, contentTop, contentX + contentWidth + 1, contentBottom);
+        for (var section : sections) if (section.state().ancestorsVisible()) {
+            int bottom=section.isExpanded()?displayedY(section.state().contentEnd()):section.getBottom();
+            if(bottom>contentTop&&section.getY()<contentBottom)section.drawPanel(g,bottom);
+        }
         for(var divider:dividers)if(sectionVisible(divider.section())){
             int y=displayedY(divider.y());
             g.fill(sectionX(divider.section())+8,y,sectionX(divider.section())+sectionWidth(divider.section())-8,y+1,p.bg(ThemePalette.blend(p.background(),0xff000000,.18f)));
         }
-        for (Card card : cards) if (sectionVisible(card.section())) RoundedRect.fill(g, sectionX(card.section()) + card.inset(), displayedY(card.y()), Math.max(40, sectionWidth(card.section()) - card.inset()), card.height(), 10, p.bg(p.surface(), card.enabled().getAsBoolean() ? 1f : .4f));
+        for (Card card : cards) if (sectionVisible(card.section())) RoundedRect.fill(g, sectionX(card.section()) + card.inset(), displayedY(card.y()), Math.max(40, sectionWidth(card.section()) - card.inset()), card.height(), 10, p.bg(0xffffffff, card.enabled().getAsBoolean() ? 1f : .4f));
         for (Label label : labels) {
             if (!sectionVisible(label.section())) continue;
             int y = displayedY(label.y());
@@ -537,7 +546,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             Component text = Component.literal(label.text().get());
             if (label.heading()) text = text.copy().withStyle(ChatFormatting.BOLD);
             if (!label.help().isBlank()) max -= HelpTooltip.SIZE + HelpTooltip.GAP;
-            g.textWithWordWrap(font, text, sectionX(label.section()) + 10 + label.inset(), y, Math.max(40, max - label.inset()), p.fg(label.heading() ? p.text() : p.muted(), label.enabled().getAsBoolean() ? 1f : .4f), false);
+            g.textWithWordWrap(font, text, sectionX(label.section()) + 10 + label.inset(), y, Math.max(40, max - label.inset()), p.fg(label.heading() ? 0xff172c26 : 0xff60796d, label.enabled().getAsBoolean() ? 1f : .4f), false);
             help.iconAfterText(g, font, label, text, sectionX(label.section()) + 10 + label.inset(), y, Math.max(40, max - label.inset()), label.help(), p, label.enabled().getAsBoolean() ? 1f : .4f);
         }
         if (choices == null && page == Page.Home && sectionVisible(progressSection)) {
@@ -622,7 +631,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private void pests() {
         heading("ui.ultimategarden.pest_loadout");
         var config = configs.getPestConfig();
-        toggle("ui.ultimategarden.automatic_pest_loadout", config::isAutoPestLoadout, () -> { config.setAutoPestLoadout(!config.isAutoPestLoadout()); saved(configs.save(ConfigManager.Module.PEST)); }, () -> true);
+        headerToggle( config::isAutoPestLoadout, () -> { config.setAutoPestLoadout(!config.isAutoPestLoadout()); saved(configs.save(ConfigManager.Module.PEST)); }, () -> true);
         info(() -> language.text("ui.ultimategarden.state.current_timer", timerText()));
         info(() -> language.text("ui.ultimategarden.state.delay", config.getPestLoadoutDelayTicks(), config.getPestLoadoutDelayTicks() / 20.0));
         input("ui.ultimategarden.delay_ticks_integer_1_2147483647", pestDelayDraft, value -> pestDelayDraft = value, () -> true);
@@ -639,7 +648,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         var parent=currentSection;
         var section=nestedDelaySection("ui.ultimategarden.shootout.title",parent);
         var controller=com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE;
-        toggle("ui.ultimategarden.shootout.enabled",controller::enabled,controller::toggle,() -> true);
+        headerToggle(controller::enabled,controller::toggle,() -> true);
         var automation=configs.getZombieShootoutConfig();
         toggle("ui.ultimategarden.shootout.auto_aim",automation::isAutoAimEnabled,()->{
             automation.setAutoAimEnabled(!automation.isAutoAimEnabled());saved(configs.save(ConfigManager.Module.ZOMBIE_SHOOTOUT));
@@ -730,7 +739,8 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private void developerSettings(){
         heading("ui.ultimategarden.developer_options");var developer=currentSection;
         mappingSettings(developer);
-        var instant=nestedDelaySection("ui.ultimategarden.instant.title",developer);
+        var transmission=nestedDelaySection("ui.ultimategarden.instant.title",developer);
+        var instant=nestedDelaySection("ui.ultimategarden.instant.path_test",transmission);
         var test=com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE;
         button("ui.ultimategarden.instant.toggle",false,()->test.toggle(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.MENU),()->true);
         info("ui.ultimategarden.instant.status",test::status);
@@ -744,7 +754,12 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         input("ui.ultimategarden.instant.distance_bonus_note",instantConfig.distanceBonusNote(),value->act(()->{
             instantConfig.setDistanceBonusNote(value);saved(configs.save(ConfigManager.Module.GENERAL));
         }),()->!test.running()&&!configs.isPendingRestart(ConfigManager.Module.GENERAL),"",0);
-        instant.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=developer;
+        instant.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=transmission;
+        var rounding=nestedDelaySection("ui.ultimategarden.instant.y_rounding",transmission);
+        button("ui.ultimategarden.instant.y_toggle",false,test::toggleYRound,()->true);
+        info("ui.ultimategarden.instant.status",test::status);
+        rounding.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=transmission;
+        transmission.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=developer;
         var carnival=nestedDelaySection("ui.ultimategarden.developer.carnival",developer);
         var shootout=nestedDelaySection("ui.ultimategarden.developer.shootout",carnival);
         String title="ui.ultimategarden.developer.shootout.logs";
@@ -754,7 +769,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         },58);
         var collector=com.kuangsanfeng.ultimategarden.client.function.collection.zombie_shoot.compat.ZombieShootCollector.INSTANCE;
         currentSection=shootout;place(logs,cursor,()->true);sections.add(logs);
-        place(new ToggleSwitch(contentX+contentWidth-54,contentTop+cursor+(logs.getHeight()-24)/2,language.text(title),GardenMenuAdapter.this::palette,collector::logsEnabled,()->act(()->collector.setLogsEnabled(!collector.logsEnabled()))),cursor+(logs.getHeight()-24)/2,()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
+        logs.attachToggle(collector::logsEnabled,()->act(()->collector.setLogsEnabled(!collector.logsEnabled())),()->!configs.isPendingRestart(ConfigManager.Module.ZOMBIE_SHOOTOUT));
         currentSection=logs;cursor+=logs.getHeight()+CollapsibleSection.CONTENT_GAP;
         var config=configs.getZombieShootoutConfig();
         for(var category:com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.shootout.ZombieShootLogCategory.values()){
@@ -783,8 +798,9 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             String prefix="ui.ultimategarden.hud.panel."+id.name();
             var panel=nestedDelaySection(prefix,parent);
             String showKey=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.show";case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.show_zombie";case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.show_instant_transmission";case MAPPING->"ui.ultimategarden.hud.show_mapping";};
-            toggle(showKey,()->hud.enabled(id),()->{hud.enabled(id,!hud.enabled(id));saved(configs.save(ConfigManager.Module.HUD));},()->!configs.isPendingRestart(ConfigManager.Module.HUD));
+            headerToggle(()->hud.enabled(id),()->{hud.enabled(id,!hud.enabled(id));saved(configs.save(ConfigManager.Module.HUD));},()->!configs.isPendingRestart(ConfigManager.Module.HUD));
             toggle("ui.ultimategarden.hud.only_running",()->hud.onlyRunning(id),()->{hud.onlyRunning(id,!hud.onlyRunning(id));saved(configs.save(ConfigManager.Module.HUD));},()->hud.enabled(id)&&!configs.isPendingRestart(ConfigManager.Module.HUD),CollapsibleSection.NESTED_INDENT);
+            hudWorldFilter(id,panel,hud);
             dropdown("ui.ultimategarden.hud.display_mode",hud.mode(id).name(),Arrays.stream(HudConfig.Mode.values()).map(mode->new Choice(mode.name(),"ui.ultimategarden.hud.mode."+mode.name(),true)).toList(),value->{hud.mode(id,HudConfig.Mode.valueOf(value));saved(configs.save(ConfigManager.Module.HUD));build();},()->!configs.isPendingRestart(ConfigManager.Module.HUD));
             for(boolean compact:new boolean[]{true,false}){
                 var section=nestedDelaySection(prefix+(compact?".compact_content":".detail_content"),panel);
@@ -803,6 +819,22 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             panel.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
         }
     }
+    }
+
+    private void hudWorldFilter(HudConfig.HudId id,CollapsibleSection panel,HudConfig hud){
+        String title="ui.ultimategarden.hud.panel."+id.name()+".world_filter";
+        var state=sectionStates.computeIfAbsent(page,k->new HashMap<>()).computeIfAbsent(title,k->new CollapsibleSection.State(panel.state()));
+        var section=new CollapsibleSection(contentX,contentTop+cursor,contentWidth,cursor,language.text(title),state,this::palette,help,helpText(title),()->{help.clear();clearFocus();positionContent();},58);
+        currentSection=panel;place(section,cursor,()->true);sections.add(section);
+        section.attachToggle(()->hud.worldFilter(id),()->act(()->{hud.worldFilter(id,!hud.worldFilter(id));saved(configs.save(ConfigManager.Module.HUD));}),()->!configs.isPendingRestart(ConfigManager.Module.HUD));
+        currentSection=section;cursor+=section.getHeight()+CollapsibleSection.CONTENT_GAP;
+        for(String name:com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.NAMES){String key=com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.id(name);String label=language.text("ui.ultimategarden.world."+key);int h=Math.max(42,24+font.split(Component.literal(label),Math.max(40,sectionWidth(section)-55)).size()*11);int checkboxY=cursor+11;
+            cards.add(new Card(cursor,h,currentSection));labels.add(new Label(cursor+12,()->label,false,currentSection,""));
+            place(new SelectionCheckbox(contentX+contentWidth-32,contentTop+checkboxY,label,this::palette,()->hud.worldSelected(id,key),()->{hud.worldSelected(id,key,!hud.worldSelected(id,key));saved(configs.save(ConfigManager.Module.HUD));}),checkboxY,()->true);cursor+=h+8;
+        }
+        button("ui.ultimategarden.hud.world_all",false,()->{hud.allWorlds(id,true);saved(configs.save(ConfigManager.Module.HUD));},()->true);
+        button("ui.ultimategarden.hud.world_none",false,()->{hud.allWorlds(id,false);saved(configs.save(ConfigManager.Module.HUD));},()->true);
+        section.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=panel;
     }
 
     private final EspPageAdapter espPageAdapter=new EspPageAdapter();
@@ -827,7 +859,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     }
     private void espTarget(String id, String title, BooleanSupplier enabled, Runnable toggleEnabled) {
         heading(title);
-        toggle("ui.ultimategarden.enable_silverfish_esp", enabled, toggleEnabled, () -> true);
+        headerToggle( enabled, toggleEnabled, () -> true);
         var target = configs.getESPConfig().getTarget(id);
         espComponent(id, "box", target.getBox(), true);
         espComponent(id, "fill", target.getFill(), false);
@@ -845,7 +877,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         // The header belongs to the target; the controls belong to the component.
         place(section, cursor, () -> true);
         sections.add(section); currentSection = section; cursor += section.getHeight() + CollapsibleSection.CONTENT_GAP;
-        toggle(LanguageKeys.component(name, "enabled"), component::isEnabled, () -> {
+        headerToggle( component::isEnabled, () -> {
             component.setEnabled(!component.isEnabled()); saved(configs.save(ConfigManager.Module.ESP));
         }, () -> true);
         var modes = Arrays.stream(com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPColorMode.values())
@@ -894,13 +926,22 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private final HotkeyPageAdapter hotkeyPageAdapter=new HotkeyPageAdapter();
     private final class HotkeyPageAdapter {
     private void hotkeys() {
-        for (var binding : MacroKeyBindings.getBindings()) {
-            String title = LanguageKeys.hotkey(binding.title());
-            heading(title, title.equals("ui.ultimategarden.set_spawn")
-                    ? language.optional(title + ".hotkey.help") : helpText(title));
-            info(() -> language.text("ui.ultimategarden.state.key", language.keyName(
-                    ((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)binding.mapping()).getKey().getName(),
-                    binding.mapping().getTranslatedKeyMessage().getString())));
+        for(var group:com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeyGroups.Group.values())if(group.parent==null){
+            heading(group.label());var section=currentSection;hotkeyGroupContent(group,section);section.finishContent(cursor);
+        }
+    }
+    private void hotkeyGroupContent(com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeyGroups.Group group,CollapsibleSection section){
+        headerToggle(()->com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.groupEnabled(group),()->saved(com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.setGroupEnabled(group,!com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.groupEnabled(group))),()->true);
+        for(var child:com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeyGroups.Group.values())if(child.parent==group){
+            var nested=nestedDelaySection(child.label(),section);hotkeyGroupContent(child,nested);nested.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;
+        }
+        for(var binding:MacroKeyBindings.getBindings()){
+            String id=binding.mapping().getName().substring(com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.PREFIX.length());
+            if(com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeyGroups.owner(id)!=group)continue;
+            String title=LanguageKeys.hotkey(binding.title());var card=nestedDelaySection(title,section);
+            headerToggle(()->com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.ownEnabled(binding.mapping()),()->saved(com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.setEnabled(binding.mapping(),!com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches.ownEnabled(binding.mapping()))),()->true);
+            info(()->language.text("ui.ultimategarden.state.key",binding.mapping().isUnbound()?language.text("ui.ultimategarden.hotkey.unbound"):language.keyName(((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)binding.mapping()).getKey().getName(),binding.mapping().getTranslatedKeyMessage().getString())));
+            card.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;
         }
     }
     }
@@ -913,11 +954,12 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         var general=configs.getGeneralConfig();
         BooleanSupplier editable=() -> !configs.isPendingRestart(ConfigManager.Module.GENERAL);
         BooleanSupplier childEditable=() -> editable.getAsBoolean() && general.isShowModChatHints();
-        toggle("ui.ultimategarden.show_mod_chat_hints",general::isShowModChatHints,() -> {
+        headerToggle(general::isShowModChatHints,() -> {
             general.setShowModChatHints(!general.isShowModChatHints()); saved(configs.save(ConfigManager.Module.GENERAL));
         },editable);
         for (String group:new String[]{"macro","pest","focus"}) {
             var section=nestedDelaySection("ui.ultimategarden.hint."+group,parent,childEditable);
+            headerToggle(()->general.hintGroupEnabled(group),()->{general.setHintGroupEnabled(group,!general.hintGroupEnabled(group));saved(configs.save(ConfigManager.Module.GENERAL));},editable);
             for (var hint:GeneralConfig.Hint.values()) {
                 boolean inGroup=switch(group) {
                     case "macro" -> hint.ordinal()<=GeneralConfig.Hint.timeTesterTicks.ordinal();
@@ -932,8 +974,8 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     }
     private void hintToggle(GeneralConfig.Hint hint,BooleanSupplier enabled) {
         var general=configs.getGeneralConfig();
-        toggle("ui.ultimategarden.hint."+hint.name(),() -> general.hintEnabled(hint),() -> {
-            general.setHintEnabled(hint,!general.hintEnabled(hint)); saved(configs.save(ConfigManager.Module.GENERAL));
+        toggle("ui.ultimategarden.hint."+hint.name(),() -> general.hintSelected(hint),() -> {
+            general.setHintEnabled(hint,!general.hintSelected(hint)); saved(configs.save(ConfigManager.Module.GENERAL));
         },enabled);
     }
     }
@@ -942,12 +984,13 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private final class AntiCheckPageAdapter {
     private void viewDeviationSettings(CollapsibleSection antiCheck) {
         var group=nestedDelaySection("ui.ultimategarden.view_check.title",antiCheck);
+        headerToggle(()->configs.getViewDeviationConfig().viewChecksEnabled,()->{configs.getViewDeviationConfig().viewChecksEnabled=!configs.getViewDeviationConfig().viewChecksEnabled;saved(configs.save(ConfigManager.Module.ANTI_CHECK));},()->true);
         for(boolean farmCheck:new boolean[]{true,false}) {
             String type=farmCheck?"farm":"zombie";
             var section=nestedDelaySection("ui.ultimategarden.view_check."+type,group);
             var config=farmCheck?configs.getViewDeviationConfig().farm():configs.getViewDeviationConfig().zombie();
             BooleanSupplier editable=()->!configs.isPendingRestart(ConfigManager.Module.ANTI_CHECK);
-            toggle("ui.ultimategarden.view_check."+type+".enabled",()->config.enabled,()->{config.enabled=!config.enabled;saved(configs.save(ConfigManager.Module.ANTI_CHECK));},editable);
+            headerToggle(()->config.enabled,()->{config.enabled=!config.enabled;saved(configs.save(ConfigManager.Module.ANTI_CHECK));},editable);
             input("ui.ultimategarden.view_check.warning",Double.toString(config.warning()),value->act(()->{config.warning(Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ANTI_CHECK));}),editable,"°");
             input("ui.ultimategarden.view_check.stop",Double.toString(config.stop()),value->act(()->{config.stop(Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ANTI_CHECK));}),editable,"°");
             input("ui.ultimategarden.view_check.duration",Double.toString(config.duration()),value->act(()->{config.duration(Double.parseDouble(value));saved(configs.save(ConfigManager.Module.ANTI_CHECK));}),editable,"s");
@@ -958,10 +1001,14 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private void randomDelaySettings() {
         heading("ui.ultimategarden.anti_check");
         var antiCheck = currentSection;
+        headerToggle(()->configs.getViewDeviationConfig().enabled,()->{configs.getViewDeviationConfig().enabled=!configs.getViewDeviationConfig().enabled;saved(configs.save(ConfigManager.Module.ANTI_CHECK));},()->true);
         viewDeviationSettings(antiCheck);
         var random = nestedDelaySection("ui.ultimategarden.random_delay", antiCheck);
+        var delays=configs.getRandomDelayConfig();
+        headerToggle(()->delays.enabled,()->{delays.enabled=!delays.enabled;saved(configs.save(ConfigManager.Module.RANDOM_DELAY));},()->true);
         for (RandomDelayConfig.Key key : RandomDelayConfig.Key.values()) {
             var parameter = nestedDelaySection("ui.ultimategarden.random_delay." + key.name(), random);
+            headerToggle(()->delays.ownEnabled(key),()->{delays.setEnabled(key,!delays.ownEnabled(key));saved(configs.save(ConfigManager.Module.RANDOM_DELAY));},()->!configs.isPendingRestart(ConfigManager.Module.RANDOM_DELAY));
             String[] draft = randomDelayDrafts.computeIfAbsent(key, ignored -> {
                 var range = configs.getRandomDelayConfig().get(key);
                 return new String[]{Integer.toString(range.minTicks()), Integer.toString(range.maxTicks())};

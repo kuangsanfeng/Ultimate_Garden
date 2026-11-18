@@ -38,6 +38,7 @@ public class ZombieShootoutHud {
                 || client.screen instanceof UltimateGardenScreen) return;
         var controller = ZombieShootoutController.INSTANCE;
         if (!editing&&!configs.getHudConfig().showZombie(controller.enabled())) return;
+  if(!editing&&!configs.getHudConfig().worldAllows(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.HudId.ZOMBIE_SHOOTOUT,com.kuangsanfeng.ultimategarden.client.function.world.WorldInfoService.snapshot().island()))return;
         var s = controller.hudSnapshot();
         int enabled = ThemePalette.from(configs.getUIConfig()).accent(), disabled = 0xffbc3945;
         int accent = s.running() ? enabled : disabled;

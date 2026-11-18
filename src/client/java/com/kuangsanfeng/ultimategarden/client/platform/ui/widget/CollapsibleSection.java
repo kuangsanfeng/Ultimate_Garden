@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import java.util.function.Supplier;
+import java.util.function.BooleanSupplier;
 import net.minecraft.client.input.MouseButtonEvent;
 
 /** Full-width header with session-local state and measured content layout. */
@@ -25,7 +26,9 @@ public final class CollapsibleSection extends StyledButton {
         public int inset() { return depth() * NESTED_INDENT; }
         public int inset(int availableWidth) { return Math.min(inset(), Math.max(0,availableWidth - 80)); }
         public boolean isExpanded() { return expanded; }
+        public int contentEnd() { return contentEnd; }
         public boolean isContentVisible() { return expanded && (parent == null || parent.isContentVisible()); }
+        public boolean ancestorsVisible() { return parent == null || parent.isContentVisible(); }
         public void toggle() { expanded = !expanded; }
         public void measure(int headerY, int headerHeight, int end) {
             contentStart = headerY + headerHeight;
@@ -40,7 +43,24 @@ public final class CollapsibleSection extends StyledButton {
     private final int logicalY;
     private final HelpTooltip help;
     private final String description;
-    private final int rightControlsWidth;
+    private int rightControlsWidth;
+    private ToggleSwitch toggle;
+    private BooleanSupplier toggleEditable = () -> true;
+    public void attachToggle(BooleanSupplier value, Runnable action, BooleanSupplier editable) {
+        rightControlsWidth = 58;
+        toggleEditable = editable;
+        toggle = new ToggleSwitch(0, 0, getMessage().getString(), palette, value, action);
+        int textWidth=Math.max(20,getWidth()-40-rightControlsWidth-(description.isBlank()?0:HelpTooltip.SIZE+HelpTooltip.GAP));
+        setHeight(Math.max(29,Minecraft.getInstance().font.split(getMessage().copy().withStyle(ChatFormatting.BOLD),textWidth).size()*11+16));
+        layoutToggle();
+    }
+    private void layoutToggle() {
+        if (toggle == null) return;
+        toggle.setX(getRight() - 54);
+        toggle.setY(getY() + (getHeight() - 24) / 2);
+        toggle.active = active && toggleEditable.getAsBoolean();
+        toggle.visible = visible;
+    }
     public CollapsibleSection(int x, int y, int width, int logicalY, String title, State state,
                               Supplier<ThemePalette> palette, HelpTooltip help, String description, Runnable relayout) {
         this(x,y,width,logicalY,title,state,palette,help,description,relayout,0);
@@ -55,7 +75,13 @@ public final class CollapsibleSection extends StyledButton {
         this.rightControlsWidth=rightControlsWidth;
     }
     @Override public boolean mouseClicked(MouseButtonEvent event,boolean doubleClick){
-        if(rightControlsWidth>0&&event.x()>=getRight()-rightControlsWidth)return false;
+        layoutToggle();
+        if (toggle != null && toggle.isMouseOver(event.x(), event.y())) {
+            // The Screen dispatches only to the first child at this position.
+            // Handle the owned switch here; never fall through to folding.
+            toggle.mouseClicked(event, doubleClick);
+            return true;
+        }
         return super.mouseClicked(event,doubleClick);
     }
     public boolean isExpanded() { return state.isExpanded(); }
@@ -65,20 +91,42 @@ public final class CollapsibleSection extends StyledButton {
     public int hiddenHeight() { return state.hiddenHeight(); }
     public int hiddenHeightBefore(int y) { return state.hiddenHeightBefore(y); }
 
+    public static int headerSurface(ThemePalette palette,boolean hovered){return hovered?palette.selected():0xffffffff;}
+    private record PanelLayer(RoundedRect.Geometry geometry,int offset,int color) { }
+    private PanelLayer[] panelLayers;
+    private int panelWidth,panelHeight,panelEdge;
+    private float panelAlpha;
+    /** Cached local geometry; changing scroll position only changes its translation. */
+    public void drawPanel(GuiGraphicsExtractor g, int bottom) {
+        var p=palette.get();int h=Math.max(getHeight(),bottom-getY());
+        int edge=state.depth()==0?0xffffffff:p.background()==0xfff3f8f6?0xfff3f8f6:0xff141d18;
+        if(panelLayers==null||panelWidth!=getWidth()||panelHeight!=h||panelEdge!=edge||panelAlpha!=p.backgroundAlpha()) {
+            panelWidth=getWidth();panelHeight=h;panelEdge=edge;panelAlpha=p.backgroundAlpha();
+            int layers=edge==0xffffffff?0:Math.min(2,Math.min(panelWidth,h)/2);
+            panelLayers=new PanelLayer[layers+1];
+            for(int i=0;i<layers;i++)panelLayers[i]=new PanelLayer(RoundedRect.geometry(panelWidth-2*i,h-2*i,Math.max(0,10-i),true),i,p.bg(ThemePalette.blend(edge,0xffffffff,i/2f)));
+            panelLayers[layers]=new PanelLayer(RoundedRect.geometry(panelWidth-2*layers,h-2*layers,Math.max(0,10-layers),false),layers,p.bg(ThemePalette.blend(edge,0xffffffff,layers/2f)));
+        }
+        for(var layer:panelLayers)layer.geometry().draw(g,getX()+layer.offset(),getY()+layer.offset(),layer.color());
+    }
     @Override protected void extractContents(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         var p = palette.get();
         float opacity=active ? 1f : .4f;
-        int surface = state.depth() == 0 ? p.surface() : ThemePalette.blend(p.surface(), p.sidebar(), .55f);
-        RoundedRect.fill(g, getX(), getY(), getWidth(), getHeight(), 10, p.bg(isHoveredOrFocused() && active ? p.selected() : surface, opacity));
+        boolean hovered=isMouseOver(mouseX,mouseY)&&active;
+        int surface=headerSurface(p,hovered);
+        if (hovered) RoundedRect.fill(g, getX(), getY(), getWidth(), getHeight(), 10, p.bg(surface, opacity));
+        int titleColor=hovered?p.text():0xff172c26;
         var title = getMessage().copy().withStyle(ChatFormatting.BOLD);
         int textWidth = Math.max(20, getWidth() - 40 - rightControlsWidth - (description.isBlank() ? 0 : HelpTooltip.SIZE + HelpTooltip.GAP));
-        g.textWithWordWrap(Minecraft.getInstance().font, title, getX() + 10, getY() + 8, textWidth, p.fg(p.text(), opacity), false);
+        g.textWithWordWrap(Minecraft.getInstance().font, title, getX() + 10, getY() + 8, textWidth, p.fg(titleColor, opacity), false);
         help.iconAfterText(g, Minecraft.getInstance().font, this, title, getX() + 10, getY() + 8, textWidth, description, p, opacity);
         int cx = getX() + getWidth() - 16 - rightControlsWidth, cy = getY() + getHeight() / 2;
         // Rasterized triangles, independent of the font's symbol coverage.
         for (int i = 0; i < 5; i++) {
-            if (isExpanded()) g.fill(cx - 4 + i, cy - 2 + i, cx + 5 - i, cy - 1 + i, p.fg(p.text(), opacity));
-            else g.fill(cx - 2 + i, cy - 4 + i, cx - 1 + i, cy + 5 - i, p.fg(p.text(), opacity));
+            if (isExpanded()) g.fill(cx - 4 + i, cy - 2 + i, cx + 5 - i, cy - 1 + i, p.fg(titleColor, opacity));
+            else g.fill(cx - 2 + i, cy - 4 + i, cx - 1 + i, cy + 5 - i, p.fg(titleColor, opacity));
         }
+        layoutToggle();
+        if (toggle != null) toggle.extractRenderState(g, mouseX, mouseY, delta);
     }
 }

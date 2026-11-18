@@ -16,14 +16,15 @@ public final class ViewDeviationCheckManager implements ShootoutMouseInput.ViewO
  private void cancelNotice(){notice.clear();}
 
  public boolean poll(float yaw,float pitch){return !tracker.active()||before(yaw,pitch);}
- public boolean before(float yaw,float pitch){if(!settings().enabled){clear();return true;}if(!tracker.active())tracker.begin(yaw,pitch);return evaluate(tracker.stationary(yaw,pitch));}
+ public boolean before(float yaw,float pitch){if(!Ultimate_GardenClient.getConfigManager().getViewDeviationConfig().effective(settings())){clear();return true;}if(!tracker.active())tracker.begin(yaw,pitch);return evaluate(tracker.stationary(yaw,pitch));}
  public void submitted(double dx,double dy,double sensitivity,boolean invertX,boolean invertY){if(tracker.active())tracker.submit(dx,dy,sensitivity,invertX,invertY);}
  public void consumed(float yaw,float pitch){if(tracker.active())evaluate(tracker.consumed(yaw,pitch));}
  private boolean evaluate(Double error){
+  if(!Ultimate_GardenClient.getConfigManager().getViewDeviationConfig().effective(settings())){clear();return true;}
   int result=tracker.evaluate(error,settings().warning(),settings().stop());
   if(result==2){stop.run();notice.stopped("Zombie Shootout Stopped","View Deviation Exceeded");return false;}
   if(result==1)notice.warn("Potential View Check","Local View Deviation Warning",settings().duration());
   return true;
  }
- public void tick(){if(!settings().enabled){clear();return;}notice.tick();}
+ public void tick(){if(!Ultimate_GardenClient.getConfigManager().getViewDeviationConfig().effective(settings())){clear();return;}notice.tick();}
 }

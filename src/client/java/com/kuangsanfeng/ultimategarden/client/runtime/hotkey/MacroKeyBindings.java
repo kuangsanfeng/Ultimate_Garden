@@ -32,7 +32,8 @@ public final class MacroKeyBindings {
             new Binding("Cancel pest timer", "Cancel the current pest loadout timer.", PEST_TIMER_CANCEL_KEY),
             new Binding("Loadout", "Execute /loadout", LOADOUT_KEY),
             new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
-            new Binding("Toggle Instant Transmission Test", "Toggle the displacement test.", TRANSMISSION_KEY),
+            new Binding("Instant Transmission Full Path Test", "Measures the full teleport path and displacement sequence for single or repeated casts.", TRANSMISSION_KEY),
+            new Binding("Instant Transmission Y Rounding Test", "Keeps yaw fixed and casts once per trial to measure how the resulting feet Y coordinate is rounded at different pitch angles and cast heights.", TRANSMISSION_Y_KEY),
             new Binding("Toggle Zombie Shootout", "Start or stop Zombie Shootout.", SHOOTOUT_KEY),
             new Binding("Initialize Mapping", "Initialize the base map.", MAPPING_INIT_KEY),
             new Binding("Toggle Mapping Recording", "Start or stop chunk recording.", MAPPING_TOGGLE_KEY),
@@ -43,6 +44,7 @@ public final class MacroKeyBindings {
     }
     public static String getMenuKeyName() { return OPEN_MENU_KEY.getTranslatedKeyMessage().getString(); }
     public static boolean matchesShootoutMouse(int button) {
+        if(!HotkeySwitches.enabled(SHOOTOUT_KEY))return false;
         var key=((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)SHOOTOUT_KEY).getKey();
         return key.getType()==InputConstants.Type.MOUSE && key.getValue()==button;
     }
@@ -50,6 +52,7 @@ public final class MacroKeyBindings {
     public static boolean matchesMenuKey(net.minecraft.client.input.KeyEvent event) { return OPEN_MENU_KEY.matches(event); }
     public static void clearMenuClicks() { while (OPEN_MENU_KEY.consumeClick()) { } }
     public static boolean isMenuKeyPhysicallyDown() {
+        if(!HotkeySwitches.enabled(OPEN_MENU_KEY))return false;
         var key = ((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)OPEN_MENU_KEY).getKey();
         if (key.getValue() < 0) return false;
         long handle = net.minecraft.client.Minecraft.getInstance().getWindow().handle();
@@ -75,6 +78,8 @@ public final class MacroKeyBindings {
     private static final KeyMapping MAPPING_REDRAW_KEY = register("mapping_redraw", GLFW.GLFW_KEY_UNKNOWN);
     private static final KeyEdge MAPPING_INIT_EDGE = new KeyEdge(), MAPPING_TOGGLE_EDGE = new KeyEdge(), MAPPING_REDRAW_EDGE = new KeyEdge();
     private static final KeyMapping TRANSMISSION_KEY = register("toggle_instant_transmission", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyMapping TRANSMISSION_Y_KEY = register("toggle_instant_transmission_y_rounding", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyEdge TRANSMISSION_Y_EDGE = new KeyEdge();
     private static final KeyEdge TRANSMISSION_EDGE = new KeyEdge();
     private static final KeyMapping SHOOTOUT_KEY = register("toggle_zombie_shootout", GLFW.GLFW_KEY_UNKNOWN);
     private static final KeyEdge SHOOTOUT_EDGE = new KeyEdge();
@@ -384,6 +389,9 @@ public final class MacroKeyBindings {
                     boolean transmissionToggle=TRANSMISSION_EDGE.rising(isPressed(TRANSMISSION_KEY));
                     while(TRANSMISSION_KEY.consumeClick()){}
                     if(transmissionToggle && hudInputAllowed) com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.toggle(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.HOTKEY);
+                    boolean transmissionYToggle=TRANSMISSION_Y_EDGE.rising(isPressed(TRANSMISSION_Y_KEY));
+                    while(TRANSMISSION_Y_KEY.consumeClick()){}
+                    if(transmissionYToggle && hudInputAllowed) com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.toggleYRound(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.HOTKEY);
                     boolean shootoutToggle=SHOOTOUT_EDGE.rising(isPressed(SHOOTOUT_KEY));
                     while(SHOOTOUT_KEY.consumeClick()){}
                     if(shootoutToggle && hudInputAllowed && !com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive())

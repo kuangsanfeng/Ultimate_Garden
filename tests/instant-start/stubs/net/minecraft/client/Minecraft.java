@@ -6,7 +6,7 @@ public final class Minecraft {
  public Mouse mouseHandler=new Mouse();public Options options=new Options();public boolean paused,focused=true;
  public Object getConnection(){return connection;}public Object getOverlay(){return overlay;}public boolean isPaused(){return paused;}public boolean isWindowActive(){return focused;}
  public Server getCurrentServer(){return null;}public static class Server {public String ip="test";}
- public static class Level {public String dimension(){return "test";}}
+ public static class Level {public net.minecraft.world.phys.BlockHitResult clip(net.minecraft.world.level.ClipContext c){return net.minecraft.world.phys.BlockHitResult.miss(Vec3.ZERO,net.minecraft.core.Direction.UP,net.minecraft.core.BlockPos.ZERO); }public String dimension(){return "test";}}
  public static class Mouse {public boolean grabbed=true,right;public boolean isMouseGrabbed(){return grabbed;}public boolean isRightPressed(){return right;}}
  public static class Key {public boolean down;public boolean isDown(){return down;}}
  public static class Options {public Key keyUse=new Key(),keyUp=new Key(),keyDown=new Key(),keyLeft=new Key(),keyRight=new Key(),keyJump=new Key(),keyShift=new Key();}

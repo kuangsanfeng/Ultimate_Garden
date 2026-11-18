@@ -36,6 +36,7 @@ public class MacroStatusHud {
         if (client.player == null || client.level == null || (!editing && client.options.hideGui) || client.screen instanceof UltimateGardenScreen) return;
         var state = farm.getState(); var hud = configs.getHudConfig();
         if (!editing && !hud.showFarm(state.isRunning())) return;
+  if(!editing&&!configs.getHudConfig().worldAllows(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.HudId.FARM_MACRO,com.kuangsanfeng.ultimategarden.client.function.world.WorldInfoService.snapshot().island()))return;
         var crop = state.getCropType() == 0 ? null : configs.getCropConfig().get(state.getCropType());
         String status = text(state.isRunning() ? "running" : "paused");
         int enabledColor = ThemePalette.from(configs.getUIConfig()).accent();

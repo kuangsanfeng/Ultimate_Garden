@@ -9,7 +9,7 @@ try {
  if ($LASTEXITCODE -ne 0) { throw 'Classpath failed' }
  $cp=(Get-Content -Raw build/instant-start-audit/classpath.txt).Trim()
  $stubs=@(Get-ChildItem tests/instant-start/stubs -Recurse -Filter '*.java' | Select-Object -ExpandProperty FullName)
- & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d build/instant-start-audit/classes @stubs src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java tests/instant-start/StartRegression.java tests/instant-start/ReturnRegression.java
+ & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d build/instant-start-audit/classes @stubs src/client/java/com/kuangsanfeng/ultimategarden/client/function/instant_transmission/debug/InstantTransmissionController.java tests/instant-start/StartRegression.java tests/instant-start/ReturnRegression.java tests/instant-start/YControllerRegression.java
  if ($LASTEXITCODE -ne 0) { throw 'Startup compilation failed' }
  if (-not $ReturnOnly) {
   & "$env:JAVA_HOME/bin/java.exe" -cp ("build/instant-start-audit/classes;"+$cp) StartRegression
@@ -17,4 +17,6 @@ try {
  }
  & "$env:JAVA_HOME/bin/java.exe" -cp ("build/instant-start-audit/classes;"+$cp) ReturnRegression
  if ($LASTEXITCODE -ne 0) { throw 'Return regression failed' }
+ & "$env:JAVA_HOME/bin/java.exe" -cp ("build/instant-start-audit/classes;"+$cp) YControllerRegression
+ if ($LASTEXITCODE -ne 0) { throw "Y controller regression failed" }
 } finally { Pop-Location }

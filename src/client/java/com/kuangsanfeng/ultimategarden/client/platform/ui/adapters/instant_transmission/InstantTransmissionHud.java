@@ -17,6 +17,7 @@ public final class InstantTransmissionHud {
   var s=InstantTransmissionController.INSTANCE.hudSnapshot();
   var hud=configs.getHudConfig();var id=HudId.INSTANT_TRANSMISSION;
   if(!hud.show(id,s.running(),editing))return;
+  if(!editing&&!configs.getHudConfig().worldAllows(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.HudId.INSTANT_TRANSMISSION,com.kuangsanfeng.ultimategarden.client.function.world.WorldInfoService.snapshot().island()))return;
   var rows=TransmissionHudContent.rows(s,language::text,key->hud.visible(id,key));String status=TransmissionHudContent.status(s,language::text);
   int accent=s.running()?ThemePalette.from(configs.getUIConfig()).accent():s.reason().equals("COMPLETED")?0xff63cd91:0xffed6669;
   boolean showStatus=hud.visible(id,"status");

@@ -22,6 +22,8 @@ public final class LanguageKeys {
         case "Cancel pest timer" -> "ui.ultimategarden.cancel_pest_timer";
         case "Loadout" -> "ui.ultimategarden.loadout";
         case "Select crop" -> "ui.ultimategarden.select_crop";
+        case "Instant Transmission Full Path Test" -> "ui.ultimategarden.instant.path_test";
+        case "Instant Transmission Y Rounding Test" -> "ui.ultimategarden.instant.y_rounding";
         case "Toggle Zombie Shootout" -> "ui.ultimategarden.shootout.hotkey";
         case "Initialize Mapping" -> "ui.ultimategarden.mapping.initialize";
         case "Toggle Mapping Recording" -> "ui.ultimategarden.mapping.toggle";

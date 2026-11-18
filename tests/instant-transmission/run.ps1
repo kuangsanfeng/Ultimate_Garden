@@ -7,7 +7,7 @@ try {
  & ./gradlew.bat -I build/transmission-audit/classpath.init.gradle writeTransmissionClasspath --offline --quiet
  if ($LASTEXITCODE -ne 0) { throw 'Classpath resolution failed' }
  $cp=(Get-Content -Raw build/transmission-audit/classpath.txt).Trim()
- & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d build/transmission-audit/classes tests/instant-transmission/TransmissionRegression.java tests/instant-transmission/ResetDiagnosticsRegression.java tests/instant-transmission/FlightRoutingRegression.java
+ & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d build/transmission-audit/classes tests/instant-transmission/TransmissionRegression.java tests/instant-transmission/ResetDiagnosticsRegression.java tests/instant-transmission/FlightRoutingRegression.java tests/instant-transmission/YRoundingRegression.java
  if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
  & "$env:JAVA_HOME/bin/java.exe" -cp ("build/transmission-audit/classes;"+$cp) TransmissionRegression
  if ($LASTEXITCODE -ne 0) { throw 'Transmission regression failed' }
@@ -15,4 +15,6 @@ try {
  if ($LASTEXITCODE -ne 0) { throw 'Reset diagnostics regression failed' }
  & "$env:JAVA_HOME/bin/java.exe" -cp ("build/transmission-audit/classes;"+$cp) FlightRoutingRegression
  if ($LASTEXITCODE -ne 0) { throw 'Flight routing regression failed' }
+ & "$env:JAVA_HOME/bin/java.exe" -cp ("build/transmission-audit/classes;"+$cp) YRoundingRegression
+ if ($LASTEXITCODE -ne 0) { throw "Y rounding regression failed" }
 } finally { Pop-Location }

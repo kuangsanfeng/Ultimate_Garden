@@ -19,7 +19,12 @@
     "TransmissionPositionMixin",
     "TransmissionMovementInputMixin",
     "WorldInfoConnectionAccessor",
-    "MappingReplayBackgroundMixin"
+    "MappingReplayBackgroundMixin",
+    "HotkeyStateMixin",
+    "HotkeyListMixin",
+    "HotkeyConflictMixin",
+    "HotkeyOptionsMixin",
+    "ScreenRebuildAccess"
   ],
   "injectors": {
     "defaultRequire": 1

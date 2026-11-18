@@ -15,7 +15,7 @@ import java.util.*;
 /** Client-thread only experiment; no direct rotation writes, movement packets or item NBT. */
 public final class InstantTransmissionController {
  public static final InstantTransmissionController INSTANCE=new InstantTransmissionController();
- public enum State {STOPPED,WAIT_GUI,START_ALIGN,SLOT,RETURN_ALIGN,WALK,DOWN_ALIGN,RESET_JUMP,RESET_WAIT,TEST_YAW_ALIGN,TEST_ALIGN,SETTLE,TEST_WAIT}
+ public enum State {STOPPED,WAIT_GUI,START_ALIGN,SLOT,RETURN_ALIGN,WALK,DOWN_ALIGN,RESET_JUMP,RESET_WAIT,TEST_YAW_ALIGN,TEST_ALIGN,SETTLE,TEST_WAIT,Y_JUMP,Y_WAIT}
  private State state=State.STOPPED;private String reason="NONE";
  private final NativeViewInput mouse=new NativeViewInput();private VirtualKeyboard keyboard;
  private final TransmissionResetJump resetJump=new TransmissionResetJump();
@@ -74,14 +74,14 @@ public final class InstantTransmissionController {
    pre.size(),trial==null?0:trial.actual,trial==null?0:trial.planned,trial==null?0:trial.updates,relative);
  }
  public boolean running(){return state!=State.STOPPED;}
- public String status(){return state+" / "+(finalHud!=null&&finalHud.terminationStage()!=null?finalHud.terminationStage()+" / ":"")+reason;}
+ public String status(){return (running()?activeTestName()+" / ":"")+state+" / "+(finalHud!=null&&finalHud.terminationStage()!=null?finalHud.terminationStage()+" / ":"")+reason;}
  public static boolean ownsInput(){return INSTANCE.running()&&INSTANCE.state!=State.WAIT_GUI&&Minecraft.getInstance().screen==null&&!NativeViewInput.dispatching();}
  public enum StartSource {API,MENU,HOTKEY}
  private StartSource entrySource=StartSource.API;
  public record FailureDiagnostic(String source,String stage,String phase,String code,Map<String,Object> observed){}
  private FailureDiagnostic lastDiagnostic;public FailureDiagnostic lastDiagnostic(){return lastDiagnostic;}
  public void toggle(){toggle(StartSource.API);}
- public void toggle(StartSource source){if(running())stop("MANUAL_STOP");else start(source);}
+ public void toggle(StartSource source){if(running()){if(yRounding){notifyOtherTest();return;}stop("MANUAL_STOP");}else start(source);}
  private record Inspection(TransmissionInputCheck values,Map<String,Object> observed){}
  private Inspection inspect(Minecraft c){
   var farm=Ultimate_GardenClient.getFarmController();var owner=farm==null?null:farm.inputOwnership();
@@ -114,7 +114,7 @@ public final class InstantTransmissionController {
   if(running())return;entrySource=Objects.requireNonNull(source);lastDiagnostic=null;world=connection=null;
   var c=Minecraft.getInstance();var check=inspect(c);
   if(c.screen==null){var failure=check.values().startFailure();if(failure!=null){reject(failure,check);return;}}
-  try{plan=Ultimate_GardenClient.getConfigManager().getGeneralConfig().instantTransmission().plan();}catch(RuntimeException e){reject("INVALID_PARAMETERS",check);return;}
+  try{plan=yRounding?new InstantTransmissionConfig.Plan(List.of(fixedYaw),InstantTransmissionConfig.axis(-90,90,15)):Ultimate_GardenClient.getConfigManager().getGeneralConfig().instantTransmission().plan();}catch(RuntimeException e){reject("INVALID_PARAMETERS",check);return;}
   if(draining.stream().anyMatch(l->!l.finished())){reject("LOG_DRAINING",check);return;}draining.clear();
   if(c.screen!=null){
    world=c.level;connection=c.getConnection();tick=0;yawIndex=pitchIndex=0;group=1;resetCycle=true;trial=null;trialId=null;
@@ -125,9 +125,51 @@ public final class InstantTransmissionController {
  private void activate(Minecraft c){
   long generation=++sessionGeneration;keyboard=new VirtualKeyboard(c);keyboard.setInputAllowed(()->running()&&sessionGeneration==generation);
   base=BlockPos.containing(c.player.position());baseY=c.player.getY();world=c.level;connection=c.getConnection();yawIndex=pitchIndex=0;group=1;baseConfirmed=false;tick=0;
-  log=new TransmissionLog(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve("logs/ultimategarden/instant transmission"));
+  if(yRounding){coverage=new TransmissionTickPlan();}
+  log=new TransmissionLog(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve("logs/ultimategarden/instant transmission"),yRounding?"instant-transmission-y-rounding.jsonl":"instant-transmission.jsonl");
   emit("PARAMETERS","yaws",plan.yaws(),"pitches",plan.pitches(),"parameters",Ultimate_GardenClient.getConfigManager().getGeneralConfig().instantTransmission().toJson().toString(),"baseBlock",List.of(base.getX(),base.getY(),base.getZ()),"expectedBaseY",baseY,"world",c.level.dimension().toString(),"server",c.getCurrentServer()==null?"local":c.getCurrentServer().ip,"distanceBonusNote",Ultimate_GardenClient.getConfigManager().getGeneralConfig().instantTransmission().distanceBonusNote(),"start",xyz(c.player.position()));
-  resetJump.clear();clearReturn();finalHud=lastTrialHud=null;hudLastResult=null;positionOrder=0;lastActualClick=-1;resetCycle=true;trial=null;trialId=null;reason="RUNNING";enter(State.START_ALIGN);targetYaw=targetPitch=0;beginResetDiagnostics(null,"INITIAL_RESET");
+  resetJump.clear();clearReturn();finalHud=lastTrialHud=null;hudLastResult=null;positionOrder=0;lastActualClick=-1;resetCycle=true;trial=null;trialId=null;reason="RUNNING";enter(State.START_ALIGN);targetYaw=yRounding?fixedYaw:0;targetPitch=yRounding?-90:0;beginResetDiagnostics(null,"INITIAL_RESET");
+ }
+
+ private boolean yRounding;private double fixedYaw,takeoffY;private boolean airborne,yClicked,yDispatched;private long takeoffTick,yClickTick;private int yResponses;private Vec3 yLaunch,yAfter;private double yLaunchYaw,yLaunchPitch,yLaunchVelocity;private TransmissionTickPlan coverage;private TransmissionTickPlan.Key yTarget;
+ public String activeTestName(){var language=new com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageManager(Ultimate_GardenClient.getConfigManager());return language.text(yRounding?"ui.ultimategarden.instant.y_rounding":"ui.ultimategarden.instant.path_test");}
+ private String lastConflictNotice;public String lastConflictNotice(){return lastConflictNotice;}
+ private void notifyOtherTest(){var language=new com.kuangsanfeng.ultimategarden.client.platform.ui.language.LanguageManager(Ultimate_GardenClient.getConfigManager());lastConflictNotice=language.text("ui.ultimategarden.instant.already_running",activeTestName());com.kuangsanfeng.ultimategarden.client.platform.hint.HintManager.printRequired(lastConflictNotice);}
+ public boolean yRoundingActive(){return running()&&yRounding;}
+ public void toggleYRound(){toggleYRound(StartSource.MENU);}
+ public void toggleYRound(StartSource source){if(running()){if(yRounding)stop("MANUAL_STOP");else notifyOtherTest();return;}yRounding=true;fixedYaw=Minecraft.getInstance().player==null?0:Minecraft.getInstance().player.getYRot();start(source);if(!running())yRounding=false;}
+ private void prepareY(){yTarget=coverage.next();if(yTarget==null){stop("COMPLETED");return;}pitchIndex=(yTarget.pitch()+90)/15;group=1;aim(State.TEST_ALIGN,fixedYaw,yTarget.pitch());}
+ private void beginY(){var p=Minecraft.getInstance().player;if(!p.onGround()||horizontalSpeed(p.getDeltaMovement())>=TransmissionCoastPrediction.STOP_SPEED){pre.clear();stateTick=tick;return;}
+  takeoffY=p.getY();takeoffTick=-1;airborne=false;yClicked=false;yResponses=0;yAfter=null;trial=null;trialId=UUID.randomUUID().toString();
+  emit("Y_ATTEMPT_START","trialId",trialId,"targetPitch",yTarget.pitch(),"plannedTick",yTarget.tick(),"takeoffY",takeoffY,"feet",xyz(p.position()),"distance",yDistance());
+  keyboard.keyDown("SPACE");enter(State.Y_JUMP);
+ }
+ private void fireY(){if(yClicked)return;yClicked=true;var p=Minecraft.getInstance().player;yLaunch=p.position();yLaunchYaw=p.getYRot();yLaunchPitch=p.getXRot();yLaunchVelocity=p.getDeltaMovement().y;yClickTick=tick;
+  trial=new TransmissionTrial(1,tick);boolean sent=mouse.click(Minecraft.getInstance());yDispatched=sent;if(sent)trial.clicked(tick);
+  emit("Y_ATTEMPT","trialId",trialId,"targetPitch",yTarget.pitch(),"yaw",p.getYRot(),"pitch",yLaunchPitch,"distance",yDistance(),"plannedTick",yTarget.tick(),"takeoffY",takeoffY,"feet",xyz(yLaunch),"actualHeight",yLaunch.y-takeoffY,"actualCastTick",tick-takeoffTick,"onGround",p.onGround(),"ticksAfterTakeoff",tick-takeoffTick,"verticalVelocity",yLaunchVelocity,"clickId",trialId,"clickTick",tick,"dispatched",sent);
+  enter(State.Y_WAIT);
+ }
+ private double yDistance(){return com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.Capability.standard().distance();}
+ private void tickY(){var p=Minecraft.getInstance().player;keyboard.keyUp("SPACE");
+  if(state==State.Y_JUMP){
+   if(!airborne&&!p.onGround()&&p.getY()>takeoffY){airborne=true;takeoffTick=tick;emit("Y_TAKEOFF","trialId",trialId,"feet",xyz(p.position()),"takeoffTick",tick);}
+   if(airborne&&tick-takeoffTick>=yTarget.tick()){fireY();return;}
+   if(!airborne&&tick-stateTick>40)finishY("NO_TAKEOFF");return;
+  }
+  emit("Y_DESCENT","trialId",trialId,"feet",xyz(p.position()),"verticalVelocity",p.getDeltaMovement().y,"onGround",p.onGround());
+  if(p.onGround()&&(yResponses>0||tick-yClickTick>60)||tick-yClickTick>200)finishY(yResponses==1?"PAIRED":"UNPAIRED_OR_AMBIGUOUS");
+ }
+ private void finishY(String why){var p=Minecraft.getInstance().player;boolean paired=yClicked&&yDispatched&&yResponses==1&&yAfter!=null;Integer actual=yClicked&&yDispatched?(int)(yClickTick-takeoffTick):null;
+  boolean suspect=paired&&yLaunch.distanceTo(yAfter)<yDistance()-2;
+  if(yClicked){double yaw=Math.toRadians(yLaunchYaw),pitch=Math.toRadians(yLaunchPitch);var end=yLaunch.add(-Math.cos(pitch)*Math.sin(yaw)*yDistance(),-Math.sin(pitch)*yDistance(),Math.cos(pitch)*Math.cos(yaw)*yDistance());
+   var hit=Minecraft.getInstance().level.clip(new net.minecraft.world.level.ClipContext(yLaunch,end,net.minecraft.world.level.ClipContext.Block.COLLIDER,net.minecraft.world.level.ClipContext.Fluid.NONE,net.minecraft.world.phys.shapes.CollisionContext.empty()));
+   suspect|=hit.getType()!=net.minecraft.world.phys.HitResult.Type.MISS&&hit.getLocation().distanceTo(yLaunch)<yDistance()-.1;
+  }
+  if(yClicked&&!yDispatched)why="DISPATCH_FAILED";else if(actual!=null&&actual!=yTarget.tick())why="MISSED_TARGET_TICK";
+  coverage.result(yTarget,actual,paired,suspect);
+  emit("Y_RESULT","trialId",trialId,"status",why,"targetPitch",yTarget.pitch(),"plannedTick",yTarget.tick(),"actualCastTick",actual,"pairedUpdates",yResponses,"paired",paired,"possibleTerrainTruncation",suspect,"terrainAssessment",paired?"CLIENT_COLLISION_OR_DISPLACEMENT_HEURISTIC_NOT_SERVER_PROOF":"UNKNOWN","landing",p.onGround()?xyz(p.position()):null,"landingY",p.onGround()?p.getY():null,"plannedSamples",520);
+  trial=null;yClicked=false;yAfter=null;yResponses=0;if(coverage.next()==null){stop("COMPLETED");return;}
+  resetCycle=true;clearReturn();returnStartedNanos=System.nanoTime();beginResetDiagnostics(trialId,"Y_ROUND_RETURN");alignReturn();
  }
  private void enter(State s){var from=state;state=s;stateTick=tick;stateNanos=System.nanoTime();lastFrame=0;pre.clear();resetDiagnostics.state(tick,from.name(),s.name(),"EXISTING_ENTER");}
  private void aim(State s,double yaw,double pitch){targetYaw=yaw;targetPitch=pitch;mouse.resetAim();enter(s);}
@@ -163,8 +205,9 @@ public final class InstantTransmissionController {
   if(System.nanoTime()-stateNanos>30_000_000_000L){stop("STATE_TIMEOUT_"+state);return;}
   if(c.player.getInventory().getSelectedSlot()!=1&&state!=State.START_ALIGN&&state!=State.SLOT){stop("SLOT_INTERFERENCE");return;}
   switch(state){
+   case Y_JUMP,Y_WAIT->tickY();
    case START_ALIGN->{if(aligned()){keyboard.slot(2);enter(State.SLOT);}}
-   case SLOT->{if(tick>stateTick&&c.player.getInventory().getSelectedSlot()==1)aim(State.DOWN_ALIGN,0,90);else if(tick-stateTick>40)stop("SLOT_NOT_CONFIRMED");}
+   case SLOT->{if(tick>stateTick&&c.player.getInventory().getSelectedSlot()==1)aim(State.DOWN_ALIGN,yRounding?fixedYaw:0,90);else if(tick-stateTick>40)stop("SLOT_NOT_CONFIRMED");}
    case RETURN_ALIGN->{if(aligned()){
     lastWalk=c.player.position();walkProgress=tick;enter(State.WALK);
     if(correctiveReturn){
@@ -193,7 +236,7 @@ public final class InstantTransmissionController {
       // Keep the existing pre-sample ring across the one-Tick jump pulse.
       var from=state;state=State.RESET_JUMP;stateTick=tick;stateNanos=System.nanoTime();lastFrame=0;resetDiagnostics.state(tick,from.name(),state.name(),"JUMP_SUBMITTED");
       pre.add(snap);emit("RESET_JUMP","kind","RESET","takeoffY",c.player.getY());resetDiagnostics.jump(tick,resetJump.takeoffY());
-     }else beginTrial(group);
+     }else if(yRounding)beginY();else beginTrial(group);
     }
     else pre.add(snap);
    }
@@ -219,7 +262,7 @@ public final class InstantTransmissionController {
  private void clearReturn(){returnPhase=ReturnPhase.APPROACH;correctiveReturn=false;stableReturnTicks=microAdjustments=0;returnStartedNanos=0;lastCoast=coastVelocity=null;returnLeg=null;coastPrediction=null;coastDecisionTick=0;}
  private void alignReturn(){
   var p=Minecraft.getInstance().player;releaseResetKeys("RETURN_ALIGNMENT");
-  if(insideBase(p.position())&&p.onGround()&&horizontalSpeed(p.getDeltaMovement())<TransmissionCoastPrediction.STOP_SPEED){aim(State.DOWN_ALIGN,0,90);return;}
+  if(insideBase(p.position())&&p.onGround()&&horizontalSpeed(p.getDeltaMovement())<TransmissionCoastPrediction.STOP_SPEED){aim(State.DOWN_ALIGN,yRounding?fixedYaw:0,90);return;}
   if(insideBase(p.position())){enter(State.WALK);beginCoast("RETURN_ALREADY_INSIDE",TransmissionCoastPrediction.predict(p.getX(),p.getZ(),p.getDeltaMovement().x,p.getDeltaMovement().z));return;}
   returnLeg=TransmissionCoastPrediction.leg(p.getX(),p.getZ(),base.getX(),base.getZ());
   correctiveReturn=TransmissionCoastPrediction.gap(p.getX(),p.getZ(),base.getX(),base.getZ())<.5;
@@ -247,7 +290,7 @@ public final class InstantTransmissionController {
    stableReturnTicks=still?stableReturnTicks+1:0;lastCoast=pos;
    if(stableReturnTicks<2)return;
    resetDiagnostics.event("RESET_ACTUAL_STOP",tick,map("decisionTick",coastDecisionTick,"initialHorizontalVelocity",List.of(coastVelocity.x,coastVelocity.z),"predictedStop",List.of(coastPrediction.x(),coastPrediction.z()),"actualStop",List.of(pos.x,pos.z),"predictionError",List.of(pos.x-coastPrediction.x(),pos.z-coastPrediction.z()),"stableTicks",stableReturnTicks,"microAdjustments",microAdjustments,"insideBaseBlock",insideBase(pos)),"END_CLIENT_TICK_STOP_CONFIRMED");
-   if(insideBase(pos)){aim(State.DOWN_ALIGN,0,90);return;}
+   if(insideBase(pos)){aim(State.DOWN_ALIGN,yRounding?fixedYaw:0,90);return;}
    alignReturn();return;
   }
   var predicted=TransmissionCoastPrediction.predict(pos.x,pos.z,velocity.x,velocity.z);
@@ -305,7 +348,7 @@ public final class InstantTransmissionController {
     "xzCentered",!(Math.abs(p.getX()-(base.getX()+.5))>.01||Math.abs(p.getZ()-(base.getZ()+.5))>.01),"yMatches",!(Math.abs(p.getY()-baseY)>.01),"actualFailurePredicateResult",resetFailed,
     "failurePredicate","!trial.complete() || abs(errorX)>.01 || abs(errorZ)>.01 || abs(errorY)>.01","code",resetFailed?"RESET_POSITION_OR_HEIGHT_FAILED":"BASE_CONFIRMED"),"RESET_LANDING_CHECK");
    if(resetFailed){stop("RESET_POSITION_OR_HEIGHT_FAILED");return;}
-   baseConfirmed=true;resetCycle=false;clearReturn();emit("BASE_CONFIRMED","feet",xyz(p.position()));resetDiagnostics.end(tick,"BASE_CONFIRMED");trial=null;lastActualClick=-1;aim(State.TEST_YAW_ALIGN,plan.yaws().get(yawIndex),0);
+   baseConfirmed=true;resetCycle=false;clearReturn();emit("BASE_CONFIRMED","feet",xyz(p.position()));resetDiagnostics.end(tick,"BASE_CONFIRMED");trial=null;lastActualClick=-1;if(yRounding)prepareY();else aim(State.TEST_YAW_ALIGN,plan.yaws().get(yawIndex),0);
   }else{
    trial=null;lastActualClick=-1;
    if(++group>3){group=1;if(++pitchIndex>=plan.pitches().size()){pitchIndex=0;yawIndex++;}}
@@ -317,6 +360,7 @@ public final class InstantTransmissionController {
  public void positionUpdate(Vec3 before,Vec3 after){
   if(!running()||trial==null&&!resetDiagnostics.active())return;double jump=before.distanceTo(after);boolean identifiable=jump>.05;
   if(trial!=null&&(identifiable||state==State.RESET_WAIT))trial.response(tick,identifiable);
+  if(yRounding&&state==State.Y_WAIT&&yClicked){if(identifiable){yResponses++;if(yResponses==1)yAfter=after;}double nominal=yLaunch.y-yDistance()*Math.sin(Math.toRadians(yLaunchPitch));emit("Y_POSITION_PAIR","trialId",trialId,"clickId",trialId,"clickTick",yClickTick,"updateTick",tick,"order",positionOrder+1,"pairingCandidate",identifiable,"before",xyz(before),"after",xyz(after),"launchFeet",xyz(yLaunch),"launchVerticalVelocity",yLaunchVelocity,"nominalY",nominal,"actualY",after.y,"nominalError",after.y-nominal,"integerY",Math.abs(after.y-Math.rint(after.y))<1e-9,"responseNanos",System.nanoTime());}
   var site=resetDiagnostics.site(tick,"PLAYER_POSITION_PACKET_APPLIED");
   emit("POSITION_UPDATE","trialId",trial==null?null:trialId,"relativeTick",trial==null?null:tick-trial.firstTick,"relativeMs",trial==null?null:(System.nanoTime()-trialStartNanos)/1e6,"eventOrder",++positionOrder,"before",xyz(before),"after",xyz(after),"identifiable",identifiable,"clickPairing","UNCONFIRMED","state",state.name(),"site",site);
  }
@@ -327,8 +371,9 @@ public final class InstantTransmissionController {
   String stage=why.equals("COMPLETED")?"COMPLETED":why.equals("MANUAL_STOP")?"MANUAL_STOP":"RUNNING_STOP";
   finalHud=(why.equals("COMPLETED")&&lastTrialHud!=null?lastTrialHud:captureHud()).stopped(why,stage);
   if(!why.equals("COMPLETED")&&!why.equals("MANUAL_STOP"))diagnose(why,stage,state.name(),inspection);
+  if(yRounding&&coverage!=null)emit("Y_SUMMARY","pitches",coverage.summary(),"mismatchedOrUnpaired",coverage.mismatches(),"blocked",coverage.blocked());
   var stopFrom=state;resetJump.clear();clearReturn();sessionGeneration++;reason=why;emit("CANCEL_OR_FINISH","trialId",trialId,"reason",why,"partialActualClicks",trial==null?0:trial.actual);state=State.STOPPED;resetDiagnostics.state(tick,stopFrom.name(),state.name(),why);
-  try{mouse.cancel(Minecraft.getInstance());}finally{if(keyboard!=null)releaseResetKeys("TEST_STOP_CLEANUP");resetDiagnostics.end(tick,why);if(log!=null){log.close(tick,why);draining.add(log);}log=null;keyboard=null;world=connection=null;plan=null;trial=null;trialId=null;base=null;pre.clear();lastFrame=0;lastActualClick=-1;resetCycle=true;}
+  try{mouse.cancel(Minecraft.getInstance());}finally{if(keyboard!=null)releaseResetKeys("TEST_STOP_CLEANUP");resetDiagnostics.end(tick,why);if(log!=null){log.close(tick,why);draining.add(log);}log=null;keyboard=null;world=connection=null;plan=null;trial=null;trialId=null;base=null;pre.clear();lastFrame=0;lastActualClick=-1;resetCycle=true;yRounding=false;}
  }
  public void register(){
   net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(c->{try{tick();}catch(RuntimeException e){stop("TEST_EXCEPTION_"+e.getClass().getSimpleName());}});

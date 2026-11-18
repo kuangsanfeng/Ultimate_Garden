@@ -5,6 +5,14 @@ import java.util.*;
 
 /** HUD preferences only; never drives macro execution. */
 public final class HudConfig {
+    private final Map<HudId,Boolean> worldFilterFlags=new EnumMap<>(HudId.class);
+    private final Map<HudId,Set<String>> worldSelections=new EnumMap<>(HudId.class);
+    public boolean worldFilter(HudId id){return worldFilterFlags.getOrDefault(id,false);}
+    public void worldFilter(HudId id,boolean enabled){worldFilterFlags.put(id,enabled);}
+    public boolean worldSelected(HudId id,String key){return worldSelections.get(id).contains(key);}
+    public void worldSelected(HudId id,String key,boolean enabled){if(enabled)worldSelections.get(id).add(key);else worldSelections.get(id).remove(key);}
+    public void allWorlds(HudId id,boolean selected){worldSelections.get(id).clear();if(selected)worldSelections.get(id).addAll(com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.all());}
+    public boolean worldAllows(HudId id,String raw){if(!worldFilter(id))return true;String key=com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.id(raw);return key!=null&&worldSelected(id,key);}
     public enum Mode { COMPACT, DETAIL }
     public enum Item { MACRO_STATUS, FARM_MODE, CROP, LINE, TOTAL_TICK, LINE_TICK, PEST_LOADOUT, FOCUS_STATE, INPUT_INTERCEPTION, LINE_CHANGE, MOUSEMAT, CURRENT_DIRECTION, LINE_CHANGE_STATUS, STOP_REASON, CURRENT_WORKFLOW }
     public enum HudId { FARM_MACRO, ZOMBIE_SHOOTOUT, INSTANT_TRANSMISSION, MAPPING }
@@ -85,6 +93,7 @@ public final class HudConfig {
         if (enabled) detail.add(item); else detail.remove(item);
     }
     public void resetToDefault() {
+        worldFilterFlags.clear();worldSelections.clear();for(var id:HudId.values()){worldFilterFlags.put(id,false);worldSelections.put(id,new LinkedHashSet<>(com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.all()));}
         showHud=true; farmOnlyWhileRunning=false; showZombieShootoutHud=true; zombieOnlyWhileRunning=false; showInstantTransmissionHud=true;
         x=0; y=0; width=0; height=0; zombieBounds=new Bounds(0,0,0,0);transmissionBounds=new Bounds(0,0,0,0);
         panels.clear();for(var id:HudId.values())if(id!=HudId.FARM_MACRO)panels.put(id,new Panel(id));mappingBounds=new Bounds(0,0,0,0);
@@ -158,11 +167,15 @@ public final class HudConfig {
                 }
             }
         }
+        if(source.has("worldFilters"))try{var filters=source.getAsJsonObject("worldFilters");for(var id:HudId.values())if(filters.has(id.name())){
+            var f=filters.getAsJsonObject(id.name());if(f.has("enabled")){var v=f.get("enabled");if(!v.isJsonPrimitive()||!v.getAsJsonPrimitive().isBoolean())throw new IllegalArgumentException();worldFilter(id,v.getAsBoolean());}
+            if(f.has("worlds")){var ids=new LinkedHashSet<String>();for(var v:f.getAsJsonArray("worlds")){if(!v.isJsonPrimitive()||!v.getAsJsonPrimitive().isString())throw new IllegalArgumentException();String key=com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.id(v.getAsString());if(key!=null)ids.add(key);}worldSelections.put(id,ids);}
+        }}catch(RuntimeException e){repaired=true;}
         detail.addAll(compact);
         return repaired;
     }
     public JsonObject toJson(JsonObject original) {
-        JsonObject result = original.deepCopy(); result.addProperty("schemaVersion",1); result.addProperty("displayMode", mode.name());
+        JsonObject result = original.deepCopy();var filters=new JsonObject();for(var id:HudId.values()){var f=new JsonObject();f.addProperty("enabled",worldFilter(id));var ids=new JsonArray();worldSelections.get(id).forEach(ids::add);f.add("worlds",ids);filters.add(id.name(),f);}result.add("worldFilters",filters); result.addProperty("schemaVersion",1); result.addProperty("displayMode", mode.name());
         result.addProperty("showHud",showHud);
         result.addProperty("farmOnlyWhileRunning",farmOnlyWhileRunning);
         result.addProperty("showZombieShootoutHud",showZombieShootoutHud);

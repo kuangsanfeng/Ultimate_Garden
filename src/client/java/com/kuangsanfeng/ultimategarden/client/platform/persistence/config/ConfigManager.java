@@ -30,6 +30,8 @@ public final class ConfigManager {
     private AccountDirectories accounts;
     private AccountDirectories.Profile profile;
     private AccountIdentity identity;
+    private boolean startupCorrectionPending = true;
+    private boolean correctingStartup;
     private long accountRevision;
     private java.util.function.BooleanSupplier currentAccountCopySafe = () -> false;
     private final Set<Module> pendingRestart = EnumSet.noneOf(Module.class);
@@ -51,8 +53,9 @@ public final class ConfigManager {
     private final Set<Module> protectedFiles = EnumSet.noneOf(Module.class);
 
     public ConfigManager() {
-        this(FabricLoader.getInstance().getConfigDir().resolve("ultimategarden"), null);
+        this(userSettingsRoot(), null);
     }
+    public static Path userSettingsRoot() { return FabricLoader.getInstance().getConfigDir().resolve("ultimategarden").resolve("user-setting"); }
     /** Explicit module directory is for isolated tests, never the runtime root. */
     public ConfigManager(Path directory) {
         this.directory = directory;
@@ -72,7 +75,9 @@ public final class ConfigManager {
         try (var guard = accounts.lock()) {
             if (next == null) throw new IOException("Minecraft account is not initialized");
             profile = accounts.resolve(next); directory = accounts.verified(profile);
-            for (Module module : Module.values()) load(module);
+            correctingStartup = startupCorrectionPending;
+            try { for (Module module : Module.values()) load(module); }
+            finally { correctingStartup = false; startupCorrectionPending = false; }
             return true;
         } catch (IOException | RuntimeException error) {
             profile = null; directory = null;
@@ -97,7 +102,7 @@ public final class ConfigManager {
         }
     }
     public HudConfig getHudConfig() { return hud; }
-    public RandomDelayConfig getRandomDelayConfig() { return randomDelays; }
+    public RandomDelayConfig getRandomDelayConfig() { randomDelays.setParentEnabled(()->viewDeviation.enabled); return randomDelays; }
     public PestConfig getPestConfig() { return pest; }
     public ESPConfig getESPConfig() { return esp; }
     public GeneralConfig getGeneralConfig() { return general; }
@@ -206,7 +211,19 @@ public final class ConfigManager {
             document = new JsonObject();
         }
         documents.put(module, document);
-        if (!protectedFiles.contains(module)) save(module);
+        if (!protectedFiles.contains(module)) {
+            if (correctingStartup) {
+                JsonObject canonical = encode(module, new JsonObject());
+                if (module == Module.CROPS) canonical = ConfigCanonicalizer.knownFields(canonical,new CropConfig().toJson());
+                canonical = ConfigCanonicalizer.ordered(canonical,document);
+                // Compare ordered compact JSON: JsonObject.equals deliberately ignores key order.
+                if (!Files.exists(file(module)) || !canonical.toString().equals(document.toString())) {
+                    if (!io.write(file(module),canonical)) { protectedFiles.add(module); return; }
+                }
+                documents.put(module,canonical);
+                if (module == Module.CROPS) crops.load(canonical);
+            } else save(module);
+        }
     }
 
     private void readFields(Module module, JsonObject document, GeneralConfig general, FarmConfig farm, UIConfig ui, PestConfig pest) {
@@ -250,7 +267,14 @@ public final class ConfigManager {
         }
         try { verifyStorage(module); }
         catch (IOException | RuntimeException error) { Ultimate_Garden.LOGGER.error("Refusing to save unverified account configuration",error); return false; }
-        JsonObject document = documents.get(module).deepCopy();
+        JsonObject document = encode(module,documents.get(module));
+        if (!io.write(file(module), document)) return false;
+        documents.put(module, document);
+        return true;
+    }
+    /** One serialization definition for ordinary saving and startup correction. */
+    private JsonObject encode(Module module, JsonObject original) {
+        JsonObject document = original.deepCopy();
         document.addProperty("schemaVersion", 1);
         switch (module) {
             case CROPS -> document = crops.toJson();
@@ -288,9 +312,7 @@ public final class ConfigManager {
                 document.addProperty("accentColor", ui.getAccentColor());
             }
         }
-        if (!io.write(file(module), document)) return false;
-        documents.put(module, document);
-        return true;
+        return document;
     }
     public boolean saveFarmConfig() { return save(Module.FARM); }
     public boolean saveUIConfig() { return save(Module.UI); }
