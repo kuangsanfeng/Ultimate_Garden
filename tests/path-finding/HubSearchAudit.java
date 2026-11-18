@@ -1,0 +1,27 @@
+import com.google.gson.*;import java.io.*;import java.nio.file.*;import java.security.*;import java.util.*;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.*;import static com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.*;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.*;import com.kuangsanfeng.ultimategarden.client.function.path_finding.terrain.*;
+import com.kuangsanfeng.ultimategarden.client.function.mapping.*;import com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.Point;
+public final class HubSearchAudit {
+ static String hash(Path p)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(p)));}
+ public static void main(String[] args)throws Exception {
+  String scenario=args[0];Mode mode=Mode.valueOf(args[1]);String runId=scenario+"-"+mode+"-200k";Path log=Path.of("build/path-audit/hub-pathfinding.jsonl");Files.createDirectories(log.getParent());
+  var gson=new GsonBuilder().serializeNulls().create();long started=System.nanoTime();
+  try(var writer=Files.newBufferedWriter(log,java.nio.charset.StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND)){
+   java.util.function.BiConsumer<String,Object> emit=(type,data)->{var row=new JsonObject();row.addProperty("event",type);row.addProperty("runId",runId);row.addProperty("scenario",scenario);row.addProperty("mode",mode.name());row.addProperty("elapsedMs",(System.nanoTime()-started)/1e6);row.add("data",gson.toJsonTree(data));try{writer.write(gson.toJson(row));writer.newLine();writer.flush();}catch(IOException e){throw new UncheckedIOException(e);}};
+   final Map<String,Object>[] termination=new Map[]{Map.of()};var audit=new SearchAudit((type,data)->{if(type.equals("SEARCH_TERMINATION"))termination[0]=data;emit.accept(type,data);});
+   try {
+    net.minecraft.SharedConstants.tryDetectVersion();net.minecraft.server.Bootstrap.bootStrap();
+    Path root=MappingPaths.root(Path.of("run"));var repo=new MapRepository(root,"Hub");var terrain=new MapTerrain(repo);
+    Point start=new Point(0,77,-1),goal=scenario.equals("H1")?new Point(91,75,174):new Point(83,102,113),resolved=new Point(Math.floor(goal.x())+.5,goal.y(),Math.floor(goal.z())+.5);
+    var options=new Options(mode,true,true,12,1,200000,Weights.defaults());
+    emit.accept("RUN_START",Map.ofEntries(Map.entry("mapRoot",root.toString()),Map.entry("sourceMapRoot",Path.of("map/hub").toAbsolutePath().toString()),Map.entry("layer",terrain.config().selectedFestival()),Map.entry("origin",terrain.config().origin()),Map.entry("start",start),Map.entry("internalStart",start),Map.entry("initialYaw",0),Map.entry("initialPitch",0),Map.entry("closestDefinition","closest non-stale expanded state; completeStates includes discovered states"),Map.entry("requested",goal),Map.entry("resolvedTarget",resolved),Map.entry("startSupported",terrain.supported(start)),Map.entry("targetSupported",terrain.supported(resolved)),Map.entry("startClear",terrain.clear(start)),Map.entry("targetClear",terrain.clear(resolved)),Map.entry("options",options),Map.entry("stages",mode==Mode.NORMAL?List.of("same_sight_direct","distance_first_candidate_graph"):List.of("heading_aware_dijkstra")),Map.entry("limits",Map.of("expandedNodes",200000,"directIterations",Math.min(options.budget(),1000),"transmissionDirectionsPerNode",57,"timeoutSeconds",900,"coarsePlanning","NOT_IMPLEMENTED","truncation","NOT_IMPLEMENTED","landingGuard","counter >= 180; actual landing refresh not implemented"))));
+    long searchStart=System.nanoTime();var result=new PathPlanner().plan(start,goal,0,0,options,terrain,()->System.nanoTime()-searchStart>900_000_000_000L,audit);double searchMs=(System.nanoTime()-searchStart)/1e6;
+    if(result.status()==Status.ARRIVED)emit.accept("ROUTE_FOUND",Map.of("status","PLANNED_ONLY","cost",result.cost(),"steps",result.segments().size(),"actions",result.segments()));
+    var files=new ArrayList<Map<String,Object>>();for(String f:terrain.loadedFiles()){Path target=Path.of(f);Path relative=root.resolve("hub").relativize(target);Path source=Path.of("map/hub").resolve(relative);String actual=hash(target);files.add(Map.of("loadedPath",f,"sha256",actual,"sourceExists",Files.exists(source),"matchesSource",Files.exists(source)&&actual.equals(hash(source))));}
+    var end=new LinkedHashMap<String,Object>();end.put("status",result.status());end.put("termination",result.reason());end.put("expanded",result.explored());end.put("budget",options.budget());end.put("searchMs",searchMs);end.put("totalMs",(System.nanoTime()-started)/1e6);end.put("result",result);end.put("searchDiagnostics",termination[0]);end.put("loadedFiles",files);end.put("clientExecuted",false);end.put("actualEndpoint",null);end.put("timeoutTriggered",System.nanoTime()-searchStart>900_000_000_000L);emit.accept("RUN_END",end);
+    System.out.println(runId+" "+result.status()+" expanded="+result.explored()+" ms="+searchMs);
+   } catch(Throwable e){try{audit.summary();emit.accept("RUN_END",Map.of("status",e instanceof OutOfMemoryError?"RESOURCE_EXHAUSTED":"EXCEPTION","exception",e.toString(),"latestProgress",audit.latest(),"expanded",audit.latest().getOrDefault("expanded",0),"budget",200000,"clientExecuted",false,"totalMs",(System.nanoTime()-started)/1e6));}catch(Throwable ignored){}System.err.println(runId+" failed "+e);System.exit(2);}
+  }
+ }
+}

@@ -6,6 +6,10 @@ public interface ShootoutMouseAccessor {
  @Accessor("accumulatedDX") double shootout$getDX(); @Accessor("accumulatedDX") void shootout$setDX(double v);
  @Accessor("accumulatedDY") double shootout$getDY(); @Accessor("accumulatedDY") void shootout$setDY(double v);
  @Accessor("isRightPressed") void shootout$setRightPressed(boolean pressed);
+ @Accessor("isLeftPressed") void shootout$setLeftPressed(boolean pressed);
+ @Accessor("isMiddlePressed") void shootout$setMiddlePressed(boolean pressed);
+ @Accessor("activeButton") void shootout$setActiveButton(MouseButtonInfo button);
+ @Accessor("mousePressedTime") void shootout$setPressedTime(double time);
  @Invoker("turnPlayer") void shootout$turn(double elapsed);
  @Invoker("onButton") void shootout$button(long window,MouseButtonInfo info,int action);
 }

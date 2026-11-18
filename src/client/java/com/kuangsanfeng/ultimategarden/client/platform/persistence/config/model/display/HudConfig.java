@@ -15,25 +15,27 @@ public final class HudConfig {
     public boolean worldAllows(HudId id,String raw){if(!worldFilter(id))return true;String key=com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.id(raw);return key!=null&&worldSelected(id,key);}
     public enum Mode { COMPACT, DETAIL }
     public enum Item { MACRO_STATUS, FARM_MODE, CROP, LINE, TOTAL_TICK, LINE_TICK, PEST_LOADOUT, FOCUS_STATE, INPUT_INTERCEPTION, LINE_CHANGE, MOUSEMAT, CURRENT_DIRECTION, LINE_CHANGE_STATUS, STOP_REASON, CURRENT_WORKFLOW }
-    public enum HudId { FARM_MACRO, ZOMBIE_SHOOTOUT, INSTANT_TRANSMISSION, MAPPING }
+    public enum HudId { FARM_MACRO, ZOMBIE_SHOOTOUT, INSTANT_TRANSMISSION, MAPPING, PATH_FINDING }
     public record Bounds(double x,double y,double width,double height) { }
+    private Bounds pathBounds=new Bounds(0,0,0,0);
     private Bounds mappingBounds=new Bounds(0,0,0,0);
     private Bounds transmissionBounds=new Bounds(0,0,0,0);
     private Bounds zombieBounds=new Bounds(0,0,0,0);
-    public Bounds bounds(HudId id) { return switch(id){case FARM_MACRO->new Bounds(x,y,width,height);case ZOMBIE_SHOOTOUT->zombieBounds;case INSTANT_TRANSMISSION->transmissionBounds;case MAPPING->mappingBounds;}; }
+    public Bounds bounds(HudId id) { return switch(id){case FARM_MACRO->new Bounds(x,y,width,height);case ZOMBIE_SHOOTOUT->zombieBounds;case INSTANT_TRANSMISSION->transmissionBounds;case MAPPING->mappingBounds;case PATH_FINDING->pathBounds;}; }
     public void setBounds(HudId id,double x,double y,double width,double height) {
         if(id==HudId.FARM_MACRO){setBounds(x,y,width,height);return;}
         for(double value:new double[]{x,y,width,height})if(!Double.isFinite(value)||value<0||value>1)throw new IllegalArgumentException("Invalid HUD bounds");
-        if(id==HudId.MAPPING)mappingBounds=new Bounds(x,y,width,height);else if(id==HudId.INSTANT_TRANSMISSION)transmissionBounds=new Bounds(x,y,width,height);else zombieBounds=new Bounds(x,y,width,height);
+        if(id==HudId.PATH_FINDING)pathBounds=new Bounds(x,y,width,height);else if(id==HudId.MAPPING)mappingBounds=new Bounds(x,y,width,height);else if(id==HudId.INSTANT_TRANSMISSION)transmissionBounds=new Bounds(x,y,width,height);else zombieBounds=new Bounds(x,y,width,height);
     }
     public static List<String> fields(HudId id){return switch(id){
         case FARM_MACRO->Arrays.stream(Item.values()).map(Enum::name).toList();
         case ZOMBIE_SHOOTOUT->List.of("status","target","measured_speed","prediction_speed","current_angles","target_angles","aim_error","aim_ready","tolerance","correction","aim_mode","cooldown","confirmation","attempt","ping","latency");
         case INSTANT_TRANSMISSION->List.of("status","progress","test_angles","actual_angles","reset_alignment","height","samples","clicks","since_first","updates","failure_stage","reason","last_result");
+        case PATH_FINDING->List.of("status","candidate","remaining");
         case MAPPING->List.of("server","game_type","island","sub_area","dimension","instance","recording_origin","recording_chunk","recording_layer","recording_status","recording_current_state","recording_saved");};}
     private static final class Panel {
         Mode mode=Mode.COMPACT;boolean onlyRunning,show;final Set<String> compact=new LinkedHashSet<>(),detail=new LinkedHashSet<>();
-        Panel(HudId id){compact.addAll(fields(id));}
+        Panel(HudId id){compact.addAll(fields(id));if(id==HudId.PATH_FINDING){show=true;onlyRunning=true;}}
     }
     private final Map<HudId,Panel> panels=new EnumMap<>(HudId.class);
     public Mode mode(HudId id){return id==HudId.FARM_MACRO?getMode():panels.get(id).mode;}
@@ -46,8 +48,8 @@ public final class HudConfig {
         if(id==HudId.FARM_MACRO){if(compact)setCompact(Item.valueOf(key),enabled);else setDetail(Item.valueOf(key),enabled);return;}
         var p=panels.get(id);var set=compact?p.compact:p.detail;if(enabled)set.add(key);else set.remove(key);
     }
-    public boolean enabled(HudId id){return switch(id){case FARM_MACRO->showHud;case ZOMBIE_SHOOTOUT->showZombieShootoutHud;case INSTANT_TRANSMISSION->showInstantTransmissionHud;case MAPPING->panels.get(id).show;};}
-    public void enabled(HudId id,boolean value){switch(id){case FARM_MACRO->showHud=value;case ZOMBIE_SHOOTOUT->showZombieShootoutHud=value;case INSTANT_TRANSMISSION->showInstantTransmissionHud=value;case MAPPING->panels.get(id).show=value;}}
+    public boolean enabled(HudId id){return switch(id){case FARM_MACRO->showHud;case ZOMBIE_SHOOTOUT->showZombieShootoutHud;case INSTANT_TRANSMISSION->showInstantTransmissionHud;case MAPPING, PATH_FINDING->panels.get(id).show;};}
+    public void enabled(HudId id,boolean value){switch(id){case FARM_MACRO->showHud=value;case ZOMBIE_SHOOTOUT->showZombieShootoutHud=value;case INSTANT_TRANSMISSION->showInstantTransmissionHud=value;case MAPPING, PATH_FINDING->panels.get(id).show=value;}}
     public boolean onlyRunning(HudId id){return switch(id){case FARM_MACRO->farmOnlyWhileRunning;case ZOMBIE_SHOOTOUT->zombieOnlyWhileRunning;default->panels.get(id).onlyRunning;};}
     public void onlyRunning(HudId id,boolean value){switch(id){case FARM_MACRO->farmOnlyWhileRunning=value;case ZOMBIE_SHOOTOUT->zombieOnlyWhileRunning=value;default->panels.get(id).onlyRunning=value;}}
     public boolean show(HudId id,boolean running,boolean editing){return editing||enabled(id)&&(!onlyRunning(id)||running);}
@@ -96,7 +98,7 @@ public final class HudConfig {
         worldFilterFlags.clear();worldSelections.clear();for(var id:HudId.values()){worldFilterFlags.put(id,false);worldSelections.put(id,new LinkedHashSet<>(com.kuangsanfeng.ultimategarden.client.function.world.WorldIds.all()));}
         showHud=true; farmOnlyWhileRunning=false; showZombieShootoutHud=true; zombieOnlyWhileRunning=false; showInstantTransmissionHud=true;
         x=0; y=0; width=0; height=0; zombieBounds=new Bounds(0,0,0,0);transmissionBounds=new Bounds(0,0,0,0);
-        panels.clear();for(var id:HudId.values())if(id!=HudId.FARM_MACRO)panels.put(id,new Panel(id));mappingBounds=new Bounds(0,0,0,0);
+        panels.clear();for(var id:HudId.values())if(id!=HudId.FARM_MACRO)panels.put(id,new Panel(id));mappingBounds=new Bounds(0,0,0,0);pathBounds=new Bounds(0,0,0,0);
         mode = Mode.COMPACT; compact.clear(); detail.clear();
         compact.addAll(EnumSet.range(Item.MACRO_STATUS, Item.INPUT_INTERCEPTION));
         detail.addAll(EnumSet.range(Item.MACRO_STATUS, Item.MOUSEMAT));
@@ -155,6 +157,7 @@ public final class HudConfig {
                 if (value.getAsBoolean()) target.add(item); else target.remove(item);
             }
         }
+        if(source.has("pathBounds"))try{var b=source.getAsJsonObject("pathBounds");setBounds(HudId.PATH_FINDING,b.get("x").getAsDouble(),b.get("y").getAsDouble(),b.get("width").getAsDouble(),b.get("height").getAsDouble());}catch(RuntimeException e){repaired=true;}
         if(source.has("mappingBounds"))try{var b=source.getAsJsonObject("mappingBounds");setBounds(HudId.MAPPING,b.get("x").getAsDouble(),b.get("y").getAsDouble(),b.get("width").getAsDouble(),b.get("height").getAsDouble());}catch(RuntimeException e){repaired=true;}
         if(source.has("panels")){
             if(!source.get("panels").isJsonObject())repaired=true;
@@ -192,6 +195,7 @@ public final class HudConfig {
             for (Item item : Item.values()) values.addProperty(item.name(), group.equals("compact") ? compact(item) : detail(item));
             result.add(group,values);
         }
+        var path=new JsonObject();path.addProperty("x",pathBounds.x());path.addProperty("y",pathBounds.y());path.addProperty("width",pathBounds.width());path.addProperty("height",pathBounds.height());result.add("pathBounds",path);
         var mapping=new JsonObject();mapping.addProperty("x",mappingBounds.x());mapping.addProperty("y",mappingBounds.y());mapping.addProperty("width",mappingBounds.width());mapping.addProperty("height",mappingBounds.height());result.add("mappingBounds",mapping);
         var all=result.has("panels")&&result.get("panels").isJsonObject()?result.getAsJsonObject("panels"):new JsonObject();
         for(var id:panels.keySet()){var p=panels.get(id);var o=all.has(id.name())&&all.get(id.name()).isJsonObject()?all.getAsJsonObject(id.name()):new JsonObject();o.addProperty("displayMode",p.mode.name());if(id==HudId.INSTANT_TRANSMISSION||id==HudId.MAPPING)o.addProperty("onlyRunning",p.onlyRunning);if(id==HudId.MAPPING)o.addProperty("show",p.show);

@@ -180,6 +180,11 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     @Override public boolean keyPressed(KeyEvent event) {
         if (event.key()==org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || event.key()==org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) {
             if (enterHeld) return true;
+            if (pathBudgetInput!=null && getFocused()==pathBudgetInput && pathBudgetInput.active && pathBudgetInput.visible) {
+                enterHeld=true;
+                commitPathBudget();
+                return true;
+            }
             if (getFocused() instanceof EditBox edit && routeInputs.contains(edit) && edit.active && edit.visible) {
                 enterHeld=true;
                 act(() -> applyCropDefinition(drafts.get(editingCrop)));
@@ -206,6 +211,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         build();
     }
     private void build() {
+        pathBudgetInput=null;
         mappingConfirmation.cancel();mappingSection=null;
         help.clear(); routeInputs.clear();
         clearFocus(); clearWidgets(); fixed.clear(); content.clear(); cards.clear(); labels.clear(); dividers.clear(); cursor = 0;
@@ -252,7 +258,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             case ESP -> espSettings();
             case Hotkeys -> hotkeys();
             case Settings -> settings();
-            case Misc -> shootoutPageAdapter.shootoutSettings();
+            case Misc -> { shootoutPageAdapter.shootoutSettings(); pathFindingSettings(); }
         }
         if (currentSection != null) currentSection.finishContent(cursor);
         currentSection = null;
@@ -502,6 +508,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         return super.mouseScrolled(x, y, sx, sy);
     }
     @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (pathBudgetInput!=null && getFocused()==pathBudgetInput && !pathBudgetInput.isMouseOver(event.x(),event.y())) commitPathBudget();
         if (languageSelector != null && languageSelector.handleOverlayClick(event)) return true;
         if (help.isIconAt(event.x(), event.y())) { setDragging(false); return true; }
         for (AbstractWidget widget : fixed) if (widget.isMouseOver(event.x(), event.y())) return super.mouseClicked(event, doubleClick);
@@ -639,6 +646,100 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         button("ui.ultimategarden.start_timer_manually", false, () -> farm.getCommand().startPestLoadoutTimer(), () -> farm.getState().isPestsMode());
         button("ui.ultimategarden.cancel_timer", false, () -> farm.getCommand().cancelPestLoadoutTimer(), () -> true);
     }
+    }
+
+    private EditBox pathBudgetInput;
+    private String pathFindingLocalMap="Hub";
+
+    private void commitPathBudget() {
+        var settings=configs.getPathSettings();
+        var box=pathBudgetInput;
+        if (box==null || !box.active || !box.visible) return;
+        try {
+            long value=com.kuangsanfeng.ultimategarden.client.function.path_finding.NodeBudget.parse(box.getValue());
+            if (value!=settings.searchNodesPerSegment()) {
+                settings.setBudget(value,settings.maximumSearchSegments());
+                saved(configs.save(ConfigManager.Module.GENERAL));
+            }
+        } catch (RuntimeException invalid) {
+            error=true;
+            message="ui.ultimategarden.path_finding.budget_error";
+        }
+        box.setValue(com.kuangsanfeng.ultimategarden.client.function.path_finding.NodeBudget.format(settings.searchNodesPerSegment()));
+    }
+    private void pathFindingSettings() {
+        String key = "ui.ultimategarden.path_finding.";
+        heading(key+"title");
+        var parent = currentSection;
+        var settings = configs.getPathSettings();
+        BooleanSupplier editable = () -> !configs.isPendingRestart(ConfigManager.Module.GENERAL);
+        Runnable save = () -> saved(configs.save(ConfigManager.Module.GENERAL));
+        dropdown(key+"mode",settings.mode.name(),List.of(new Choice("NORMAL",key+"normal",true),
+                new Choice("WEIGHTED",key+"weighted",true)),value->{
+            settings.mode=com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.Mode.valueOf(value);
+            save.run();build();
+        },editable);
+        toggle(key+"transmission",()->settings.transmission,()->{settings.transmission=!settings.transmission;save.run();},editable);
+        input(key+"cooldown",Integer.toString(settings.teleportCooldownMs()),value->act(()->{
+            settings.setCooldown(Integer.parseInt(value));save.run();
+        }),editable,"ms");
+        var budgetFormat=com.kuangsanfeng.ultimategarden.client.function.path_finding.NodeBudget.format(settings.searchNodesPerSegment());
+        pathBudgetInput=input(key+"search_budget",budgetFormat,value->{},editable);
+        input(key+"search_segments",Integer.toString(settings.maximumSearchSegments()),value->act(()->{
+            settings.setBudget(settings.searchNodesPerSegment(),Integer.parseInt(value));save.run();
+        }),editable);
+        input(key+"coordinate_window",Integer.toString(settings.coordinateWindowMs()),value->act(()->{
+            settings.setCoordinateWindowMs(Integer.parseInt(value));save.run();
+        }),editable,"ms");
+        var performance=nestedDelaySection(key+"performance",parent);
+        toggle(key+"gpu",settings::gpuAcceleration,()->{settings.setGpuAcceleration(!settings.gpuAcceleration());save.run();},editable);
+        info(()->settings.gpuAcceleration()?language.text(key+"gpu_status_"+com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.GpuCollision.status())
+                :language.text(key+"gpu_status_disabled"));
+        int available=com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings.availableWorkers();
+        var workerChoices=new ArrayList<Choice>();
+        workerChoices.add(new Choice("0",key+"workers_auto",true));
+        for(int i=1;i<=available;i++)workerChoices.add(new Choice(Integer.toString(i),Integer.toString(i),true));
+        dropdown(key+"workers",Integer.toString(settings.cpuWorkers()==0?0:settings.effectiveWorkers()),workerChoices,value->act(()->{
+            settings.setCpuWorkers(Integer.parseInt(value));save.run();build();
+        }),editable);
+        info(()->language.text(key+"workers_effective")+" "+settings.effectiveWorkers()+" / "+available);
+        performance.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
+        var aim = nestedDelaySection(key+"aim",parent);
+        for (var field : com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings.Aim.values())
+            input(key+field.field(),Double.toString(settings.aim(field)),value->act(()->{
+                settings.aim(field,Double.parseDouble(value));save.run();
+            }),editable);
+        aim.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
+        var weights = nestedDelaySection(key+"weights",parent);
+        for (int index=0;index<6;index++) {
+            int i=index;
+            String name=List.of("tp_weight","walk_weight","jump_weight","fall_weight","turn_weight","turn_exponent").get(i);
+            var w=settings.weights;
+            double[] defaults={w.transmission(),w.walk(),w.jump(),w.fall(),w.turn(),w.exponent()};
+            input(key+name,Double.toString(defaults[i]),value->act(()->{
+                var live=settings.weights;
+                double[] v={live.transmission(),live.walk(),live.jump(),live.fall(),live.turn(),live.exponent()};
+                v[i]=Double.parseDouble(value);
+                settings.weights=new com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.Weights(v[0],v[1],v[2],v[3],v[4],v[5]);
+                save.run();
+            }),editable);
+        }
+        weights.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
+        var detection=nestedDelaySection(key+"detection",parent);
+        toggle(key+"speed",()->settings.speedDetection,()->{settings.speedDetection=!settings.speedDetection;save.run();},editable);
+        toggle(key+"initial_speed",()->settings.initialSpeed,()->{settings.initialSpeed=!settings.initialSpeed;save.run();},()->editable.getAsBoolean()&&settings.speedDetection,CollapsibleSection.NESTED_INDENT);
+        input(key+"sample_distance",Double.toString(settings.speedSampleDistance()),value->act(()->{
+            settings.setSpeedSampleDistance(Double.parseDouble(value));save.run();
+        }),()->editable.getAsBoolean()&&settings.speedDetection,"blocks");
+        toggle(key+"jump",()->settings.jumpDetection,()->{settings.jumpDetection=!settings.jumpDetection;save.run();},editable);
+        toggle(key+"initial_jump",()->settings.initialJump,()->{settings.initialJump=!settings.initialJump;save.run();},()->editable.getAsBoolean()&&settings.jumpDetection,CollapsibleSection.NESTED_INDENT);
+        detection.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
+        info(()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.status());
+        button(key+"cancel",false,()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.cancelMenuTask(),
+                ()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.menuTaskActive());
+        input(key+"local_map",pathFindingLocalMap,value->pathFindingLocalMap=value,()->true);
+        button(key+"local_test",false,()->act(()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.startMenuTest(pathFindingLocalMap)),
+                ()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.menuTestAvailable());
     }
 
     private final ShootoutPageAdapter shootoutPageAdapter=new ShootoutPageAdapter();
@@ -797,7 +898,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         for(var id:HudConfig.HudId.values()){
             String prefix="ui.ultimategarden.hud.panel."+id.name();
             var panel=nestedDelaySection(prefix,parent);
-            String showKey=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.show";case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.show_zombie";case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.show_instant_transmission";case MAPPING->"ui.ultimategarden.hud.show_mapping";};
+            String showKey=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.show";case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.show_zombie";case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.show_instant_transmission";case MAPPING->"ui.ultimategarden.hud.show_mapping";case PATH_FINDING->"ui.ultimategarden.hud.show_path_finding";};
             headerToggle(()->hud.enabled(id),()->{hud.enabled(id,!hud.enabled(id));saved(configs.save(ConfigManager.Module.HUD));},()->!configs.isPendingRestart(ConfigManager.Module.HUD));
             toggle("ui.ultimategarden.hud.only_running",()->hud.onlyRunning(id),()->{hud.onlyRunning(id,!hud.onlyRunning(id));saved(configs.save(ConfigManager.Module.HUD));},()->hud.enabled(id)&&!configs.isPendingRestart(ConfigManager.Module.HUD),CollapsibleSection.NESTED_INDENT);
             hudWorldFilter(id,panel,hud);
@@ -810,7 +911,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
                         world.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;
                         world=nestedDelaySection(prefix+(compact?".compact_recording":".detail_recording"),section);
                     }
-                    String label=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.item."+key;case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.field.ZOMBIE_SHOOTOUT."+key;case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.field.INSTANT_TRANSMISSION."+key;case MAPPING->"ui.ultimategarden.mapping_hud."+key;};
+                    String label=switch(id){case FARM_MACRO->"ui.ultimategarden.hud.item."+key;case ZOMBIE_SHOOTOUT->"ui.ultimategarden.hud.field.ZOMBIE_SHOOTOUT."+key;case INSTANT_TRANSMISSION->"ui.ultimategarden.hud.field.INSTANT_TRANSMISSION."+key;case MAPPING->"ui.ultimategarden.mapping_hud."+key;case PATH_FINDING->"ui.ultimategarden.path_finding."+key;};
                     toggle(label,()->compact?hud.compact(id,key):hud.detail(id,key),()->{hud.content(id,key,compact,!(compact?hud.compact(id,key):hud.detail(id,key)));saved(configs.save(ConfigManager.Module.HUD));},()->!configs.isPendingRestart(ConfigManager.Module.HUD)&&(compact||!hud.compact(id,key)));
                 }
                 if(world!=null){world.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=section;}

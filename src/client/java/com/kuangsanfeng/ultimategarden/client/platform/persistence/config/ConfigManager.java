@@ -36,6 +36,8 @@ public final class ConfigManager {
     private java.util.function.BooleanSupplier currentAccountCopySafe = () -> false;
     private final Set<Module> pendingRestart = EnumSet.noneOf(Module.class);
     private final ConfigIO io = new ConfigIO();
+    private com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings pathSettings = new com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings();
+    public com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings getPathSettings() { return pathSettings; }
     private final GeneralConfig general = new GeneralConfig();
     private final FarmConfig farm = new FarmConfig();
     private final UIConfig ui = new UIConfig();
@@ -156,7 +158,7 @@ public final class ConfigManager {
         }
     }
     private void defaults(Module module) {
-        if (module == Module.GENERAL) general.resetToDefault();
+        if (module == Module.GENERAL) { general.resetToDefault(); pathSettings = new com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings(); }
         if (module == Module.ANTI_CHECK) viewDeviation.resetToDefault();
         if (module == Module.HUD) hud.resetToDefault();
         if (module == Module.ZOMBIE_SHOOTOUT) shootout.resetToDefault();
@@ -197,6 +199,7 @@ public final class ConfigManager {
                 } else {
                     repairedField = false;
                     readFields(module, document, general, farm, ui, pest);
+                    if (module == Module.GENERAL) repairedField |= pathSettings.load(document);
                     if (repairedField && !io.backup(file(module))) protectedFiles.add(module);
                 }
             }
@@ -286,6 +289,7 @@ public final class ConfigManager {
             case GENERAL -> {
                 document.add("hint",general.hintsToJson(document));
                 document.add("instantTransmission",general.instantTransmission().toJson());
+                document.add("pathFinding",pathSettings.toJson());
                 document.addProperty("showModChatHints", general.isShowModChatHints());
                 document.addProperty("autoPauseFarmWhenOpeningMenu", general.isAutoPauseFarmWhenOpeningMenu());
                 document.addProperty("autoResumeFarmAfterGuiClose", general.isAutoResumeFarmAfterGuiClose());
@@ -350,6 +354,7 @@ public final class ConfigManager {
             if(new ESPConfig().load(document)) throw new IOException("Invalid source ESP configuration");
         } else {
             readFields(module,document,new GeneralConfig(),new FarmConfig(),new UIConfig(),new PestConfig());
+            if (module == Module.GENERAL) repairedField |= new com.kuangsanfeng.ultimategarden.client.function.path_finding.PathSettings().load(document);
             if(repairedField) throw new IOException("Invalid source configuration field");
         }
     }

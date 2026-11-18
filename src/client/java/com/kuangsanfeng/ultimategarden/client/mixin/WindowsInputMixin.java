@@ -1,7 +1,11 @@
 package com.kuangsanfeng.ultimategarden.client.mixin;
 
 
-import com.kuangsanfeng.ultimategarden.Ultimate_Garden;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding;
+import com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput;
+import com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
 import net.minecraft.client.KeyboardHandler;
@@ -20,6 +24,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(KeyboardHandler.class)
 public class WindowsInputMixin {
+    @WrapMethod(method = "keyPress")
+    private void filterPhysicalKeyMappings(long window, int action, KeyEvent event, Operation<Void> original) {
+        var client = net.minecraft.client.Minecraft.getInstance();
+        boolean filter = window == client.getWindow().handle() && !PlayerGuiInput.isVirtualDispatch()
+                && PhysicalGameInput.blocksGame(client);
+        PhysicalGameInput.keyboardDispatch(filter, () -> original.call(window, action, event));
+    }
 
     @Inject(method = "keyPress(JILnet/minecraft/client/input/KeyEvent;)V", at = @At("RETURN"))
     private void clearUnusedInventoryRequest(long window, int action, KeyEvent event, CallbackInfo ci) {
@@ -47,6 +58,7 @@ public class WindowsInputMixin {
             ci.cancel(); return;
         }
         var client = net.minecraft.client.Minecraft.getInstance();
+        if (window != client.getWindow().handle() || PlayerGuiInput.isVirtualDispatch()) return;
         if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS && client.screen == null) {
             com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind kind = null;
             if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
@@ -56,7 +68,10 @@ public class WindowsInputMixin {
             } else if (client.options.keyChat.matches(event) || client.options.keyCommand.matches(event)) {
                 kind = com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind.CHAT;
             }
-            if (kind != null && com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.request(kind)) return;
+            if (kind != null && PlayerGuiInput.request(kind)) {
+                ClientPathFinding.INSTANCE.stopForPlayerGui(kind);
+                return;
+            }
         }
 
         if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled()

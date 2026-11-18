@@ -3,6 +3,7 @@ import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsState;
 
 
 import com.kuangsanfeng.ultimategarden.client.platform.hint.HintManager;
+import com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
@@ -66,7 +67,7 @@ public final class WindowsFocusController {
     // =========================================================
 
     public void restoreFocusWithHint(){
-
+        if (PhysicalGameInput.focusReleased()) return;
         HintManager.printHint("FocusRestore");
 
         restoreFocus();
@@ -75,6 +76,7 @@ public final class WindowsFocusController {
     public void restoreFocus() {
 
 
+        if (PhysicalGameInput.focusReleased()) return;
         boolean wasReleased = state.isMouseReleased();
         state.setMouseReleased(false);
         reapplyCursorMode();
@@ -92,14 +94,13 @@ public final class WindowsFocusController {
 
 
         if (state.isMouseReleased()) {
-
+            PhysicalGameInput.setFocusReleased(client, false);
             restoreFocus();
-
-        }
-        else {
-
+        } else {
+            PhysicalGameInput.setFocusReleased(client, true);
             releaseFocus();
-
+            // The Farm may already own virtual holds even when U starts the first block.
+            restoreInputState.run();
         }
 
     }
@@ -108,7 +109,7 @@ public final class WindowsFocusController {
 
     /** End the mod override; an open GUI still owns the free cursor. */
     public void useGameFocusForPlayerGui() {
-        if (client.screen == null) return;
+        if (client.screen == null || PhysicalGameInput.focusReleased()) return;
         state.setMouseReleased(false);
         reapplyCursorMode();
     }
@@ -118,7 +119,7 @@ public final class WindowsFocusController {
         if (client.screen != null || client.player == null || client.level == null) {
             return false;
         }
-        state.setMouseReleased(false);
+        state.setMouseReleased(PhysicalGameInput.focusReleased());
         reapplyCursorMode();
         return client.mouseHandler.isMouseGrabbed();
     }

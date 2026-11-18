@@ -15,6 +15,7 @@
     "WindowsMissTimeMixin",
     "ShootoutMouseAccessor",
     "ShootoutAimFrameMixin",
+    "PathChatObservationMixin",
     "ShootoutPongMixin",
     "TransmissionPositionMixin",
     "TransmissionMovementInputMixin",

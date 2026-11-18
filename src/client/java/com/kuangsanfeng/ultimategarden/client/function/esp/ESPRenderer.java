@@ -40,7 +40,7 @@ public final class ESPRenderer implements AutoCloseable {
     private MultiBufferSource.BufferSource buffers;
 
     public void draw(LevelRenderContext context, ESPManager.Frame frame) {
-        if (frame.targets().isEmpty()) return;
+        if (frame.targets().isEmpty() && frame.geometry().isEmpty()) return;
         if (allocator == null) { allocator = new ByteBufferBuilder(32768); buffers = MultiBufferSource.immediate(allocator); }
         var camera = context.levelState().cameraRenderState;
         RenderType fillType = frame.throughWalls() ? FILL_THROUGH : FILL;
@@ -52,7 +52,16 @@ public final class ESPRenderer implements AutoCloseable {
                 if (styles != null && styles.fill().enabled() && styles.fill().alpha() > 0)
                     ESPFillRenderer.draw(vertices, target.bounds(), camera.pos, styles.fill(), frame.timeMs(), frame.cycleMs());
             }
+            // Route shells remain depth-tested even when entity ESP is set to show through walls.
             buffers.endBatch(fillType);
+            if (!frame.geometry().isEmpty()) {
+                var shell= buffers.getBuffer(FILL);
+                for (var geometry : frame.geometry()) for (var face : geometry.faces()) {
+                    ESPFillRenderer.drawFace(shell,face.bounds(),face.outside(),camera.pos,
+                            geometry.faceStyle(),frame.timeMs(),frame.cycleMs());
+                }
+                buffers.endBatch(FILL);
+            }
         }
         {
             var vertices = buffers.getBuffer(boxType);
@@ -60,6 +69,16 @@ public final class ESPRenderer implements AutoCloseable {
                 var styles = frame.styles().get(target.type());
                 if (styles != null && styles.box().enabled() && styles.box().alpha() > 0)
                     ESPBoxRenderer.draw(vertices, target.bounds(), camera.pos, styles.box(), frame.timeMs(), frame.cycleMs());
+            }
+            for (var geometry : frame.geometry()) {
+                for (var bounds : geometry.outlines())
+                    ESPBoxRenderer.draw(vertices,bounds,camera.pos,geometry.outlineStyle(),frame.timeMs(),frame.cycleMs());
+                for (var line : geometry.lines()) {
+                    var a=line.from();
+                    var b=line.to();
+                    ESPBoxRenderer.line(vertices,a.x,a.y,a.z,b.x,b.y,b.z,camera.pos,
+                            geometry.lineStyle(),frame.timeMs(),frame.cycleMs());
+                }
             }
             buffers.endBatch(boxType);
         }
@@ -69,6 +88,10 @@ public final class ESPRenderer implements AutoCloseable {
                 var styles = frame.styles().get(target.type());
                 if (styles != null && styles.tracer().enabled() && styles.tracer().alpha() > 0)
                     ESPTracerRenderer.draw(vertices, target.bounds().getCenter(), camera.pos, styles.tracer(), frame.timeMs(), frame.cycleMs());
+            }
+            for (var geometry : frame.geometry()) {
+                if (geometry.guide()!=null)
+                    ESPTracerRenderer.draw(vertices,geometry.guide(),camera.pos,geometry.guideStyle(),frame.timeMs(),frame.cycleMs());
             }
             buffers.endBatch(TRACER);
         }

@@ -58,6 +58,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         var pestESP = new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PestESP(configManager.getPestConfig());
         espManager.register(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig.SILVERFISH, pestESP::collect);
         new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
+        espManager.registerGeometry(com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PathRouteESP::snapshot);
         espManager.initialize();
 
 
@@ -158,6 +159,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         com.kuangsanfeng.ultimategarden.client.runtime.feature.adapters.ClientFeatures.install(features,farmController,com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE);
         com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.register();
         com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.register();
+        com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.register();
         windowsInputInterceptor.setExternalOwner(()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.intercepting()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput());
         windowsInputInterceptor.setExternalMouseOwners(
                 ()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.interceptingAim()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput(),
@@ -171,6 +173,8 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         com.kuangsanfeng.ultimategarden.client.function.mapping.MappingController.INSTANCE.register();
         var mappingHud=new com.kuangsanfeng.ultimategarden.client.platform.ui.adapters.mapping.MappingHud(configManager);
         com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("mapping",mappingHud::render);
+        var pathHud=new com.kuangsanfeng.ultimategarden.client.platform.ui.adapters.path_finding.PathFindingHud(configManager);
+        com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("path_finding",pathHud::render);
         var transmissionHud=new com.kuangsanfeng.ultimategarden.client.platform.ui.adapters.instant_transmission.InstantTransmissionHud(configManager);
         com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("instant_transmission_status",transmissionHud::render);
         net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(

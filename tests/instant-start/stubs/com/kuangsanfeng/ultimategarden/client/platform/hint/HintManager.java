@@ -1,0 +1,1 @@
+package com.kuangsanfeng.ultimategarden.client.platform.hint; public final class HintManager {public static final java.util.List<String> notices=new java.util.ArrayList<>();public static void printRequired(String s){notices.add(s);}public static void print(String s){notices.add(s);}}

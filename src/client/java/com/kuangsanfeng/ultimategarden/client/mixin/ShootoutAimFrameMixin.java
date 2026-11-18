@@ -11,5 +11,5 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Minecraft.class)
 public abstract class ShootoutAimFrameMixin {
  @Inject(method="runTick",at=@At(value="INVOKE",target="Lnet/minecraft/client/MouseHandler;handleAccumulatedMovement()V"))
- private void shootout$aimFrame(boolean advanceGameTime,CallbackInfo ci){ZombieShootoutController.INSTANCE.aimFrame();com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.frame();}
+ private void shootout$aimFrame(boolean advanceGameTime,CallbackInfo ci){ZombieShootoutController.INSTANCE.aimFrame();com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.frame();com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.aimFrame();}
 }

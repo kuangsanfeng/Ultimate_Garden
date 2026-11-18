@@ -1974,3 +1974,183 @@ Not Verified In-Game：新只读连接 Mixin 的运行时加载、真实 Hello �
 - 当前账号第一次成功确定后，`correctingStartup/startupCorrectionPending` 仅包围这次模块加载；使用原模型加载、校验和默认值，再由共用 `encode()` 产生固定字段定义。[ConfigCanonicalizer](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/persistence/config/ConfigCanonicalizer.java) 按序列化器字段顺序整理对象，schemaVersion 固定首位；CropConfig 按随包作物定义投影，保留已有可选继承语义和用户数组。ESP 合法动态目标由既有注册规则保留，目标内部仍只输出当前字段。HUD 的个人 detail 选择不被运行期派生并集覆盖；合法颜色写法和数字表示保留，世界列表保留合法已选项顺序。已废弃开发者字段及固定对象内未知键移除。普通保存、菜单操作、后续账号切换及配置复制不额外运行这套纠错。
 - 启动按紧凑有序 JSON 比较内容和顺序，仅缺失文件或需纠正时才原子写回；已正确文件再次启动保持修改时间。未来 schema 的只读保护、无效文件备份、身份校验和存储锁沿用。处理范围只有本次当前账号的十类设置 JSON，不修复其他账号；原有 UUID 归属查验仍会读取账号身份元数据，不扫描其他账号的设置内容。
 - 验证：Gradle Build、配置/账号/语言、GUI、Hotkeys、HUD、ESP 与 Mapping 回归通过；新增启动纠错 64 项检查当前账号隔离、废弃/缺失/错序、动态目标、数组顺序、合法值、未来版本保护及第二次启动零重写，正确文件预设固定旧修改时间用于检测重写。另复制新目录中已有账号的 11 个文件到隔离测试目录后加载/纠错/加锁，原文件内容及修改时间不变。圆角几何 1,351,761 项逐像素检查通过；原生 Fabric 离线菜单 440 项点击检查及浅/深主题嵌套截图通过。未声称已在登录服务器的实际业务运行中完成性能或账号切换验收。
+
+### 2026-11-18 · 公共寻路核心原型与本机地图预检（未完成正式功能）
+
+> 本节不是功能验收通过记录。新增模块尚未接入菜单、原生输入执行或客户端生命周期，不会自行启动角色移动。H1/H2 尚未规划成功，D1 缺图；三组均未进行客户端实跑。
+
+源码位于 `client/function/path_finding/`，不改动旧 Instant Transmission 实验模型：
+
+| 入口 | 当前实际职责与边界 |
+|---|---|
+| [PathTypes](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/PathTypes.java) | 请求参数、权重、WALK/JUMP/FALL/TRANSMISSION 段及结果状态。目标目前按脚底点处理，目标 XZ 内部居中，保留原请求坐标。Options 的 12 格为离线默认，不代表已确认真实装备能力。 |
+| [model/TransmissionModel](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/model/TransmissionModel.java) | 起点脚底加连续方向向量，X/Z 使用 floor(raw)+0.5，Y 使用 floor(raw+0.5)。不归一化量化位移、不使用 UP 表或 0.62 偏置。旧 FlightModel 保持独立实验用途。 |
+| [terrain/MapTerrain](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/terrain/MapTerrain.java) | Worker 私有的 MapRepository/MapConfig/ChunkSnapshot 缓存，按当前节日层及基础回退读图。floorDiv/floorMod 和统一 origin 还原坐标；Mojang BlockState 保留属性，以原版碰撞形状检查玩家体积、支撑与段扫掠。缺块、扫描高度外位置不作空气。它不访问服务端、不发网络请求。 |
+| [planning/PathPlanner.plan](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/PathPlanner.java) | 有限候选移动图。常规模式先试同一视线直达，再作非最优距离优先搜索；权重模式使用零启发的 Dijkstra，并将朝向、累计传送距离纳入状态。结果只针对当前候选图，不能声称已实现所有合法角度的全局最优或三维粗规划。支持节点预算、取消及清楚的缺图状态。 |
+| [execution/PathService](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/PathService.java) | 单后台线程规划；调用方提供 Terrain 工厂。Ticket 限定发起者取消，快照与 Stage 供只读查询；Driver 端口在客户端 Tick 推进，只有确认完成才推进下一段。执行租约跨服务实例互斥；取消/关闭/显式 contextChanged 释放 Driver 并使旧规划失效。当前没有原生 Driver，也没有自动接线断线/账号/世界通知，调用方必须明确调用这些端口。 |
+
+地图准备仅补复制本机 `map/hub` 和 `map/deep-caverns` 中运行目录缺少的文件；已有运行目录文件未覆盖，原始地图未修改。正常读取根为 `run/config/ultimategarden/map`，沿用 MappingPaths，没有重复的 map/map 目录。Hub 复制 585 个缺少文件（含配置），运行目录有 584 个蓝图区块文件；Deep Caverns 复制 111 个（含配置），有 110 个蓝图区块文件。本机 Deep Caverns 各实际数据层均未找到 `Deep Caverns 0 9.litematic`，原点仍是 `(32,0,16)`。
+
+`tests/path-finding/run.ps1` 使用项目 runtimeClasspath、原版 Bootstrap 和正常 MapRepository 读取运行目录。三组分别执行 NORMAL、WEIGHTED，均开启技能和投影，距离 12、保守跳高 1、默认权重、节点预算 20,000。结果写入 `build/path-audit/scenarios.json`，保留原请求、解析目标、段统计、代价、缺图信息及 `executed=false / actualEndpoint=null`，不能把失败结果的空段列表当成实际零次移动。
+
+| 场景 | 起点 → 原终点 | 常规模式 | 权重模式 | 实际执行 |
+|---|---|---|---|---|
+| H1 / Hub | `(0,77,-1)` → `(91,75,174)` | BUDGET_EXHAUSTED，展开 20,001 节点 | BUDGET_EXHAUSTED，展开 20,001 节点 | 未执行，无可交付路线 |
+| H2 / Hub | `(0,77,-1)` → `(83,102,113)` | BUDGET_EXHAUSTED，展开 20,001 节点 | BUDGET_EXHAUSTED，展开 20,001 节点 | 未执行，无可交付路线 |
+| D1 / Deep Caverns | `(4,157,84)` → `(35,12,175)` | MAP_MISSING，终点相对块 `(0,9)` | MAP_MISSING，同一文件缺失 | 未执行，未补造地形 |
+
+构建通过；新增 18 项受控回归覆盖统一量化、负坐标、18 格 12+6、固定视线、禁用技能、水平曼哈顿代价、权重改变选择、空中范围/投影、资源预算及外部调用者取消释放。执行测试是受控 Driver，不是原生玩家移动。原有 Instant Transmission 和 Mapping 回归通过。
+
+尚缺的正式实现：三维粗规划与完整固定距离候选搜索、可靠跳跃轨迹及实际上升代价、碰撞截断后的空中穿过验收、180 格落地及跨 6 格刷新摔落距离动作、真实装备能力确认、速度/跳高初测和环境缓存、Misc 菜单与持久化、中英资源、公共原生输入/位置包驱动与重规划、本地测试世界复现及逐组客户端实跑。没有将这些项记为已实现或已验收；原有调试功能保持可用，但本轮并未完成它们的全部新寻路验收场景。
+
+### 2026-11-18 · Hub 200,000 节点独立复测与合并失败日志
+
+- 先执行现有 Gradle Build 与 `tests/path-finding/run.ps1 -HubOnly` 基线；`MapScenarios` 的 `--hub-only` 只跳过 D1，不改变原有默认入口。新增 [tests/path-finding/hub.ps1](tests/path-finding/hub.ps1) 编译并独立启动四个 JVM，每次使用 [HubSearchAudit](tests/path-finding/HubSearchAudit.java) 经 MappingPaths/MapRepository/MapConfig 正常读取 `run/config/ultimategarden/map/hub`，选中层 NONE、保守跳高 1、Instant Transmission 开启、距离 12、默认权重。初始 Yaw/Pitch 为 0/0。原始起点 `(0,77,-1)` 不额外平移；目标内部解析为 H1 `(91.5,75,174.5)`、H2 `(83.5,102,113.5)`，保持输入脚底 Y，原请求另存。四组的起点与目标支撑、净空检查均为 true。
+- 200,000 只由本次 Hub 执行入口通过 Options 传递，未改变全工程默认预算 20,000。[PathPlanner](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/PathPlanner.java) 修正先自增再判断的越界计数：现在最多处理预算指定数目的非过期队列节点，不再记为 200,001。重复的过期队列项单独计数，不占实际展开计数。同一完整状态再次改善并重新处理仍计入实际展开。正常直达阶段最多 min(预算,1000) 次；每节点固定传送角度候选为 57 个，另有末段候选；没有已实现的粗规划或独立局部搜索预算。日志明确区分 HEADING_GRAPH_BUDGET、开放表耗尽和 MAP_MISSING。本轮碰撞、未知区块、移动候选、代价及优先级规则未放宽。
+- 新增可选 [SearchAudit](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/SearchAudit.java) 与 `plan(..., cancelled, audit)` 重载。未传入诊断时不写日志。约每 1,000 个已取出并通过过期检查的节点发布进度（该节点的后继尚未生成）；记录展开数、候选尝试数、已发现完整状态数、唯一位置、已展开完整状态/位置、同状态再次展开数、开放表规模/峰值、队首代价和真实优先级、当前与最近已展开节点及其代价。最近节点按三维距离定义，不与队首混同。
+- MapTerrain 保留最近一次失败的实际方块位置与原因、实际成功读取的层文件路径，支持拒绝记录而不重复求解。动作候选、节点是否落地的分类查询与累计传送距离状态分类分别归属，避免把正常空中状态记作某个动作拒绝。拒绝计数是失败检查次数，不是互斥的候选数。每个动作/原因仅保留最多三个样本（首例、近目标样本、周期抽样的较新样本），采样不逐节点写盘。传送碰撞截断、粗规划、约 6 格刷新和完整落地控制器标为未实现；已存在的 180 累计计数门槛单独记录，不冒称完整落地检查。
+- 交付日志为 [build/path-audit/hub-pathfinding.jsonl](build/path-audit/hub-pathfinding.jsonl)，一次命令会建立新日志，四组追加到同一文件，runId 为 `H1-NORMAL-200k` 等。包含 RUN_START、SEARCH_PROGRESS、REJECTION_SUMMARY、SEARCH_LIMIT/SEARCH_TERMINATION、成功时的 ROUTE_FOUND、RUN_END。结束记录保存实际有效预算、全部汇总、最接近节点的**部分推进路径**及实际加载文件的 SHA-256/与原图比对。失败结果的部分路径不是可执行路线；`clientExecuted=false`、`actualEndpoint=null` 明确没有实跑。每次结束刷新；异常和进程非正常退出有终止记录兜底，剩余组合继续运行。最终日志 820 行，约 851 KiB。
+
+| runId | 状态 / 触发限制 | 实际展开 | 搜索耗时 / 总耗时（秒） | 最近已展开位置 / 剩余三维距离 |
+|---|---|---:|---:|---|
+| H1-NORMAL-200k | BUDGET_EXHAUSTED / HEADING_GRAPH_BUDGET | 200,000 | 33.661 / 36.585 | `(2.5,79,29.5)` / 170.182 |
+| H1-WEIGHTED-200k | BUDGET_EXHAUSTED / HEADING_GRAPH_BUDGET | 200,000 | 149.597 / 152.488 | `(105.5,161,84.5)` / 125.268 |
+| H2-NORMAL-200k | BUDGET_EXHAUSTED / HEADING_GRAPH_BUDGET | 200,000 | 32.333 / 35.098 | `(6.5,79,26.5)` / 118.436 |
+| H2-WEIGHTED-200k | BUDGET_EXHAUSTED / HEADING_GRAPH_BUDGET | 200,000 | 156.084 / 158.950 | `(91.5,149,70.5)` / 64.203 |
+
+- 已证实：两组常规模式在首个 1,000 节点进度点即达到本轮最小剩余距离，后续未改善；仅展开 40,258 / 38,839 个不同完整状态，却有 159,742 / 161,161 次同一完整状态再次展开，实际展开位置仅 1,387 / 1,523 个。传送落点净空拒绝约 557 万 / 546 万次，段碰撞拒绝约 169 万 / 178 万次。H2 最近推进点的一个目标方向候选 `(6.5,79,26.5)→(14.5,81,35.5)` 在方块 `(6,79,27)` 被拒；这只是具体阻塞样本，不是不可达证明。
+- 已证实：权重模式没有同一完整状态再次展开，但发现约 537.6 万 / 537.8 万个完整状态、约 121 万个位置，开放列表峰值 5,683,434 / 5,685,137。最近距离分别在第 15,000 / 14,000 个进度节点后不再改善；结束队首代价均约 8.2908。说明已发生广泛的低代价前沿膨胀，而非仅在单一完整状态循环。180 计数门槛被触发 47,089 / 47,084 次；正常无支撑的空中节点分类不等同于动作失败。
+- 四组终止时没有缺图记录，实际分别读取 14 / 237 / 14 / 236 个区块文件，全部与 `map/hub` 的对应原始文件 SHA-256 相同。没有开放表耗尽、超时、JVM 资源耗尽或客户端路线执行。障碍、状态重开与前沿膨胀由日志证实；是否必须增加绕行候选、改进常规规划优先级或改变状态去重仍需后续验证，本轮没有据此改算法，也不能宣称地图上不存在路线。
+- 验证：Gradle Build、18 项原有受控寻路检查、诊断回归通过。诊断回归检查精确 2,001 节点上限、每 1,000 节点事件、有限样本、预算与开放表耗尽/缺图分离，以及诊断开启前后结果一致。[verify_hub_log.py](tests/path-finding/verify_hub_log.py) 校验四组启终标记、每组 200 条单调进度、200,000 实际上限、有限拒绝样本、实际读文件与原图一致及未声称客户端执行。日志初轮发现分类查询归属不准确，修正后四组均已重新运行；本节和交付文件仅采用修正后的结果。
+## 分层自动寻路复测
+
+本轮将客户端公共入口切到分层规划。旧 20,000 节点入口仍可作为对照，先前的 Hub 200,000 节点日志单独保留。D1 的当前有效终点为 `(35,12,17)`。前文对旧坐标 `(35,12,175)` 的缺块结论仅属于历史试跑。
+
+- [CorridorPlanner](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/CorridorPlanner.java) 先验证直达及少量高度和侧移的净空候选，再搜索不带朝向的空间中心线。大落差使用双向前沿，Hub 使用单向前沿。每个中心线段验证 1×2×1 净空，局部候选仅在中心线 15 格内生成，通过地图碰撞复查。空间点查询按需缓存。
+- 净空捷径只在中心线两端进行有界采样。连接必须覆盖接入、横越和再接入。常规模式比较同起止点的总时间，时间包含转向、CD 与确认、普通移动及落地动作。权重模式保留两种通过复查的方案，按总代价比较，并以估时处理平局。当前解来自有界候选集，全局最优性未证实。
+- [PathPlanner.planGround](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/PathPlanner.java) 供第三级使用，以横向曼哈顿代价作为 A* 下界。允许传送时尝试在同一行走走廊跳过连续步行段，起终净空、支撑和重新接入必须有效。关闭传送时直接走步行分支。
+- [PathService](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/PathService.java) 提供 `plan`、`start`、`execute`、`stage`、`snapshot` 和所有者票据取消。客户端准备与执行在客户端线程，规划在后台线程。 [ClientPathFinding](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/ClientPathFinding.java) 接入既有上下文事件、共享虚拟键盘、视角输入及位置包旁路。外部调用者提供明确的本地地图身份，正式施放还需提供已确认装备距离和装备有效性检查。菜单的本地测试支持输入地图名并使用当前指向的方块。
+- [TransmissionModel](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/model/TransmissionModel.java) 以实际脚底和施放角度计算连续向量。X/Z 使用 floor 加 0.5，Y 使用 Java Math.round。每一段保留量化前施放距离进行 12 格检查，无遮挡用例保留 18 格的 12+6。同一模型供规划和单人测试使用。每次本地技能动作为一条独立的 `/tp @s`，收到位置包才确认。虚拟键盘处理行走和跳跃，垂直下落使用原生重力。
+- [PathSettings](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/PathSettings.java) 将杂项菜单的模式、传送启用、默认 20 ms CD、权重和检测开关放入账号 `general.json` 的 `pathFinding`。速度复测距离默认 80 格。初测在周围轴向检查安全平坦路段，或 10 格内可走到且有 9 格净空的跳测点。未测到时采用 4.3 格每秒及 1 格跳高。测量结果只放当前会话内存，拒绝位置修正样本并在上下文变化时清理。
+- [CastGate](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/CastGate.java) 使用单调时钟，视角、CD 与位置确认均就绪才施放。运行时检查实际射线和量化位置，在仍可到达相同量化点时试少量近邻角度。失败可等待落地后重规划，最多两次，第二次允许以常规模式兜底。累计距离仅统计已确认施放。规划有空中累计距离守卫和近地向下施放候选。Hub 实机记录到普通落地清零，约 6 格处施放的刷新分支仍待原生验证。
+
+地图仍经 MappingPaths 和 MapRepository 读取 `run/config/ultimategarden/map`。本轮读取的文件与 `map/hub` 或 `map/deep-caverns` 的对应文件逐一哈希一致。D1 新终点区块为 `Deep Caverns 0 0.litematic`，起终点的支撑与净空检查通过。两种模式各使用 200,000 节点，双向空间前沿各跑到 180,000 节点后仍未连通，再消耗步行阶段的 20,000 节点。搜索碰到外围缺区块和低于地图扫描下界的探测位置。缺图位置没有充当空气，也没有证明大落差路线不可达。
+
+| 场景与模式 | 规划策略 | 粗规划 + 局部展开 | 局部施放检查 | 规划用时 | 执行终点 |
+|---|---|---:|---:|---:|---|
+| H1 常规 | 原飞行走廊 | 54,093 + 58 | 7,607 | 0.762 秒 | (91.5,75,174.5) |
+| H1 权重 | 原飞行走廊 | 54,093 + 85 | 11,287 | 0.828 秒 | (91.5,75,174.5) |
+| H2 常规 | 原飞行走廊 | 10,745 + 76 | 12,610 | 0.647 秒 | (83.5,102,113.5) |
+| H2 权重 | 原飞行走廊 | 10,745 + 181 | 32,751 | 0.852 秒 | (83.5,102,113.5) |
+| D1 常规 | 预算耗尽 | 180,000 + 20,000 | 1 | 8.411 秒 | 未运行 |
+| D1 权重 | 预算耗尽 | 180,000 + 20,000 | 0 | 7.551 秒 | 未运行 |
+
+Hub 每组净空探测均未选出替换。常规 H1/H2 空间状态再次展开为 809/617 次，已采纳的局部策略分别为 0/0 次，旧完整状态再次展开为 159,742/161,161 次。权重 H1/H2 的队列峰值为 37,306/12,632，旧峰值为 5,683,434/5,685,137。空间状态与局部动作状态分别计数，因此重开次数的定义与旧图存在差异。
+
+复测入口为 [corridor.ps1](tests/path-finding/corridor.ps1)，独立启动六个 JVM。单人客户端使用 [CorridorClientAudit](tests/path-finding/CorridorClientAudit.java) 从所用本地地图导入测试路线实际经过的区块并调用公共接口。合并日志是 [corridor-pathfinding.jsonl](build/path-audit/corridor-pathfinding.jsonl)。它保留各层结果、净空连接比较、实际文件、完整规划步骤及多个客户端试跑。每次客户端试跑使用 `clientTrial` 区分，`RUN_END` 为离线规划记录，`CLIENT_END` 为独立原生结果。
+
+构建、配置、中英语言、Mapping、Instant Transmission、既有路径及新增净空估时与 CD 回归通过。隔离客户端禁用传送后通过脚步移动到 `(40.5005,89,24.4444)`，施放及传送位置确认次数为 0。85 ms 的额外诊断试跑记录到约 99.9 ms 的最小施放间隔，随后因碰撞重规划失败而结束。
+
+正式验收使用 `clientTrial=5`，四组从绝对 Yaw/Pitch 0°/0° 和同一起点开始。H1 常规/权重用时 3.050/2.850 秒，各确认 20 次施放。H2 常规/权重用时 2.900/3.051 秒，各确认 17 次施放。74 次实际位置包坐标全部等于当次预测，均未重规划。默认 20 ms CD 下的最短实际间隔为 41.924 至 49.756 ms，受客户端 Tick、视角和位置确认限制。四组都在 `(41.3262,89,24.5388)` 附近站稳并将已经确认的 60 格累计清零。正式装备施放未在远端服务器实测。
+
+
+### 2026-11-18 · 寻路启动、分段续算和原生视角复测
+
+- **启动和坐标确认。** `start_pathfinding` 默认未绑定，使用快捷键现有分组、启停和冲突控制。在 [ClientPathFinding](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/ClientPathFinding.java) 进入 `startHotkey()`。有未过期的坐标候选时消费它，否则打开 [PathChatInput](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/PathChatInput.java) 的原版聊天框实例。Enter 在本地处理，Esc 不提交，也不保存聊天草稿。[TargetCoordinates](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/TargetCoordinates.java) 从清洗后文本提取一组独立的连续三元组，可处理带前后缀、负数和小数的文本。`PathChatObservationMixin` 在原版聊天接收可见消息时转交文本。有明确 XYZ 标签的外部片段优先解析，模块自己的提示不生成候选。
+- **窗口和 HUD。** 候选使用单调时钟，默认有效 5,000 ms。新候选替换旧候选，过期或上下文切换时清除。候选未确认时不会换武器或规划。[PathFindingHud](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/ui/adapters/path_finding/PathFindingHud.java) 读取确认快照，通过现有 HUD 注册、布局和世界筛选显示坐标、剩余时间和进度条。该窗口纳入 HUD 的「仅运行时显示」判断。
+- **快捷栏。** [TransmissionEquipment](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/TransmissionEquipment.java) 读取同步物品的 SkyBlock ID、Tuner、Ultimate Wise 和武器 Intelligence。比较顺序为射程、法术等级、Intelligence、AOTV 优先、槽位从小到大。用虚拟键盘选择槽位并读回实际物品，施放前复核装备和潜行状态。禁用技能或没有可用武器时按纯步行配置规划。单人模拟入口独立接受距离 12，不要求真实物品。
+- **分段预算。** `general.json` 的 `pathFinding` 持久化 `searchNodesPerSegment`、`maximumSearchSegments` 和 `coordinateWindowMs`。默认 `200K × 10`，各搜索阶段共享单段上限。`NodeBudget` 忽略中英文逗号，解析整数和 K/M/B/T 后缀，保存经溢出校验的长整数，展示能整除的最大单位。在菜单按 Enter 或移出输入框提交，非法值保留原设置。[SegmentedPlanner](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/SegmentedPlanner.java) 仅在单段节点用尽时续算，从正向前驱链重建经过局部动作检查的路径，携带精确脚底、Yaw/Pitch、着地阶段、连续传送距离及权重代价。接缝按原脚底坐标检查。不可接续或段数耗尽保留诊断前缀，执行器只启动完整路线。权重结果记录实际选出路线的计划代价和未证明全局最优状态。
+- **原生视角和下落。** `ShootoutAimFrameMixin` 将寻路接到同一客户端帧入口，调用 `ShootoutAimClock`、`ShootoutAimCorrection` 与 `NativeViewInput`。独立字段 `aimPeakSpeedDegPerSecond`、`aimCurveCurvatureDeg`、`aimUpdateRateHz`、`aimCompletionToleranceDeg`、`aimCorrectionRandomRatio` 的默认值分别为 300°/s、15°、20 Hz、0.50°、0.25。对齐后从实时位置与角度重新计算并检查原始线段和量化位置。可加速的垂直下落段保留 Yaw，尽早向下瞄准。使用 CD 和位置包逐次确认，下行转向免权重，实际落地后归正按空间夹角计算。单人模拟每次只发一条无旋转参数的 `/tp`。
+- **复测日志。** `tests/path-finding/corridor.ps1 -Segmented` 和 `CorridorClientAudit` 写入 [segmented-pathfinding.jsonl](build/path-audit/segmented-pathfinding.jsonl)。保留上轮 [corridor-pathfinding.jsonl](build/path-audit/corridor-pathfinding.jsonl)。本轮分别记录 `SEGMENT_START/END`、可执行前缀和预算、`CAST` 的各相位 Y 与实际 CD、`POSITION_CONFIRMATION`、落地、重规划和客户端结果。地图由正常入口读取 `run/config/ultimategarden/map`，缺区块及扫描范围外分别保留诊断。
+
+七次离线规划读取的文件与本机 `map` 对应文件逐一哈希一致。主矩阵使用 `L=12`、普通层、默认权重和 `200K × 10`。客户端复测使用隔离单人世界和无武器本地模拟。
+
+| 场景 | 模式 | 规划状态／展开数 | 客户端结果（trial 23） |
+|---|---|---|---|
+| H1 | 常规 | 完整飞行走廊，54,151 | 4 次位置确认、2 次重规划，实位约 (35.5,84.937,11.5)，重验失败 |
+| H1 | 权重 | 完整飞行走廊，54,178 | 4 次位置确认、2 次重规划，同一实位，重验失败 |
+| H2 | 常规 | 完整飞行走廊，10,821 | 3 次位置确认、2 次重规划，实位约 (15.5,88.312,9.5)，重验失败 |
+| H2 | 权重 | 完整飞行走廊，10,926 | 3 次位置确认、2 次重规划，同一实位，重验失败 |
+| D1 | 常规 | 200,000 + 120,073，第二段无法接续 | 未启动，17 步诊断前缀至 (47.5,33,69.5) |
+| D1 | 权重 | 200,000 + 120,041，第二段无法接续 | 未启动，18 步诊断前缀至 (45.5,28,71.5) |
+
+D1 两个前缀的末端均在空中，携带 168 格连续传送距离。两组第二段都达到 120,000 个空间粗规划节点的阶段上限，局部检查和步行兜底未得到可接续动作，单段仍有预算。缺文件和扫描范围外的位置单列，不能据此确定整个目标不可达。
+
+Hub 复测中，第二跳计划从 Y=80 开始，实际施放检查时已落到约 Y=78.407，量化落点 Y=83，与计划的 Y=85 不符且线段受阻，未发送该跳。重规划开始新动作前清除上一动作的失败状态后，四组均多次推进，后续仍出现同类障碍。垂直下落对照（trial 23）以 300°/s 瞄准，三次逐跳位置确认落至 (-3.5,78,-4.5)，两次施放间隔约 50 ms。降为 25°/s 的特殊用例（trial 24）在对齐前自然接地，零次施放。禁用技能的步行段（trial 25）完成，零次施放。
+
+Gradle 构建及寻路、配置、语言和热键回归通过。本地原版聊天框验证了 Enter 拦截斜杠命令、Esc 取消及普通聊天恢复。外部消息触发的确认窗口能正确解析并按时过期。快捷栏数据和排序使用离线夹具，线上真实武器施放仍待验证。
+
+同一垂直段的已对齐对照（trial 26）首跳瞄准耗时约 0.35 ms，确认四跳，量化 Y 依次为 108、96、84、78。末跳有效距离为 6 格。实际落点与各跳预测相同。该垂直段以着地为终点，未覆盖着地后紧接下一动作的归正。
+
+
+### 2026-11-18 · 寻路施放时序、走廊预演与末段到达
+
+- **施放时刻与脚底预测。** `function/path_finding/model/FlightTiming` 用 `ViewRotationPlanner` 的逐帧曲线、原版鼠标输入的 float 精度及 `ShootoutAimCorrection` 估算到位时刻。预测使用寻路自身的速度、曲度、频率、容差和修正抽样。按客户端结束 Tick 调度，将可并行的就绪条件取最大值，位置包确认后才开始下一跳的原生瞄准。剩余 CD 由 `CastGate` 的实际单调时钟提供。逐 Tick 先按当前速度推进脚底位置，再用 `q=0.9800000190734863` 与重力 0.08 更新竖直速度。理论确认点从零速度起算，实时修正读取玩家当前速度和接地状态。`MapTerrain` 与 `LivePathTerrain` 检查地面、顶棚和未知区域。
+- **执行前预演。** `PathService` 先保留既有走廊规划结果和预算，然后在客户端线程采集最新脚底和视角，由后台 `CorridorRepair.rehearse()` 沿选定动作所形成的有序参考走廊做有界前向搜索。在每次施放前迭代预测时刻与角度，沿用 `TransmissionModel` 的量化规则，验证连续线段、量化落点与后续参考段的连接。每个通过的动作把修正状态交给下一步。预演无法恢复时走原两次重规划预算。D1 的初始粗规划和分段预算保持独立于预演预算。
+- **实时推进。** `ClientPathFinding.NativeDriver` 从实际位置重验预演候选。已经开始的瞄准保持目标稳定，仅在候选失效时切换。偏离参考点仍需通过实际施放 Tick 的连续线段、量化位置、净空和走廊连接检查。位置包确认后用实际落点更新走廊进度，可跳过已接回的参考段。对有可靠支撑的临近落点可先等待接地，再尝试近距离步行或局部传送。原生转向与下降期间逐次确认继续有效。
+- **末段。** 末段优先从实际位置找纯地面路径，可包含普通跳跃。无可用地面路径时再评估合法的直接传送或先跳后施放。最后一段的进度保留实际向目标靠近的空间，即使之前越过了末端投影。地面目标需要实际接地并通过原 0.75 格容差和连接检查，空中目标沿用半径和有效传送线段的判定。
+- **审计入口。** `tests/path-finding/corridor.ps1 -Timed` 写入 [timed-corridor-pathfinding.jsonl](build/path-audit/timed-corridor-pathfinding.jsonl)，隔离单人客户端用 `CorridorClientAudit` 追加实跑结果。每跳记录原计划与预测脚底 Y、理论到位用时、预计和实际施放 Tick、实际 Y 及量化结果、走廊段、修正原因和位置包确认。末段动作写入 `TERMINAL_ARRIVAL`。上轮 [segmented-pathfinding.jsonl](build/path-audit/segmented-pathfinding.jsonl) 保留供对照。
+
+走廊连接沿经验证的施放线段及其量化位移检查。普通下落的横移与竖直段也分别检查。局部换位可以暂时保持进度，连续换位最多尝试四个不同落脚点，避免在失败分支往返。
+
+本轮在隔离单人客户端使用相同起始视角（Yaw/Pitch 为 0°/0°）、原生转向、12 格能力和 20 ms CD。运行目录读到的地图文件与本机 `map` 同名文件哈希一致。以下客户端结果来自 `clientTrial=6`，D1 使用独立的 `RUN_END` 分段规划结果。
+
+| 场景 | 初始模式 | 规划展开 | 离线预演 | 实际终点或可执行前缀 | 位置确认／重规划 |
+|---|---|---:|---|---|---:|
+| H1 | 常规 | 54,151 | 通过，21 个选择 | 到达 (91.5,75,174.5)，末段传送 | 20／1 |
+| H1 | 权重 | 54,178 | 通过，21 个选择 | 到达 (91.5,75,174.5)，末段传送 | 20／1 |
+| H2 | 常规 | 10,821 | 通过，17 个选择 | 到达 (83.5,102,113.5)，末段下落 | 16／1 |
+| H2 | 权重 | 10,926 | 通过，17 个选择 | 到达 (83.5,102,113.5)，末段下落。第二次重规划沿用常规兜底 | 19／2 |
+| D1 | 常规 | 200,000 + 120,073 | 无完整路线 | 17 步前缀，末端 (47.5,33,69.5)，未执行 | — |
+| D1 | 权重 | 200,000 + 120,041 | 无完整路线 | 18 步前缀，末端 (45.5,28,71.5)，未执行 | — |
+
+D1 在第二段触及 120,000 个粗规划节点的阶段上限，局部和步行兜底均未验证可接续动作。Hub 四组都改用了连接到前方的新第二跳，预报施放 Y 与实测均为 81.535841，位置包确认落在 (21.5,85,5.5)。其理论瞄准时间为 100 ms，实测约 106–107 ms，三组预计和实际施放 Tick 相同，一组相差一 Tick。
+
+定向回归复现从 Y=80 以零竖直速度起算的第 7、8 Tick 高度 78.407395 和 77.890447，并验证了从已有下落速度继续、地面与顶棚碰撞、换点连通、末段普通跳跃、跳起后辅助传送、未知地形及空中目标射线。独立垂直下落场景连续确认三跳后实际接地。游戏内的真实服务端技能未参与这些复测。
+
+Gradle 离线构建、`tests/path-finding/run.ps1` 和新增 22 项定向检查通过。禁用传送的客户端试验（`clientTrial=7`）以步行结束，确认零次施放。既有垂直下降的逐跳预测与确认由 `clientTrial=8` 单独记录。
+
+
+### 2026-11-18 · 500K × 4 寻路预算与保留前沿
+
+- `PathTypes`、`PathSettings` 和公共 `PathService` 默认每轮 `500,000` 次展开，包含首轮最多 `4` 轮，合计 `2,000,000`。已有 JSON 显式设置继续按原值加载。客户端审计使用 `ug.corridor.nodes` 和 `ug.corridor.rounds` 显式配置本轮测试。
+- `CorridorPlanner.advanceRound()` 为飞行空间、局部动作和步行图分配初始配额，使用同一个轮内展开计数。初始阶段额度结束后，余额以有限片段交给仍有非过期节点的队列。步行图缺块只结束该分支。`PathPlanner.GraphSearch` 保留步行队列和已访状态，飞行空间与局部动作各自保留队列和前驱。
+- `SegmentedPlanner.plan()` 优先从新的已验证前缀继续，携带脚部坐标、视角、空中阶段、传送累计距离及代价。若无新前缀且已有前沿可用，下一轮沿原队列续算。`SEGMENT_START`、`BUDGET_TRANSFER`、`STAGE` 和 `SEGMENT_END` 记录起点、阶段配额、余额转用、接续及最后坐标。客户端重规划使用自身的 `planAttempt`，240 次预演上限仍单独统计。
+
+JDK 25 离线构建与五组定向回归通过。Dwarven Mines 复测 9 条，8 条规划成功、5 条离线预演通过、5 条进入本地客户端、3 条实际到达。P1 → P2 第 4 轮复用了第 3 轮的队列，累积 2,000,000 次展开后用完预算，最后有效前缀到 `(103.5,172,163.5)`。
+D1 常规两轮分别展开 500,000 和 192,022，找到完整路线，离线预演在 240 次上限停止。权重两轮分别展开 500,000 和 190,468，找到完整路线且离线预演通过，本地客户端在 240 次预演上限停止。两者结束规划时分别余 1,307,978 和 1,309,532 次展开。
+
+新增离线入口 [BudgetRouteAudit.java](tests/path-finding/BudgetRouteAudit.java)。复测见 [报告](build/path-audit/route-budget-500k-report.md) 和 [JSONL](build/path-audit/route-budget-500k.jsonl)。上轮报告和日志保留。
+
+
+### 2026-11-18 · CPU 候选并行和重规划诊断
+
+- [CandidateWorkers](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/CandidateWorkers.java) 只并行检查当前节点的传送候选。调度线程负责预算、优先队列、去重、接续和按原顺序合并。单轮 500,000、最多四轮的预算由各阶段共享。客户端默认最多 4 个工作者，可由 JVM 参数 `ug.path.workers` 设定 1–8，进程候选线程池总上限为 8。
+- `MapTerrain` 按需捕获一次不可变区块快照。缓存 Mojang 已判定非动态形状的方块碰撞盒。动态形状仍按坐标查询。缺图仍为未知。未声明支持并发查询的地形沿用串行。
+- `PathService` 记录提交、后台开始和结束、预演输入、最后实测脚底及独立计划终点。重规划和预演继续在规划线程执行。客户端只消费已经完成的任务。取消、断开、切换上下文、客户端停止均使旧任务失效。
+- `SearchAudit` 定期记录阶段、轮次、展开量和队列。客户端审计分别采集 tick 间隔、玩家坐标、线程栈与 CPU 时间。`CorridorRepair` 继续使用 240 次默认预演配额，测试可单独提高。预演报告最后推进点、剩余候选和最后几何判断。
+
+P2→P5 的停住在单线程原版复现为后台持续计算。4／8 工作者的实机重规划各展开 134,112 个节点，随后止于预演。固定起点离线耗时约 62.99／25.94／22.15 秒。P1→P2 同预算的三种配置均跑满 2,000,000 节点，未生成完整路线。D1 两种模式的动作序列和节点数跨线程一致，两组均未在客户端到达。P1→P4 和控制组 P2→P6 本地到达。
+
+RTX 3070 单独完成 6,144 条实际地图扫掠对照，结果与 CPU 一致。GPU 测试为独立批次，正式路线继续使用 CPU。JDK 25 离线构建和五组定向回归通过。结果见 [本轮报告](build/path-audit/route-parallel-report.md) 和 [合并 JSONL](build/path-audit/route-parallel.jsonl)。
+
+
+### 2026-11-18 · GPU 碰撞后端、自动满线程和两区块扩圈
+
+- `PathSettings` 的性能字段由杂项 → 自动寻路 → 性能写入现有账号配置。`gpuAcceleration` 默认开启，`cpuWorkers=0` 表示自动，取 JVM 可用逻辑处理器数。手动选择上限同此。旧 JVM 显式 `ug.path.workers` 在配置缺失时继续使用，已有 JSON 选择优先。`PathService.submit()` 在排队时读取设置。
+- [GpuCollision](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/GpuCollision.java) 用专用 OpenCL 工作者处理同一节点的落点净空和两段扫掠，按原顺序归并。区块和碰撞盒缓冲由单次规划会话跨批复用。`GPU_REQUEST`、`GPU_INITIALIZED`、`GPU_BATCH`、`GPU_FALLBACK` 和 `GPU_SUMMARY` 区分启用、初始化、参与和回退。选定传送动作由 CPU 复查，实时施放仍使用原有 CPU 路径。
+- [SearchRegion](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/planning/SearchRegion.java) 用起终点的 XZ 包络加 15 格形成首轮掩码。此前没有显式全局 XZ 掩码。首轮失败后将它按区块中心欧氏距离扩展 2 块，恢复挂起的空间、动作和步行候选，保留原队列及已验证前缀。高度规则和 500,000 × 4 展开预算沿用现有约定。掩码、展开、读图和反向前沿分别记录。
+
+RTX 3070 实际处理了正式规划和客户端重规划候选。本轮默认配置 8 组有 7 组生成完整计划，1 组客户端实际到达。P1→P2 两种后端均用满 2,000,000 节点，扩圈后实际展开了 69 个新增区块，指定的 10 个区块都在首轮掩码内，未读取或展开。两条满线程对照的 GPU 端到端规划耗时均高于 CPU。
+
+Java 25 离线构建和六组寻路回归通过。强制 GPU 初始化失败时确认回退到 CPU。结果见 [复测报告](build/path-audit/route-gpu-report.md) 和 [合并 JSONL](build/path-audit/route-gpu.jsonl)。上轮产物保留。
+
+
+
+### 2026-11-18 · 路线 ESP、输入阻断和终点中继
+
+- [PathRouteESP](src/client/java/com/kuangsanfeng/ultimategarden/client/function/esp/adapters/PathRouteESP.java) 将已通过预演的路线经现有 `ESPManager` 发布。当前动作目标使用较亮的屏幕中心引导线，实际动作与待执行节点按顺序连线并描边。规划线程沿走廊弯折和 15 格参考半径生成 2 格单元外壳，只绘制占用单元面对空邻居的边界。填充不透明度为 18%，使用地形深度测试。新预演通过时发布路线，动作推进或跳过参考点时更新引导，重规划、终止和上下文变化时清空快照。
+- [PhysicalGameInput](src/client/java/com/kuangsanfeng/ultimategarden/client/platform/input/PhysicalGameInput.java) 分别记录显式 U 焦点释放和当前寻路输入阻断。寻路在预演通过后的首个正式动作派发时取得阻断，执行中重规划保留其所有权。首次进入阻断清空相关游戏按键及鼠标待处理输入。原版键盘分发按当前动作绑定筛选，包括九个热栏槽位。鼠标钩子阻断游戏按键、滚轮和原始视角位移。界面输入和虚拟输入沿用各自的来源。停掉一个所有者只释放对应阻断。
+- [ClientPathFinding](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/ClientPathFinding.java) 在 Farm 已用的主动 GUI 输入入口接收背包、Esc、聊天和命令键。先取消当前票据、释放寻路输入、清掉旧 ESP，再由原版打开界面。待恢复目标仅在内存保留，绑定客户端世界、连接和可用的实例上下文。开始热键从当前脚部坐标、视角和运动状态重新规划，实际到达或上下文变化时清除目标。日志分别记录计划目标、停止脚部坐标、恢复脚部坐标与阻断状态。
+
+JDK 25 离线构建、六组寻路回归和热键回归通过。本地 Fabric 中，P2→P6 经 E 停止、实际走动和转向、使用开始热键恢复，确认到达 `(-9.5,145,-19.5)`。最终尝试确认 28 次传送，途中一次自动重规划成功替换旧路线，到达后实测清除旧目标、ESP 和阻断。槽位 1 改绑 R 后，验证了两类阻断各自及重叠时对原版输入的筛选和虚拟热栏操作。原版聊天可继续输入数字，两个阻断解除后 R 与滚轮恢复。截图核对四层 ESP，边界检查未发现共用面。P2→P5 的重规划事件记录旧 ESP 清除和输入阻断保持，之后仍触及预演上限。八组规划复测有七组生成完整计划，两组通过离线预演并进入客户端，一组实际到达。见 [复测报告](build/path-audit/route-esp-relay-report.md) 和 [合并 JSONL](build/path-audit/route-esp-relay.jsonl)。

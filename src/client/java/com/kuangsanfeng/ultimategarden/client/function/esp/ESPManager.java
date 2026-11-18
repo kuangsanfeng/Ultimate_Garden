@@ -15,14 +15,19 @@ import java.util.function.*;
 /** One registered manager; new modules register only an extraction callback. */
 public final class ESPManager {
     private static final RenderStateDataKey<Frame> FRAME = RenderStateDataKey.create(() -> "ultimate_garden:esp");
-    public record Frame(List<ESPTarget> targets, Map<String, ESPTargetStyle> styles,
+    public record Frame(List<ESPTarget> targets, Map<String, ESPTargetStyle> styles, List<ESPGeometry> geometry,
                         boolean throughWalls, int cycleMs, double timeMs, long generation) {
-        public Frame { targets = List.copyOf(targets); styles = Map.copyOf(styles); }
+        public Frame { targets = List.copyOf(targets); styles = Map.copyOf(styles); geometry = List.copyOf(geometry); }
     }
     private final ConfigManager configs;
     private final ESPRenderer renderer = new ESPRenderer();
     private final Map<String, BiConsumer<LevelExtractionContext, Consumer<ESPTarget>>> modules = new LinkedHashMap<>();
     private final Map<String,ESPTargetStyle> fixedStyles=new LinkedHashMap<>();
+    private final List<Supplier<ESPGeometry>> geometryModules=new ArrayList<>();
+    public void registerGeometry(Supplier<ESPGeometry> module) {
+        if (registered) throw new IllegalStateException("Register ESP modules before rendering starts");
+        geometryModules.add(Objects.requireNonNull(module));
+    }
     public void registerFixed(String id,ESPTargetStyle style,BiConsumer<LevelExtractionContext,Consumer<ESPTarget>> module){
         if(registered||modules.containsKey(id))throw new IllegalStateException("ESP registration closed or duplicate");
         fixedStyles.put(id,style);modules.put(id,module);
@@ -66,7 +71,8 @@ public final class ESPManager {
                 targets.add(target);
             });
         }
-        context.levelState().setData(FRAME, new Frame(targets, styles,
+        var geometry=geometryModules.stream().map(Supplier::get).filter(Objects::nonNull).toList();
+        context.levelState().setData(FRAME, new Frame(targets, styles, geometry,
                 config.isThroughWalls(), config.getCycleDurationMs(), System.nanoTime() / 1_000_000.0, generation));
     }
 }
