@@ -1,6 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client.mixin;
 import com.kuangsanfeng.ultimategarden.client.runtime.hotkey.HotkeySwitches;
 import com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput;
+import static com.kuangsanfeng.ultimategarden.client.platform.input.InputRequests.Channel.*;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.Minecraft;
@@ -18,7 +19,7 @@ public abstract class HotkeyStateMixin {
  @WrapOperation(method="setAll", at=@At(value="INVOKE",target="Lnet/minecraft/client/KeyMapping;setDown(Z)V"))
  private static void ug$restorePhysicalKey(KeyMapping mapping, boolean down, Operation<Void> original) {
   var client=Minecraft.getInstance();
-  if(!PhysicalGameInput.blocksGame(client)||!PhysicalGameInput.isBlockedMapping(client.options,mapping))
+  if(!PhysicalGameInput.inGame(client,KEYBOARD)||!PhysicalGameInput.isBlockedMapping(client.options,mapping))
    original.call(mapping,down);
  }
 

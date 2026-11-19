@@ -6,7 +6,6 @@ import com.kuangsanfeng.ultimategarden.client.function.esp.style.ESPStyle;
 import com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.Point;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.Movement;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.Segment;
-import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorPlanner;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorRepair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -22,7 +21,6 @@ import java.util.function.BooleanSupplier;
 /** Route overlay. The planning worker builds the shell, and the client publishes immutable draw data. */
 public final class PathRouteESP {
     private static final int CELL_SIZE=2;
-    private static final double RADIUS=CorridorPlanner.RADIUS;
     private static final ESPStyle LINES=new ESPStyle(true,ESPColorMode.SOLID,0x45BFE8,.78f,2f);
     private static final ESPStyle OUTLINES=new ESPStyle(true,ESPColorMode.SOLID,0x81E7FF,.95f,2f);
     private static final ESPStyle SHELL=new ESPStyle(true,ESPColorMode.SOLID,0x2379A9,.18f,0);
@@ -36,7 +34,17 @@ public final class PathRouteESP {
 
     private PathRouteESP() {}
 
-    public static ESPGeometry snapshot() { return frame; }
+    public static boolean corridorVisible(boolean enabled,boolean onlyCorridor,boolean regional){
+        return enabled&&(!onlyCorridor||regional);
+    }
+
+    public static ESPGeometry snapshot() {
+        var overlay=frame;
+        if(overlay==null)return null;
+        var config=com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient.getConfigManager().getESPConfig();
+        if(route!=null&&corridorVisible(config.pathCorridor(),config.pathCorridorOnly(),route.route().corridor().regional()))return overlay;
+        return new ESPGeometry(overlay.lines(),overlay.outlines(),List.of(),overlay.guide(),LINES,OUTLINES,SHELL,GUIDE);
+    }
 
     public static void clear() {
         route=null;
@@ -44,6 +52,7 @@ public final class PathRouteESP {
     }
 
     public static Prepared prepare(CorridorRepair.Rehearsal result, BooleanSupplier cancelled) {
+        double radius=result.corridor().radius();
         Set<Long> cells=new HashSet<>();
         for (Segment segment : result.corridor().referenceSegments()) {
             if (cancelled.getAsBoolean()) return null;
@@ -51,11 +60,11 @@ public final class PathRouteESP {
             Vec3 to=center(segment.to());
             Point bend=CorridorRepair.referenceBend(segment);
             if (bend==null) {
-                include(cells,from,to);
+                include(cells,from,to,radius);
             } else {
                 Vec3 endOfFirstLeg=center(bend);
-                include(cells,from,endOfFirstLeg);
-                include(cells,endOfFirstLeg,to);
+                include(cells,from,endOfFirstLeg,radius);
+                include(cells,endOfFirstLeg,to,radius);
             }
         }
         return new Prepared(result,exterior(cells,cancelled));
@@ -120,20 +129,20 @@ public final class PathRouteESP {
     private static Vec3 center(Point point) { return new Vec3(point.x(),point.y()+.9,point.z()); }
     private static int cell(double coordinate) { return (int)Math.floor(coordinate/CELL_SIZE); }
 
-    private static void include(Set<Long> cells, Vec3 from, Vec3 to) {
+    private static void include(Set<Long> cells, Vec3 from, Vec3 to, double radius) {
         double dx=to.x-from.x, dy=to.y-from.y, dz=to.z-from.z;
         double lengthSquared=dx*dx+dy*dy+dz*dz;
-        for (int x=cell(Math.min(from.x,to.x)-RADIUS); x<=cell(Math.max(from.x,to.x)+RADIUS); x++) {
+        for (int x=cell(Math.min(from.x,to.x)-radius); x<=cell(Math.max(from.x,to.x)+radius); x++) {
             double px=(x+.5)*CELL_SIZE-from.x;
-            for (int y=cell(Math.min(from.y,to.y)-RADIUS); y<=cell(Math.max(from.y,to.y)+RADIUS); y++) {
+            for (int y=cell(Math.min(from.y,to.y)-radius); y<=cell(Math.max(from.y,to.y)+radius); y++) {
                 double py=(y+.5)*CELL_SIZE-from.y;
-                for (int z=cell(Math.min(from.z,to.z)-RADIUS); z<=cell(Math.max(from.z,to.z)+RADIUS); z++) {
+                for (int z=cell(Math.min(from.z,to.z)-radius); z<=cell(Math.max(from.z,to.z)+radius); z++) {
                     long key=BlockPos.asLong(x,y,z);
                     if (cells.contains(key)) continue;
                     double pz=(z+.5)*CELL_SIZE-from.z;
                     double t=lengthSquared==0?0:Math.clamp((px*dx+py*dy+pz*dz)/lengthSquared,0,1);
                     double xGap=px-t*dx, yGap=py-t*dy, zGap=pz-t*dz;
-                    if (xGap*xGap+yGap*yGap+zGap*zGap<=RADIUS*RADIUS) cells.add(key);
+                    if (xGap*xGap+yGap*yGap+zGap*zGap<=radius*radius) cells.add(key);
                 }
             }
         }

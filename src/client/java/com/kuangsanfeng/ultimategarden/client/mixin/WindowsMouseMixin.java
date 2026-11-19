@@ -4,6 +4,7 @@ package com.kuangsanfeng.ultimategarden.client.mixin;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import com.kuangsanfeng.ultimategarden.client.platform.window.WindowsInputInterceptor;
 import com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput;
+import static com.kuangsanfeng.ultimategarden.client.platform.input.InputRequests.Channel.*;
 import com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -39,7 +40,7 @@ public class WindowsMouseMixin {
     @WrapOperation(method = "onMove", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;isWindowActive()Z"))
     private boolean doNotAccumulatePhysicalMovement(Minecraft client, Operation<Boolean> original) {
         // Still update the cursor position so unblocking does not introduce a large delta.
-        return !PhysicalGameInput.blocksGame(client) && original.call(client);
+        return !PhysicalGameInput.inGame(client,MOTION) && original.call(client);
     }
 
     // =========================================================
@@ -63,7 +64,7 @@ public class WindowsMouseMixin {
         if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
         if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.button(buttonInfo.button(), action); ci.cancel(); return; }
         var client = Minecraft.getInstance();
-        if (window == client.getWindow().handle() && PhysicalGameInput.blocksGame(client)) {
+        if (window == client.getWindow().handle() && PhysicalGameInput.inGame(client,BUTTONS)) {
             MacroKeyBindings.dispatchBlockedMouse(buttonInfo.button(), action);
             ci.cancel();
             return;
@@ -134,7 +135,7 @@ public class WindowsMouseMixin {
         if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) {  ci.cancel(); return; }
 
         var client = Minecraft.getInstance();
-        if (window == client.getWindow().handle() && PhysicalGameInput.blocksGame(client)) {
+        if (window == client.getWindow().handle() && PhysicalGameInput.inGame(client,WHEEL)) {
             ci.cancel();
             return;
         }
@@ -179,7 +180,7 @@ public class WindowsMouseMixin {
 
         if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
         if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.move(xpos, ypos); ci.cancel(); return; }
-        if (PhysicalGameInput.blocksGame(Minecraft.getInstance())) return;
+        if (PhysicalGameInput.inGame(Minecraft.getInstance(),MOTION)) return;
 
         WindowsInputInterceptor interceptor =
                 Ultimate_GardenClient

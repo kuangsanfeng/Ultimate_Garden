@@ -36,16 +36,16 @@ public final class PathStartupRegression {
             catch (IllegalArgumentException | ArithmeticException expected) {}
         }
         var settings=new PathSettings();
-        check(settings.searchNodesPerSegment()==500000 && settings.maximumSearchSegments()==4 && settings.coordinateWindowMs()==5000,"Defaults");
+        check(settings.searchNodesPerSegment()==2_000_000 && settings.maximumSearchSegments()==2 && settings.coordinateWindowMs()==5000,"Defaults");
         try {settings.setBudget(Long.MAX_VALUE,2);throw new AssertionError("Product overflow");}
         catch (ArithmeticException expected) {}
-        check(settings.searchNodesPerSegment()==500000,"Previous value preserved");
+        check(settings.searchNodesPerSegment()==2_000_000,"Previous value preserved");
         settings.setBudget(1_000_000_000_000L,3);
         var serialized=new com.google.gson.JsonObject();serialized.add("pathFinding",settings.toJson());
         var reloaded=new PathSettings();
         check(!reloaded.load(serialized)&&reloaded.searchNodesPerSegment()==1_000_000_000_000L&&reloaded.maximumSearchSegments()==3,"Round trip");
         check(settings.aim(PathSettings.Aim.SPEED)==300 && settings.aim(PathSettings.Aim.CURVE)==15
-                && settings.aim(PathSettings.Aim.RATE)==20 && settings.aim(PathSettings.Aim.TOLERANCE)==.5
+                && settings.aim(PathSettings.Aim.RATE)==60 && settings.aim(PathSettings.Aim.TOLERANCE)==.5
                 && settings.aim(PathSettings.Aim.CORRECTION)==.25,"Aim defaults");
         var sorted=List.of(new TransmissionEquipment(8,AOTE,12,0,0),
                 new TransmissionEquipment(1,AOTV,11,5,300), new TransmissionEquipment(7,AOTE,11,5,200),

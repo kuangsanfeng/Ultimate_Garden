@@ -1,6 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client.function.path_finding.execution;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.*;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorRepair;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorRejoin;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.SegmentedPlanner;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.SearchAudit;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorPlanner;
@@ -24,6 +25,7 @@ public final class PathService implements AutoCloseable {
   default boolean followsCorridor(){return false;}
   default boolean advanceCorridor(){return false;}
   default void replanning(String reason,int attempt){}
+  default void replanSuppressed(String reason){}
   default CorridorContinuation takeCorridorContinuation(){return null;}
   default boolean accepts(Segment action){return position().distance(action.to())<=.75;}
   default boolean needsPreparation(){return false;}
@@ -51,6 +53,16 @@ public final class PathService implements AutoCloseable {
  private Request request;
  private int replans;private boolean preparing;
  private boolean waitingForReplan;
+ private record SearchStart(Point feet,double yaw,double pitch,Options options,CorridorPlanner.Timing timing) {
+  boolean equivalent(SearchStart other){
+   return feet.distance(other.feet)<=.05 && Math.abs(com.kuangsanfeng.ultimategarden.client.platform.input.view.ViewAngles.wrap(yaw-other.yaw))<=.5
+           && Math.abs(pitch-other.pitch)<=.5 && options.equals(other.options) && timing.equals(other.timing);
+  }
+ }
+ private Future<CorridorRejoin.Search> localRejoin;
+ private SearchStart previousSearch;
+ private String replanReason;
+
  public synchronized Ticket plan(Object owner,Point start,Point goal,double yaw,double pitch,Options options,Supplier<Terrain> terrain,Consumer<Result> completion){
   return plan(owner,start,goal,yaw,pitch,options,terrain,CorridorPlanner.Timing.defaults(),completion);
  }
@@ -76,6 +88,7 @@ public final class PathService implements AutoCloseable {
  public synchronized void execute(Ticket ticket,Driver driver){require(ticket);if(planning!=null||result==null||result.status()!=Status.ARRIVED)throw new IllegalStateException("NO_EXECUTABLE_PLAN");java.util.Objects.requireNonNull(driver);if(INPUT_LEASE.get()!=this&&!INPUT_LEASE.compareAndSet(null,this))throw new IllegalStateException("PATH_INPUT_OWNED");this.driver=driver;lastMeasured=driver.position();index=0;active=false;}
  private void submit(Point start,double yaw,double pitch,long id) {
   var args=request;
+  previousSearch=new SearchStart(start,yaw,pitch,args.options,args.timing);
   SearchAudit audit=autoDriver==null?null:autoDriver.planningAudit(replans);
   int threads=autoDriver==null?Runtime.getRuntime().availableProcessors():autoDriver.candidateWorkers();
   boolean gpu=autoDriver==null||autoDriver.gpuAcceleration();
@@ -97,6 +110,15 @@ public final class PathService implements AutoCloseable {
     throw failure;
    }
   });
+ }
+ synchronized Future<CorridorRejoin.Search> planRejoin(CorridorRepair corridor,CorridorRepair.Start start,
+                                                         double progress,java.util.Set<Point> rejected){
+  long id=revision.get();
+  var geometry=request.terrain;
+  var excluded=java.util.Set.copyOf(rejected);
+  localRejoin=worker.submit(()->CorridorRejoin.find(corridor,start,progress,geometry.get(),excluded,
+          corridor.jumpHeight(),()->cancelled(id)));
+  return localRejoin;
  }
  private boolean cancelled(long id){return revision.get()!=id||Thread.currentThread().isInterrupted();}
  private void rehearse(Planned plan,CorridorRepair.Start initial){
@@ -131,10 +153,13 @@ public final class PathService implements AutoCloseable {
    if(!driver.readyForReplan())return;
    waitingForReplan=false;
    var options=driver.updateOptions(request.options);
-   if(replans==2&&options.mode()==Mode.WEIGHTED)
-    options=new Options(Mode.NORMAL,options.transmission(),options.projectAir(),options.distance(),options.jumpHeight(),options.budget(),options.weights());
    request=new Request(request.goal,options,request.terrain,driver.updateTiming(request.timing),request.segments);
    var at=driver.position();double yaw=driver.yaw(),pitch=driver.pitch();
+   var same=new SearchStart(at,yaw,pitch,options,request.timing);
+   if(replans>=2&&previousSearch!=null&&same.equivalent(previousSearch)){
+    driver.replanSuppressed(replanReason);
+    finish(Status.EXECUTION_FAILED,replanReason);return;
+   }
    autoDriver=driver;driver=null;submit(at,yaw,pitch,revision.incrementAndGet());return;
   }
   if(preparing){
@@ -212,6 +237,7 @@ public final class PathService implements AutoCloseable {
  private void retry(String reason){
   if(!driver.canReplan()||replans>=2){finish(Status.EXECUTION_FAILED,reason);return;}
   driver.release();
+  replanReason=reason;
   driver.replanning(reason,++replans);
   waitingForReplan=true;
  }
@@ -222,6 +248,7 @@ public final class PathService implements AutoCloseable {
  private void require(Ticket t){if(current==null||!current.equals(t))throw new IllegalArgumentException("NOT_PATH_OWNER");}
  private void finish(Status status,String why){
   revision.incrementAndGet();if(planning!=null)planning.cancel(true);planning=null;
+  if(localRejoin!=null)localRejoin.cancel(true);localRejoin=null;
   Point planned=result==null?null:result.end();
   var last=driver!=null?driver:autoDriver;
   try{if(last!=null&&last.usable())lastMeasured=last.position();}catch(RuntimeException e){status=Status.EXECUTION_FAILED;why="POSITION_READ_FAILED";}

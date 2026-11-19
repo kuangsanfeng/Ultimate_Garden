@@ -15,6 +15,7 @@ public final class WorldInfoService {
  private static volatile long generation;private static volatile Connection connection;
  private WorldInfoService(){}
  public static WorldInfoSnapshot snapshot(){return state.snapshot();}
+ public static boolean trustedLocation(){var source=connection;return source!=null&&source.isConnected()&&state.hasHypixel(source); }
  private static void clear(){generation++;connection=null;state.clear();}
  private static void bind(Connection value){if(connection!=value){generation++;connection=value;state.clear();}}
  public static void register(){if(registered)return;registered=true;

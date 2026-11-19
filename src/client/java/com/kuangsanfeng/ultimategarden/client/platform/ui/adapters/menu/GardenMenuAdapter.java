@@ -99,6 +99,10 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private final Map<String,AccountDirectories.Profile> accountOptions = new HashMap<>();
     private final EnumSet<ConfigManager.Module> copyFiles = EnumSet.noneOf(ConfigManager.Module.class);
     private ConfigManager.CopyPlan copyConfirmation, copyInProgress;
+    private record RestoreSelection(AccountDirectories.Profile account,long revision,ConfigManager.Module module){}
+    private ConfigManager.Module restoreModule=ConfigManager.Module.GENERAL;
+    private final com.kuangsanfeng.ultimategarden.client.function.mapping.MappingConfirmation restoreConfirmation=
+            new com.kuangsanfeng.ultimategarden.client.function.mapping.MappingConfirmation();
     private ConfigManager.CopyReport copyReport;
     private int extractedFrames, copyRequestedFrame;
 
@@ -155,10 +159,12 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     @Override public void removed() {
         mappingConfirmation.cancel();
         copyConfirmation = null; copyInProgress = null;
+        restoreConfirmation.cancel();
         help.clear();
         if (!adjustingHud && !closeHandled) { closeHandled = true; if (menuPauseOwned) farm.endUltimateGardenMenu(); }
     }
     @Override public void onClose() {
+        restoreConfirmation.cancel();
         if (languageSelector != null && languageSelector.isOpen()) { languageSelector.dismiss(); return; }
         if (copyConfirmation != null) { copyConfirmation = null; build(); return; }
         if (choices != null) { dismissChoices(); return; }
@@ -649,7 +655,6 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     }
 
     private EditBox pathBudgetInput;
-    private String pathFindingLocalMap="Hub";
 
     private void commitPathBudget() {
         var settings=configs.getPathSettings();
@@ -675,7 +680,7 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         BooleanSupplier editable = () -> !configs.isPendingRestart(ConfigManager.Module.GENERAL);
         Runnable save = () -> saved(configs.save(ConfigManager.Module.GENERAL));
         dropdown(key+"mode",settings.mode.name(),List.of(new Choice("NORMAL",key+"normal",true),
-                new Choice("WEIGHTED",key+"weighted",true)),value->{
+                new Choice("WEIGHTED",key+"weighted",true), new Choice("CORRIDOR",key+"corridor",true)),value->{
             settings.mode=com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.Mode.valueOf(value);
             save.run();build();
         },editable);
@@ -691,6 +696,11 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         input(key+"coordinate_window",Integer.toString(settings.coordinateWindowMs()),value->act(()->{
             settings.setCoordinateWindowMs(Integer.parseInt(value));save.run();
         }),editable,"ms");
+        info(()->{
+            var detected=com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.detectedMap();
+            return language.text(key+"local_map_detected")+" "+(detected.status().name().equals("FOUND")?detected.name():
+                    language.text(key+"local_map_"+detected.status().name().toLowerCase(Locale.ROOT)));
+        });
         var performance=nestedDelaySection(key+"performance",parent);
         toggle(key+"gpu",settings::gpuAcceleration,()->{settings.setGpuAcceleration(!settings.gpuAcceleration());save.run();},editable);
         info(()->settings.gpuAcceleration()?language.text(key+"gpu_status_"+com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.GpuCollision.status())
@@ -737,9 +747,6 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         info(()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.status());
         button(key+"cancel",false,()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.cancelMenuTask(),
                 ()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.menuTaskActive());
-        input(key+"local_map",pathFindingLocalMap,value->pathFindingLocalMap=value,()->true);
-        button(key+"local_test",false,()->act(()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.startMenuTest(pathFindingLocalMap)),
-                ()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.menuTestAvailable());
     }
 
     private final ShootoutPageAdapter shootoutPageAdapter=new ShootoutPageAdapter();
@@ -840,6 +847,13 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private void developerSettings(){
         heading("ui.ultimategarden.developer_options");var developer=currentSection;
         mappingSettings(developer);
+        var pathLogs=nestedDelaySection("ui.ultimategarden.path_finding.title",developer);
+        var pathConfig=configs.getPathSettings();
+        toggle("ui.ultimategarden.path_finding.enable_log",pathConfig::pathfindingLog,()->{
+            pathConfig.pathfindingLog(!pathConfig.pathfindingLog());
+            saved(configs.save(ConfigManager.Module.GENERAL));
+        },()->!configs.isPendingRestart(ConfigManager.Module.GENERAL));
+        pathLogs.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=developer;
         var transmission=nestedDelaySection("ui.ultimategarden.instant.title",developer);
         var instant=nestedDelaySection("ui.ultimategarden.instant.path_test",transmission);
         var test=com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE;
@@ -943,6 +957,11 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
     private void espSettings() {
         heading("ui.ultimategarden.general_esp_settings");
         var esp = configs.getESPConfig();
+        String path="ui.ultimategarden.path_finding.";
+        toggle(path+"corridor_esp",esp::pathCorridor,()->{esp.pathCorridor(!esp.pathCorridor());saved(configs.save(ConfigManager.Module.ESP));},()->true);
+        toggle(path+"corridor_esp_only",esp::pathCorridorOnly,()->{esp.pathCorridorOnly(!esp.pathCorridorOnly());saved(configs.save(ConfigManager.Module.ESP));},esp::pathCorridor);
+        toggle(path+"scan_esp",esp::pathScan,()->{esp.pathScan(!esp.pathScan());saved(configs.save(ConfigManager.Module.ESP));},()->true);
+        toggle(path+"calculation_esp",esp::pathCalculation,()->{esp.pathCalculation(!esp.pathCalculation());saved(configs.save(ConfigManager.Module.ESP));},()->true);
         toggle("ui.ultimategarden.through_walls_box_fill", esp::isThroughWalls, () -> {
             esp.setThroughWalls(!esp.isThroughWalls()); saved(configs.save(ConfigManager.Module.ESP));
         }, () -> true);
@@ -1148,9 +1167,9 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
             }
             if (legacy) { lookup.put("legacy-root",AccountDirectories.LEGACY); sourceChoices.add(new Choice("legacy-root","ui.ultimategarden.account.legacy",true)); }
             dropdown("ui.ultimategarden.account.source", sourceAccount.legacy() ? "legacy-root" : sourceAccount.uuid().toString(), sourceChoices,
-                    value -> { sourceAccount = lookup.get(value); build(); }, () -> true);
+                    value -> { restoreConfirmation.cancel(); sourceAccount = lookup.get(value); build(); }, () -> true);
             dropdown("ui.ultimategarden.account.target", targetAccount == null ? "ui.ultimategarden.account.choose" : targetAccount.uuid().toString(), targetChoices,
-                    value -> { targetAccount = lookup.get(value); build(); }, () -> true);
+                    value -> { restoreConfirmation.cancel(); targetAccount = lookup.get(value); build(); }, () -> true);
             info(() -> language.text("ui.ultimategarden.account.files"));
             for (ConfigManager.Module module : ConfigManager.Module.values()) {
                 String label = language.text("ui.ultimategarden.account.file." + module.name()) + " — " + module.name().toLowerCase(Locale.ROOT) + ".json";
@@ -1172,6 +1191,31 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
                 copyConfirmation = new ConfigManager.CopyPlan(sourceAccount,targetAccount,copyFiles,configs.accountRevision());
                 choices = null; build();
             },() -> targetAccount != null && sourceAccount != null && !Objects.equals(sourceAccount.uuid(),targetAccount.uuid()) && !copyFiles.isEmpty());
+            var restoreFiles=java.util.Arrays.stream(ConfigManager.Module.values())
+                    .map(module->new Choice(module.name(),module.name().toLowerCase(Locale.ROOT)+".json",true)).toList();
+            dropdown("ui.ultimategarden.account.restore_file",restoreModule.name(),restoreFiles,value->{
+                restoreConfirmation.cancel(); restoreModule=ConfigManager.Module.valueOf(value); build();
+            },()->true);
+            java.util.function.Supplier<Object> context=()->new RestoreSelection(configs.currentAccount(),configs.accountRevision(),restoreModule);
+            restoreConfirmation.validate(context.get());
+            String file=restoreModule.name().toLowerCase(Locale.ROOT)+".json";
+            String warning=language.text("ui.ultimategarden.account.restore_confirm",current.name(),file);
+            int height=Math.max(48,font.split(Component.literal(warning),Math.max(30,contentWidth-32)).size()*11+14);
+            cards.add(new Card(cursor,height,currentSection));
+            place(new com.kuangsanfeng.ultimategarden.client.platform.ui.widget.MappingConfirmButton(
+                    contentX+8,contentTop+cursor+4,contentWidth-16,height-8,
+                    language.text("ui.ultimategarden.account.restore_defaults"),warning,GardenMenuAdapter.this::palette,restoreConfirmation,
+                    context,"restore-defaults",()->act(()->{
+                        if(hasUnsavedDrafts())throw new IllegalStateException("ui.ultimategarden.account.unsaved");
+                        if(!farm.canEditRouteConfiguration())throw new IllegalStateException("ui.ultimategarden.account.pause_first");
+                        saved(configs.restoreAccountDefaults(current,((RestoreSelection)context.get()).revision(),restoreModule));
+                        accentDraft=configs.getUIConfig().getAccentColor();
+                        pestDelayDraft=Integer.toString(configs.getPestConfig().getPestLoadoutDelayTicks());
+                        espDrafts.clear();randomDelayDrafts.clear();build();
+                    })),cursor,()->!configs.isPendingRestart(restoreModule));
+            cursor+=height+8;
+            button("ui.ultimategarden.cancel",false,()->{restoreConfirmation.cancel();build();},
+                    ()->restoreConfirmation.armed(context.get(),"restore-defaults"));
         } catch (java.io.IOException error) {
             com.kuangsanfeng.ultimategarden.Ultimate_Garden.LOGGER.warn("Cannot list verified account configurations",error);
             note("ui.ultimategarden.account.unavailable");

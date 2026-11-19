@@ -14,7 +14,10 @@ final class CandidateWorkers {
         thread.setDaemon(true);
         return thread;
     });
+    private static final ThreadLocal<Boolean> ON_WORKER=ThreadLocal.withInitial(()->false);
     private final int workers;
+
+    int parallelism(){return workers;}
 
     CandidateWorkers(int workers) {
         if(workers<1||workers>MAX_THREADS) throw new IllegalArgumentException("Invalid path candidate worker count");
@@ -22,7 +25,7 @@ final class CandidateWorkers {
     }
 
     void check(int size,int minimumBatch,IntConsumer check) {
-        if(workers==1||size<minimumBatch) {
+        if(workers==1||size<minimumBatch||ON_WORKER.get()) {
             for(int i=0;i<size;i++) check.accept(i);
             return;
         }
@@ -31,8 +34,11 @@ final class CandidateWorkers {
         for(int i=0;i<batches;i++) {
             int first=i*size/batches,end=(i+1)*size/batches;
             tasks.add(()->{
-                for(int at=first;at<end&&!Thread.currentThread().isInterrupted();at++) check.accept(at);
-                return null;
+                ON_WORKER.set(true);
+                try {
+                    for(int at=first;at<end&&!Thread.currentThread().isInterrupted();at++) check.accept(at);
+                    return null;
+                }finally{ON_WORKER.remove();}
             });
         }
         try {

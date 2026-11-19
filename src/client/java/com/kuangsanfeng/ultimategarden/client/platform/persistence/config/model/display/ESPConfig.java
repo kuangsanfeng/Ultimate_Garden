@@ -15,6 +15,15 @@ public final class ESPConfig {
     public static final int SCHEMA_VERSION = 2;
     public static final String SILVERFISH = "SILVERFISH";
     public static final float MIN_LINE_WIDTH = 0.5f, MAX_LINE_WIDTH = 16;
+    private volatile boolean pathCorridor=true,pathCorridorOnly=true,pathScan,pathCalculation;
+    public boolean pathCorridor(){return pathCorridor;}
+    public void pathCorridor(boolean value){pathCorridor=value;}
+    public boolean pathCorridorOnly(){return pathCorridorOnly;}
+    public void pathCorridorOnly(boolean value){pathCorridorOnly=value;}
+    public boolean pathScan(){return pathScan;}
+    public void pathScan(boolean value){pathScan=value;}
+    public boolean pathCalculation(){return pathCalculation;}
+    public void pathCalculation(boolean value){pathCalculation=value;}
     private boolean showShootoutInterceptBox;
     public boolean isShowShootoutInterceptBox(){return showShootoutInterceptBox;}
     public void setShowShootoutInterceptBox(boolean value){showShootoutInterceptBox=value;}
@@ -43,6 +52,7 @@ public final class ESPConfig {
         cycleDurationMs = value;
     }
     public void resetToDefault() {
+        pathCorridor=pathCorridorOnly=true;pathScan=pathCalculation=false;
         showShootoutInterceptBox=false;throughWalls = true; cycleDurationMs = 3000;
         targets.values().forEach(TargetConfig::reset);
     }
@@ -113,6 +123,10 @@ public final class ESPConfig {
         });
         loadTarget(document, getTarget(SILVERFISH));
         JsonObject general = section(document, "general");
+        read(general,"pathCorridor",p->pathCorridor(bool(p)));
+        read(general,"pathCorridorOnly",p->pathCorridorOnly(bool(p)));
+        read(general,"pathScan",p->pathScan(bool(p)));
+        read(general,"pathCalculation",p->pathCalculation(bool(p)));
         read(general,"showShootoutInterceptBox",p -> setShowShootoutInterceptBox(bool(p)));
         read(general, "throughWalls", p -> setThroughWalls(bool(p)));
         read(general, "rainbowCycleDurationMs", p -> {
@@ -152,7 +166,11 @@ public final class ESPConfig {
         JsonObject doc = original.deepCopy();
         doc.addProperty("schemaVersion", SCHEMA_VERSION);
         JsonObject general = child(doc, "general");
-        general.addProperty("throughWalls", throughWalls);general.addProperty("showShootoutInterceptBox",showShootoutInterceptBox); general.addProperty("rainbowCycleDurationMs", cycleDurationMs);
+        general.addProperty("throughWalls", throughWalls);general.addProperty("pathCorridor",pathCorridor);
+        general.addProperty("pathCorridorOnly",pathCorridorOnly);
+        general.addProperty("pathScan",pathScan);
+        general.addProperty("pathCalculation",pathCalculation);
+        general.addProperty("showShootoutInterceptBox",showShootoutInterceptBox); general.addProperty("rainbowCycleDurationMs", cycleDurationMs);
         doc.add("general", general);
         JsonObject definitions = child(doc, "targets");
         for (var entry : targets.entrySet()) {

@@ -1,5 +1,7 @@
 package com.kuangsanfeng.ultimategarden.client;
 
+import static com.kuangsanfeng.ultimategarden.client.platform.input.InputRequests.Channel.*;
+
 import com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings;
 import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualInput;
 import com.kuangsanfeng.ultimategarden.client.platform.input.virtual.VirtualKeyboard;
@@ -59,6 +61,13 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         espManager.register(com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.ESPConfig.SILVERFISH, pestESP::collect);
         new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.ZombieShootoutESP(configManager.getESPConfig()).register(espManager);
         espManager.registerGeometry(com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PathRouteESP::snapshot);
+        var pathClient=com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE;
+        for(int band=3;band>=0;band--){
+            int ageBand=band;
+            espManager.registerGeometry(()->pathClient.scanOverlay(ageBand));
+        }
+        espManager.registerGeometry(()->pathClient.calculationOverlay(true));
+        espManager.registerGeometry(()->pathClient.calculationOverlay(false));
         espManager.initialize();
 
 
@@ -164,6 +173,7 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         windowsInputInterceptor.setExternalMouseOwners(
                 ()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.interceptingAim()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput(),
                 ()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.interceptingShoot()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.ownsInput());
+        registerInputSources();
         farmController.setExternalInputOwner(()->com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE.enabled()||com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.running());
         var macroHud = new com.kuangsanfeng.ultimategarden.client.platform.ui.hud.MacroStatusHud(configManager, farmController, windowsState);
         com.kuangsanfeng.ultimategarden.client.platform.ui.UiRegistry.hud("macro_status",macroHud::render);
@@ -183,6 +193,8 @@ public class Ultimate_GardenClient implements ClientModInitializer {
         com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onChange(change -> {
             if(change.change()==com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.Change.WORLD_CHANGED) {
                 com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.finish(false);
+                com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.setFocusReleased(client,false);
+                windowsFocusController.reapplyCursorMode();
                 espManager.invalidateFrames();
             }
         });
@@ -194,7 +206,9 @@ public class Ultimate_GardenClient implements ClientModInitializer {
             var identity = accountIdentity(session);
             if (configManager.matchesAccount(identity)) return;
             com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.finish(false);
-            farmController.abortForWorldChange(); legacyMouseClickScheduler.clear(); espManager.invalidateFrames();
+            farmController.abortForWorldChange();
+            com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.setFocusReleased(game,false);
+            windowsFocusController.reapplyCursorMode(); legacyMouseClickScheduler.clear(); espManager.invalidateFrames();
             if (game.screen instanceof com.kuangsanfeng.ultimategarden.client.platform.ui.screen.UltimateGardenScreen) game.setScreen(null);
             var previousAccount = configManager.currentAccount();
             com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.accountBefore(previousAccount,identity);
@@ -202,7 +216,10 @@ public class Ultimate_GardenClient implements ClientModInitializer {
             com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.accountAfter(previousAccount,identity);
             farmController.abortForWorldChange();
         });
-        com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onDisconnect((handler, game) -> { features.stop("hud_layout","DISCONNECTED"); features.stop("farm","DISCONNECTED"); });
+        com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onDisconnect((handler, game) -> { features.stop("hud_layout","DISCONNECTED"); features.stop("farm","DISCONNECTED");
+            com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.setFocusReleased(game,false);
+            windowsFocusController.reapplyCursorMode();
+        });
         com.kuangsanfeng.ultimategarden.client.platform.context.ClientContextEvents.onStopping(game -> { features.stop("hud_layout","CLIENT_STOPPING"); features.stop("farm","CLIENT_STOPPING"); });
 
 		MacroKeyBindings.register(
@@ -263,5 +280,21 @@ public class Ultimate_GardenClient implements ClientModInitializer {
 		return windowsState;
 
 	}
+
+    private void registerInputSources(){
+        var shootout=com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController.INSTANCE;
+        var transmission=com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE;
+        com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.bind(windowsInputInterceptor,java.util.Map.of(
+                KEYBOARD,windowsInputInterceptor::isLocallyEnabled,BUTTONS,windowsInputInterceptor::isLocallyEnabled,
+                MOTION,windowsInputInterceptor::isLocallyEnabled,WHEEL,windowsInputInterceptor::isLocallyEnabled));
+        com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.bind(shootout,java.util.Map.of(
+                KEYBOARD,com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::intercepting,
+                MOTION,com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::interceptingAim,
+                WHEEL,com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.ZombieShootoutController::intercepting));
+        java.util.function.BooleanSupplier transmissionOwns=
+                com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController::ownsInput;
+        com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.bind(transmission,
+                java.util.Map.of(KEYBOARD,transmissionOwns,MOTION,transmissionOwns,BUTTONS,transmissionOwns,WHEEL,transmissionOwns));
+    }
 
 }

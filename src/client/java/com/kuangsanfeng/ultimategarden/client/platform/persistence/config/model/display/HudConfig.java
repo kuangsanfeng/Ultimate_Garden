@@ -31,11 +31,16 @@ public final class HudConfig {
         case FARM_MACRO->Arrays.stream(Item.values()).map(Enum::name).toList();
         case ZOMBIE_SHOOTOUT->List.of("status","target","measured_speed","prediction_speed","current_angles","target_angles","aim_error","aim_ready","tolerance","correction","aim_mode","cooldown","confirmation","attempt","ping","latency");
         case INSTANT_TRANSMISSION->List.of("status","progress","test_angles","actual_angles","reset_alignment","height","samples","clicks","since_first","updates","failure_stage","reason","last_result");
-        case PATH_FINDING->List.of("status","candidate","remaining");
+        case PATH_FINDING->List.of("status","candidate","remaining","progress","reason","goal","stage_time",
+                "search_budget","active_branches","current_action","cast_status","height_offset","recovery_status",
+                "input_status","last_failure","latency");
         case MAPPING->List.of("server","game_type","island","sub_area","dimension","instance","recording_origin","recording_chunk","recording_layer","recording_status","recording_current_state","recording_saved");};}
     private static final class Panel {
         Mode mode=Mode.COMPACT;boolean onlyRunning,show;final Set<String> compact=new LinkedHashSet<>(),detail=new LinkedHashSet<>();
-        Panel(HudId id){compact.addAll(fields(id));if(id==HudId.PATH_FINDING){show=true;onlyRunning=true;}}
+        Panel(HudId id){
+            if(id==HudId.PATH_FINDING){compact.addAll(List.of("status","progress","reason"));show=true;onlyRunning=true;}
+            else compact.addAll(fields(id));
+        }
     }
     private final Map<HudId,Panel> panels=new EnumMap<>(HudId.class);
     public Mode mode(HudId id){return id==HudId.FARM_MACRO?getMode():panels.get(id).mode;}

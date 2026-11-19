@@ -13,12 +13,14 @@ public class NativeViewInput {
   void applied(long sequence,float beforeYaw,float beforePitch,float afterYaw,float afterPitch);
  }
  private DiagnosticsObserver diagnostics;public void setDiagnosticsObserver(DiagnosticsObserver value){diagnostics=value;}
+ private String lastStep="NO_FRAME";
+ public String lastStep(){return lastStep;}
  private String hudAimMode;public String aimMode(){return hudAimMode;}
  private ViewObserver observer;public void setViewObserver(ViewObserver value){observer=value;}
  private static boolean dispatch;private boolean clickPending,rightOwned;private long lastUpdate;
  public static boolean dispatching(){return dispatch;}
  public void clearPendingMotion(Minecraft c){var m=(ShootoutMouseAccessor)c.mouseHandler;m.shootout$setDX(0);m.shootout$setDY(0);}
- public void resetAim(){hudAimMode=null;}
+ public void resetAim(){hudAimMode=null;lastStep="NO_FRAME";}
  public double aim(Minecraft c,double yaw,double pitch,double peak,double curvature){
   long now=System.nanoTime();double dt=lastUpdate==0?.05:Math.clamp((now-lastUpdate)/1e9,0,.05);lastUpdate=now;
   return aim(c,yaw,pitch,peak,curvature,dt);
@@ -28,18 +30,19 @@ public class NativeViewInput {
   dt=Math.clamp(dt,0,.05);
   var rotation=ViewRotationPlanner.rotation(c.player.getYRot(),c.player.getXRot(),yaw,pitch,peak,curvature,dt);
   double error=rotation.error();hudAimMode="TANH";
-  if(error==0||rotation.step()==0)return error;
+  if(rotation.step()==0){lastStep="ZERO_PLANNED_STEP";return error;}
   double dx=ViewRotationPlanner.rawDelta(c.player.getYRot(),rotation.yawDelta(),c.options.sensitivity().get(),c.options.invertMouseX().get());
-  double dy=ViewRotationPlanner.rawDelta(c.player.getXRot(),rotation.pitchDelta(),c.options.sensitivity().get(),c.options.invertMouseY().get());
+  double dy=ViewRotationPlanner.rawPitchDelta(c.player.getXRot(),rotation.pitchDelta(),c.options.sensitivity().get(),c.options.invertMouseY().get());
   boolean tracing=diagnostics!=null&&diagnostics.active();
-  if(dx==0&&dy==0){if(tracing)diagnostics.queued(rotation,dt,0,0,c.options.sensitivity().get(),c.options.invertMouseX().get(),c.options.invertMouseY().get(),"ZERO_QUANTIZED");return error;}
-  if(observer!=null&&!observer.before(c.player.getYRot(),c.player.getXRot())){if(tracing)diagnostics.queued(rotation,dt,0,0,c.options.sensitivity().get(),c.options.invertMouseX().get(),c.options.invertMouseY().get(),"VIEW_OBSERVER_REJECTED");return error;}
+  if(dx==0&&dy==0){lastStep="ZERO_QUANTIZED";if(tracing)diagnostics.queued(rotation,dt,0,0,c.options.sensitivity().get(),c.options.invertMouseX().get(),c.options.invertMouseY().get(),"ZERO_QUANTIZED");return error;}
+  if(observer!=null&&!observer.before(c.player.getYRot(),c.player.getXRot())){lastStep="VIEW_OBSERVER_REJECTED";if(tracing)diagnostics.queued(rotation,dt,0,0,c.options.sensitivity().get(),c.options.invertMouseX().get(),c.options.invertMouseY().get(),"VIEW_OBSERVER_REJECTED");return error;}
   if(c.options.smoothCamera||c.player.isScoping())throw new IllegalStateException("UNSUPPORTED_SMOOTH_CAMERA_OR_SCOPING");
   var m=(ShootoutMouseAccessor)c.mouseHandler;double oldX=m.shootout$getDX(),oldY=m.shootout$getDY();
   try{dispatch=true;m.shootout$setDX(dx);m.shootout$setDY(dy);if(observer!=null)observer.submitted(m.shootout$getDX(),m.shootout$getDY(),c.options.sensitivity().get(),c.options.invertMouseX().get(),c.options.invertMouseY().get());
    long sequence=tracing?diagnostics.queued(rotation,dt,m.shootout$getDX(),m.shootout$getDY(),c.options.sensitivity().get(),c.options.invertMouseX().get(),c.options.invertMouseY().get(),"SUBMITTED"):0;
    float beforeYaw=tracing?c.player.getYRot():0,beforePitch=tracing?c.player.getXRot():0;
    m.shootout$turn(dt);
+   lastStep="NATIVE_TURN_CONSUMED";
    if(tracing)diagnostics.applied(sequence,beforeYaw,beforePitch,c.player.getYRot(),c.player.getXRot());
    if(observer!=null)observer.consumed(c.player.getYRot(),c.player.getXRot());}
   finally{m.shootout$setDX(oldX);m.shootout$setDY(oldY);dispatch=false;}

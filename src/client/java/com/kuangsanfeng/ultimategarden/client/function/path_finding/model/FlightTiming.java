@@ -42,8 +42,8 @@ public final class FlightTiming {
         double period=1000.0/aim.hz(),dt=Math.min(.05,period/1000);
         for (int frame=1; frame*period<10_000; frame++) {
             var rotation=ViewRotationPlanner.rotation(y,p,targetYaw,targetPitch,aim.peak(),aim.curve(),dt);
-            y=applyNative(y,rotation.yawDelta(),aim.sensitivity(),aim.invertX());
-            p=Math.clamp(applyNative(p,rotation.pitchDelta(),aim.sensitivity(),aim.invertY()),-90,90);
+            y=applyNative(y,rotation.yawDelta(),aim.sensitivity(),aim.invertX(),false);
+            p=applyNative(p,rotation.pitchDelta(),aim.sensitivity(),aim.invertY(),true);
             double ms=frame*period;
             if (correction.ready(ViewAngles.error(y,p,targetYaw,targetPitch),aim.tolerance(),aim.correction(),Math.round(ms*1e6),aim::draw))
                 return new AimTime(ms,y,p);
@@ -51,9 +51,10 @@ public final class FlightTiming {
         return null;
     }
 
-    private static float applyNative(float angle,double delta,double sensitivity,boolean inverted) {
+    private static float applyNative(float angle,double delta,double sensitivity,boolean inverted,boolean pitch) {
         double scaled=sensitivity*.6F+.2F;
-        double raw=ViewRotationPlanner.rawDelta(angle,delta,sensitivity,inverted);
+        double raw=pitch?ViewRotationPlanner.rawPitchDelta(angle,delta,sensitivity,inverted):
+                ViewRotationPlanner.rawDelta(angle,delta,sensitivity,inverted);
         return angle+(float)(raw*(scaled*scaled*scaled*8)*(inverted?-1:1))*.15F;
     }
 

@@ -135,10 +135,6 @@ public final class FarmController implements MacroManager.Module {
             return;
         }
 
-        if (windowsFocusController != null) {
-            windowsFocusController.releaseFocusWithHint();
-        }
-
         startMacro();
     }
     private java.util.function.BooleanSupplier externalInputOwner = () -> false;
@@ -154,6 +150,7 @@ public final class FarmController implements MacroManager.Module {
 
 
         state.setRunning(true);
+        if(windowsFocusController!=null)windowsFocusController.releaseFocusWithHint();
         stopReason = "Running";
 
         windowsInputInterceptor.enable();
@@ -190,7 +187,10 @@ public final class FarmController implements MacroManager.Module {
 
         stopKeyboardMouse();
 
-        if (userInitiated) command.cancel();
+        if (userInitiated) {
+            command.cancel();
+            if(windowsFocusController!=null)windowsFocusController.restoreFocus();
+        }
 
 
         FarmHints.printHint("ProgramPause");
@@ -464,6 +464,7 @@ public final class FarmController implements MacroManager.Module {
         input.resumeAfterMenu(null, false); input.releaseAll();
         command.abortWorld(); menuActions.clear(); heldActions = null;
         menuPause.abort(); state.reset(); windowsInputInterceptor.disable();
+        if(windowsFocusController!=null)windowsFocusController.restoreFocus();
         waitingCropSelect = false; waitingModeSelect = false; waitingSimulateCropSelect = false;
         isTimeTesterMode = config.getSelectedCropTypeId() == CropType.TIMETESTER.getValue();
         state.setCropType(isTimeTesterMode ? config.getSelectedSimulatedCropTypeId() : config.getSelectedCropTypeId());

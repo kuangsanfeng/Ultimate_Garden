@@ -9,7 +9,10 @@ public final class PathSettings {
     public Mode mode = Mode.NORMAL;
     public boolean transmission = true, speedDetection = true, initialSpeed = true, jumpDetection = true, initialJump = true;
     private int teleportCooldownMs = 20;
-    private boolean gpuAcceleration = true;
+    private boolean gpuAcceleration;
+    private volatile boolean pathfindingLog;
+    public boolean pathfindingLog(){return pathfindingLog;}
+    public void pathfindingLog(boolean value){pathfindingLog=value;}
     private int cpuWorkers=legacyWorkerSelection();
     private static int legacyWorkerSelection(){return Math.max(0,Integer.getInteger("ug.path.workers",0));}
     public static int availableWorkers(){return Runtime.getRuntime().availableProcessors();}
@@ -49,6 +52,7 @@ public final class PathSettings {
         public String field(){return source.field;}
     }
     private final ZombieShootoutConfig aim = new ZombieShootoutConfig();
+    public PathSettings(){aim(Aim.RATE,60);}
     public double aim(Aim setting) {return aim.get(setting.source);}
     public void aim(Aim setting,double value) {aim.set(setting.source,value);}
     private double speedSampleDistance = 80;
@@ -71,7 +75,8 @@ public final class PathSettings {
         if (!document.has("pathFinding")) return false;
         try {
             var data=document.getAsJsonObject("pathFinding");
-            gpuAcceleration=flag(data,"gpuAcceleration");
+            gpuAcceleration=data.has("gpuAcceleration")&&flag(data,"gpuAcceleration");
+            pathfindingLog=data.has("pathfindingLog")&&flag(data,"pathfindingLog");
             cpuWorkers=data.has("cpuWorkers")?data.get("cpuWorkers").getAsBigDecimal().intValueExact():legacyWorkerSelection();
             if(cpuWorkers<0)throw new IllegalArgumentException("Invalid CPU worker count");
             mode=Mode.valueOf(string(data,"mode",mode.name()));
@@ -84,7 +89,7 @@ public final class PathSettings {
             setBudget(data.has("searchNodesPerSegment")?data.get("searchNodesPerSegment").getAsBigDecimal().longValueExact():DEFAULT_NODES_PER_ROUND,
                     data.has("maximumSearchSegments")?data.get("maximumSearchSegments").getAsBigDecimal().intValueExact():DEFAULT_SEARCH_ROUNDS);
             if (data.has("coordinateWindowMs")) setCoordinateWindowMs(data.get("coordinateWindowMs").getAsBigDecimal().intValueExact());
-            for (var key : Aim.values()) aim(key,number(data,key.field(),aim(key)));
+            for (var key : Aim.values()) aim(key,number(data,key.field(),key==Aim.RATE?60:aim(key)));
             setSpeedSampleDistance(number(data,"speedSampleDistance",speedSampleDistance));
             var defaults=Weights.defaults();
             weights=new Weights(number(data,"teleportWeight",defaults.transmission()),number(data,"walkWeight",defaults.walk()),
@@ -110,6 +115,7 @@ public final class PathSettings {
         var data=new JsonObject();
         data.addProperty("mode",mode.name());
         data.addProperty("gpuAcceleration",gpuAcceleration);
+        data.addProperty("pathfindingLog",pathfindingLog);
         data.addProperty("cpuWorkers",cpuWorkers);
         data.addProperty("transmission",transmission);
         data.addProperty("teleportCooldownMs",teleportCooldownMs);

@@ -55,7 +55,7 @@ public final class WindowsFocusController {
     public void releaseFocus() {
 
 
-        state.setMouseReleased(true);
+        PhysicalGameInput.capture(this,true);
         reapplyCursorMode();
 
     }
@@ -67,7 +67,6 @@ public final class WindowsFocusController {
     // =========================================================
 
     public void restoreFocusWithHint(){
-        if (PhysicalGameInput.focusReleased()) return;
         HintManager.printHint("FocusRestore");
 
         restoreFocus();
@@ -76,9 +75,8 @@ public final class WindowsFocusController {
     public void restoreFocus() {
 
 
-        if (PhysicalGameInput.focusReleased()) return;
         boolean wasReleased = state.isMouseReleased();
-        state.setMouseReleased(false);
+        PhysicalGameInput.capture(this,false);
         reapplyCursorMode();
         if (wasReleased) restoreInputState.run();
 
@@ -93,24 +91,16 @@ public final class WindowsFocusController {
     public void toggle() {
 
 
-        if (state.isMouseReleased()) {
-            PhysicalGameInput.setFocusReleased(client, false);
-            restoreFocus();
-        } else {
-            PhysicalGameInput.setFocusReleased(client, true);
-            releaseFocus();
-            // The Farm may already own virtual holds even when U starts the first block.
-            restoreInputState.run();
-        }
-
+        PhysicalGameInput.setFocusReleased(client,!PhysicalGameInput.focusReleased());
+        reapplyCursorMode();
     }
 
 
 
     /** End the mod override; an open GUI still owns the free cursor. */
     public void useGameFocusForPlayerGui() {
-        if (client.screen == null || PhysicalGameInput.focusReleased()) return;
-        state.setMouseReleased(false);
+        if (client.screen == null) return;
+        PhysicalGameInput.capture(this,false);
         reapplyCursorMode();
     }
 
@@ -119,13 +109,13 @@ public final class WindowsFocusController {
         if (client.screen != null || client.player == null || client.level == null) {
             return false;
         }
-        state.setMouseReleased(PhysicalGameInput.focusReleased());
         reapplyCursorMode();
         return client.mouseHandler.isMouseGrabbed();
     }
 
     /** Reapply the recorded cursor mode after a vanilla screen transition. */
     public void reapplyCursorMode() {
+        state.setMouseReleased(PhysicalGameInput.captureReleased());
         if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) {
             com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.freeCursor(); return;
         }

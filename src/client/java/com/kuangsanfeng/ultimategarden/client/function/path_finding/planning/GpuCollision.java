@@ -79,6 +79,7 @@ public final class GpuCollision implements AutoCloseable {
         }catch(ExecutionException failure){throw new IllegalStateException("GPU result delivery",failure.getCause());}
     }
 
+    boolean enabled(){return enabled;}
     boolean used(){return batches>0;}
     private void emit(String event,Map<String,Object> details){if(audit!=null)audit.emit(event,details);}
 

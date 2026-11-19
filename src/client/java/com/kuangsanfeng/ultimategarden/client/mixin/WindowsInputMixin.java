@@ -4,6 +4,7 @@ package com.kuangsanfeng.ultimategarden.client.mixin;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding;
 import com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput;
 import com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput;
+import static com.kuangsanfeng.ultimategarden.client.platform.input.InputRequests.Channel.*;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
@@ -28,7 +29,7 @@ public class WindowsInputMixin {
     private void filterPhysicalKeyMappings(long window, int action, KeyEvent event, Operation<Void> original) {
         var client = net.minecraft.client.Minecraft.getInstance();
         boolean filter = window == client.getWindow().handle() && !PlayerGuiInput.isVirtualDispatch()
-                && PhysicalGameInput.blocksGame(client);
+                && PhysicalGameInput.inGame(client,KEYBOARD);
         PhysicalGameInput.keyboardDispatch(filter, () -> original.call(window, action, event));
     }
 

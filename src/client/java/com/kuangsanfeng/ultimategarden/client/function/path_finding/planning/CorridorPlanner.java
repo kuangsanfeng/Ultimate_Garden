@@ -2,6 +2,8 @@ package com.kuangsanfeng.ultimategarden.client.function.path_finding.planning;
 
 import com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.Point;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.TransmissionModel;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.FlightTiming;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.RouteCastTiming;
 
 import java.util.*;
 import java.util.function.BooleanSupplier;
@@ -11,6 +13,7 @@ import static com.kuangsanfeng.ultimategarden.client.function.path_finding.PathT
 /** Searches space without headings. The bounded action search runs only around a validated centerline. */
 public final class CorridorPlanner {
     public static final int RADIUS = 15;
+    public static final int CORRIDOR_MODE_RADIUS = 25;
     public record Timing(double cooldownMs, double speed, double rotationPerSecond, double confirmationMs) {
         public Timing {
             if (!Double.isFinite(cooldownMs) || cooldownMs < 0 || !Double.isFinite(speed) || speed <= 0
@@ -38,6 +41,10 @@ public final class CorridorPlanner {
     private final Map<Point, Boolean> clearance = new HashMap<>();
     private long coarse, local, localChecks, queuePeak, probes;
     private long coarseReopened, localReopened;
+    private int peakActiveBranches, splitBranches;
+    private boolean branchBatch;
+
+    private boolean robust(){return options.mode()!=Mode.CORRIDOR;}
 
     public CorridorPlanner(Terrain terrain, Options options, Timing timing, BooleanSupplier cancelled, SearchAudit audit) {
         this(terrain,options,timing,cancelled,audit,new CandidateWorkers(1),null,null);
@@ -114,12 +121,16 @@ public final class CorridorPlanner {
         if (!air && start.x()==goal.x() && start.z()==goal.z() && start.y()>goal.y()+options.distance()
                 && terrain.sweep(start,goal)) {
             var descent=candidate("CONTROLLED_DESCENT",List.of(segment(Movement.FALL,start,goal,yaw,90,0)),yaw,pitch);
-            if (options.mode()==Mode.NORMAL) return succeed(requested,goal,start,descent);
+            if (options.mode()!=Mode.WEIGHTED) return succeed(requested,goal,start,descent);
             initialCandidates.add(descent);
         }
-        if (options.mode() == Mode.NORMAL && !air) {
+        if (options.mode() != Mode.WEIGHTED && !air) {
             var direct = sameSight(start, goal, yaw, pitch);
-            if (direct != null) return succeed(requested, goal, start, direct);
+            if (direct != null){
+                if(!robust())return succeed(requested,goal,start,direct);
+                if(quality(direct).worstRisk()==0)return choose(List.of(direct));
+                initialCandidates.add(direct);
+            }
         }
         var simple = sky(List.of(start, goal), 0, 1);
         if (!simple.isEmpty()) actionSearches.add(new ActionSearch("SIMPLE_CLEARANCE",simple,air));
@@ -181,14 +192,21 @@ public final class CorridorPlanner {
         var candidates = new ArrayList<>(initialCandidates);
         initialCandidates.clear();
         refineActions(candidates,before,Math.min(5000,available/8));
-        if (!candidates.isEmpty() && options.mode()==Mode.NORMAL) return choose(candidates);
+        if (!candidates.isEmpty() && options.mode()!=Mode.WEIGHTED&&
+                (!robust()||candidates.stream().anyMatch(c->quality(c).worstRisk()==0))) return choose(candidates);
 
         available = remaining(before);
         long reserve = available / 10;
         long coarseLimit = Math.min(available, available - reserve * (Math.abs(start.y()-goal.y())>=80 ? 1 : 4));
         if (spaceSearch.hasFrontier() && coarseLimit>0) loadCorridor(coarseLimit);
         refineActions(candidates,before,12000);
-        if (!candidates.isEmpty()) return choose(candidates);
+        if (!candidates.isEmpty()) {
+            if(robust()&&!air&&remaining(before)>0&&candidates.stream().noneMatch(c->quality(c).worstRisk()==0)){
+                var walking=walk(Math.min(1200,remaining(before)));
+                if(walking!=null)candidates.add(walking);
+            }
+            return choose(candidates);
+        }
         if (trialPrefix && blockedLaunch()) return blockedPrefix();
         if (retainPartial && !cancelled.getAsBoolean()) searchPrefixes(before);
 
@@ -244,15 +262,82 @@ public final class CorridorPlanner {
         return from.x()==to.x() && from.z()==to.z() && height>0 && height<=.6 && terrain.sweep(from,to);
     }
 
+    private record Quality(double executionMs,int worstRisk,int worstActions,int longestRiskyAir,
+                           int riskyActions,int groundActions,int flightActions) {}
+
+    private Quality quality(Candidate candidate){
+        double y=yaw,p=pitch,elapsed=0,cooldown=0;
+        int worst=0,worstCount=0,streak=0,longest=0,risky=0,ground=0,flight=0;
+        for(var step:candidate.actions){
+            var aim=RouteCastTiming.estimate(
+                    y,p,step.yaw(),step.pitch(),
+                    FlightTiming.Aim.defaults());
+            double aimMs=aim==null?10_000:aim.ms();
+            int risk=0;
+            double duration;
+            if(step.movement()==Movement.TRANSMISSION){
+                flight++;
+                var ready=new FlightTiming.Ready(cooldown,0,0);
+                int tick=RouteCastTiming.castTick(ready,aimMs,false);
+                duration=tick*50+timing.confirmationMs();
+                cooldown=Math.max(0,timing.cooldownMs()-timing.confirmationMs());
+                var motion=FlightTiming.Motion.confirmed(step.from(),terrain);
+                if(!motion.grounded()){
+                    var expected=FlightTiming.predict(motion,tick,terrain);
+                    var late=expected==null?null:FlightTiming.predict(expected,1,terrain);
+                    if(expected==null||aim==null||castLanding(expected.feet(),aim.yaw(),aim.pitch(),step.castDistance())==null)risk=3;
+                    else if(late==null||castLanding(late.feet(),aim.yaw(),aim.pitch(),step.castDistance())==null)risk=2;
+                    else if(aimMs>=250&&!terrain.supported(step.to()))risk=1;
+                }else{
+                    var offset=new Point(.15,0,0);
+                    if(castLanding(step.from().add(offset),step.yaw(),step.pitch(),step.castDistance())==null||
+                            castLanding(step.from().add(new Point(0,0,.15)),step.yaw(),step.pitch(),step.castDistance())==null)risk=1;
+                }
+                streak=risk>0&&!motion.grounded()?streak+1:0;
+                longest=Math.max(longest,streak);
+            }else{
+                boolean supported=terrain.supported(step.to());
+                if(supported)ground++;else flight++;
+                if(step.movement()==Movement.WALK&&(!supported||!terrain.clear(step.to().add(new Point(.15,0,0)))))risk=1;
+                if(step.movement()==Movement.FALL&&!supported)risk=1;
+                duration=aimMs+estimate(List.of(step),step.yaw(),step.pitch(),timing).movementMs();
+                cooldown=Math.max(0,cooldown-duration);
+                if(supported)streak=0;
+            }
+            if(risk>0){
+                risky++;
+                if(risk>worst){worst=risk;worstCount=1;}
+                else if(risk==worst)worstCount++;
+            }
+            elapsed+=duration;
+            y=step.yaw();p=step.pitch();
+        }
+        return new Quality(elapsed,worst,worstCount,longest,risky,ground,flight);
+    }
+
     private Result choose(List<Candidate> candidates) {
-        Comparator<Candidate> preference = options.mode()==Mode.WEIGHTED
-                ? Comparator.comparingDouble(Candidate::cost).thenComparingDouble(c->c.time.totalMs)
-                : Comparator.comparingDouble((Candidate c)->c.time.totalMs).thenComparing(c->c.strategy.equals("CLEARANCE_SHORTCUT"));
+        if(robust()){
+            var qualities=new LinkedHashMap<Candidate,Quality>();
+            candidates.forEach(c->qualities.put(c,quality(c)));
+            double best=qualities.values().stream().mapToDouble(Quality::executionMs).min().orElseThrow();
+            var preference=Comparator.comparingInt(Quality::worstRisk).thenComparingInt(Quality::worstActions)
+                    .thenComparingInt(Quality::longestRiskyAir).thenComparingInt(Quality::riskyActions)
+                    .thenComparingDouble(Quality::executionMs);
+            var chosen=qualities.entrySet().stream().filter(e->e.getValue().executionMs()<=best*1.15)
+                    .min(Map.Entry.comparingByValue(preference)).orElseThrow();
+            emit("ROUTE_QUALITY",Map.of("strategy",chosen.getKey().strategy,"quality",chosen.getValue(),
+                    "fastestDiscoveredMs",best,"admittedRatio",1.15,"completedCandidates",qualities.size(),
+                    "peakActiveBranches",peakActiveBranches,"branchSplits",splitBranches));
+            return succeed(requested,goal,start,chosen.getKey());
+        }
+        Comparator<Candidate> preference=Comparator.comparingDouble((Candidate c)->c.time.totalMs)
+                .thenComparing(c->c.strategy.equals("CLEARANCE_SHORTCUT"));
         return succeed(requested,goal,start,candidates.stream().min(preference).orElseThrow());
     }
 
     private void loadCorridor(long quota) {
-        if (quota<=0 || actionSearches.stream().anyMatch(search -> !search.strategy.equals("SIMPLE_CLEARANCE"))) return;
+        emit("COARSE_PLANNING_START",Map.of());
+        if (quota<=0 || actionSearches.stream().anyMatch(search -> !search.strategy.startsWith("SIMPLE_CLEARANCE"))) return;
         var line = spaceSearch.advance(quota);
         if (line.isEmpty()) return;
         actionSearches.add(new ActionSearch("FLIGHT_CORRIDOR",line,air));
@@ -263,10 +348,41 @@ public final class CorridorPlanner {
     }
 
     private void refineActions(List<Candidate> candidates,long before,long quota) {
+        if(quota>0&&remaining(before)>0&&actionSearches.stream().anyMatch(ActionSearch::hasFrontier))
+            emit("ACTION_CALCULATION_START",Map.of());
         Candidate original = null, bypass = null;
-        for (var search:actionSearches) {
+        int width=robust()&&terrain.parallelQueries()&&(gpu==null||!gpu.enabled())?workers.parallelism():1;
+        if(width>1&&quota>0&&!actionSearches.isEmpty()){
+            // Seed one frontier expansion so the root can hand distinct successors to idle workers.
+            if(actionSearches.size()==1&&actionSearches.getFirst().unsplitRoot()&&remaining(before)>0){
+                var found=actionSearches.getFirst().advance(1);
+                if(found!=null)candidates.add(found);
+            }
+            int existing=actionSearches.size();
+            for(int i=0;i<existing&&actionSearches.size()<width;i++){
+                var split=actionSearches.get(i).split();
+                if(split!=null){actionSearches.add(split);splitBranches++;}
+            }
+            var batch=actionSearches.stream().filter(ActionSearch::hasFrontier)
+                    .limit(Math.min(width,Math.max(0,remaining(before)))).toList();
+            if(!batch.isEmpty()){
+                long lease=Math.min(quota,remaining(before)/batch.size());
+                var output=new Candidate[batch.size()];
+                peakActiveBranches=Math.max(peakActiveBranches,batch.size());
+                branchBatch=true;
+                try{workers.check(batch.size(),2,i->output[i]=batch.get(i).advance(lease));}
+                finally{
+                    branchBatch=false;
+                    for(var frontier:batch)frontier.mergeCounters();
+                }
+                for(var found:output)if(found!=null)candidates.add(found);
+            }
+            emit("BRANCH_BATCH",Map.of("workerLimit",width,"activeBranches",batch.size(),"peakActiveBranches",peakActiveBranches,
+                    "splitBranches",splitBranches,"remainingInRound",remaining(before)));
+        }else for (var search:actionSearches) {
             long allowance = Math.min(quota,remaining(before));
             if (allowance<=0) break;
+            peakActiveBranches=Math.max(peakActiveBranches,1);
             var found = search.advance(allowance);
             if (found==null) continue;
             candidates.add(found);
@@ -289,6 +405,7 @@ public final class CorridorPlanner {
         if (matching.isEmpty()) return;
         long quota = Math.min(2500, remaining(before)/2/matching.size());
         if (quota<=0) return;
+        emit("ACTION_CALCULATION_START",Map.of());
         for (var node:matching) {
             var search = new ActionSearch("FORWARD_PREFIX",cellPath(node),false);
             var found = search.advance(quota);
@@ -301,13 +418,14 @@ public final class CorridorPlanner {
     }
 
     private Candidate walk(long quota) {
+        emit("COARSE_PLANNING_START",Map.of());
         if (groundSearch==null) {
             var groundOptions = new Options(options.mode(),false,false,options.distance(),options.jumpHeight(),options.budget(),options.weights());
             groundSearch = new PathPlanner().groundSearch(start,goal,yaw,pitch,groundOptions,terrain,cancelled,region);
         }
         long previous = groundSearch.expanded(), previousChecks = groundSearch.checks();
-        if(audit!=null) groundSearch.observe(p->audit.sample("WALKING_CORRIDOR",expanded()+p.expanded()-previous,
-                candidateChecks()+p.checks()-previousChecks,p.open(),p.point()));
+        if(audit!=null) groundSearch.observe(p->{audit.expanded("WALKING_CORRIDOR",p.point());audit.sample("WALKING_CORRIDOR",expanded()+p.expanded()-previous,
+                candidateChecks()+p.checks()-previousChecks,p.open(),p.point());});
         groundResult = groundSearch.advance(quota);
         groundChecks += groundSearch.checks()-previousChecks;
         long used = groundSearch.expanded()-previous;
@@ -357,7 +475,7 @@ public final class CorridorPlanner {
                 if(j+1<steps.size()){original=steps.subList(i,j+2);alternative.add(steps.get(j+1));}
                 var walking=candidate("WALK",original,yaw,pitch);
                 var teleport=candidate("TELEPORT",alternative,yaw,pitch);
-                if(options.mode()==Mode.NORMAL?preferShortcut(walking.time,teleport.time):teleport.cost<walking.cost) {
+                if(options.mode()!=Mode.WEIGHTED?preferShortcut(walking.time,teleport.time):teleport.cost<walking.cost) {
                     shortcut=candidate;
                     next=j+1;
                 }
@@ -461,6 +579,7 @@ public final class CorridorPlanner {
                 var node=primary.open.remove();
                 var p=node.point;
                 coarse++;
+                if(audit!=null&&audit.scanning())audit.expanded("FLIGHT_SPACE",p);
                 if(region!=null)region.visit(p,forwardTurn?0:1);
                 progress("FLIGHT_SPACE",forward.open.size()+reverse.open.size(),p);
                 if(!primary.expanded.add(p))coarseReopened++;
@@ -571,6 +690,8 @@ public final class CorridorPlanner {
         final Map<List<Object>,Double> best = new HashMap<>();
         final Set<State> expandedActions = new HashSet<>();
         final List<MaskedAction> masked=new ArrayList<>();
+        long branchExpanded,branchChecks,branchReopens,branchQueuePeak;
+        boolean branchLaunchBlocked,branchLaunchSucceeded;
         Action closest;
         boolean complete;
 
@@ -583,6 +704,42 @@ public final class CorridorPlanner {
             origin=new State(line.getFirst(),yaw,pitch,initialTravel);
             best.put(localKey(origin),0.0);
             open.add(new Action(origin,0,0,0,null,List.of()));
+        }
+
+        ActionSearch(ActionSearch parent,Action seed){
+            strategy=parent.strategy+"#"+(splitBranches+1);
+            line=parent.line;goal=parent.goal;air=parent.air;prefix=parent.prefix;origin=parent.origin;
+            best.put(localKey(seed.state),seed.cost);
+            open.add(seed);
+        }
+
+        boolean unsplitRoot(){return !complete&&open.size()==1&&open.peek().parent==null;}
+
+        ActionSearch split(){
+            if(!hasFrontier()||open.size()<2)return null;
+            var preferred=open.peek();
+            var held=new ArrayList<Action>();
+            Action seed=null;
+            for(int i=0;i<12&&!open.isEmpty();i++){
+                var next=open.remove();
+                if(next!=preferred&&!next.edges.isEmpty()&&!preferred.edges.isEmpty()
+                        &&(next.edges.getLast().movement()!=preferred.edges.getLast().movement()
+                        ||Math.abs(next.state.point.y()-preferred.state.point.y())>=2
+                        ||next.state.point.distance(preferred.state.point)>=5)){
+                    seed=next;break;
+                }
+                held.add(next);
+            }
+            open.addAll(held);
+            return seed==null?null:new ActionSearch(this,seed);
+        }
+
+        void mergeCounters(){
+            local+=branchExpanded;localChecks+=branchChecks;localReopened+=branchReopens;
+            queuePeak=Math.max(queuePeak,branchQueuePeak);
+            launchBlocked|=branchLaunchBlocked;launchSucceeded|=branchLaunchSucceeded;
+            branchExpanded=branchChecks=branchReopens=branchQueuePeak=0;
+            branchLaunchBlocked=branchLaunchSucceeded=false;
         }
 
         boolean hasFrontier() {
@@ -606,21 +763,26 @@ public final class CorridorPlanner {
         Candidate partial() { return closest==null?null:candidate(strategy,actionPath(closest),yaw,pitch); }
 
         Candidate advance(long limit) {
-            long startCount=local, startChecks=localChecks;
-            while (hasFrontier() && local-startCount<limit && !cancelled.getAsBoolean()) {
-                queuePeak=Math.max(queuePeak,open.size());
+            try{return advanceBranch(limit);}
+            finally{if(!branchBatch)mergeCounters();}
+        }
+
+        private Candidate advanceBranch(long limit){
+            while (hasFrontier() && branchExpanded<limit && !cancelled.getAsBoolean()) {
+                branchQueuePeak=Math.max(branchQueuePeak,open.size());
                 var node=open.remove();
                 var p=node.state.point;
-                local++;
+                branchExpanded++;
                 if(region!=null)region.visit(p,2);
-                progress(strategy,open.size(),p);
-                if(audit!=null && !expandedActions.add(node.state))localReopened++;
+                if(!branchBatch&&audit!=null&&((expanded()+branchExpanded)&63)==1)
+                    audit.sample(strategy,expanded()+branchExpanded,candidateChecks()+branchChecks,open.size(),p);
+                if(audit!=null && !expandedActions.add(node.state))branchReopens++;
                 if (retainPartial && node.parent!=null && p.distance(goal)<origin.point.distance(goal)
                         && (closest==null || p.distance(goal)<closest.state.point.distance(goal))) closest=node;
                 if (p.distance(goal)<.1 || (air && (p.distance(goal)<=options.distance()/2 || crossesAirTarget(node,goal)))) {
 
                     complete=true;
-                    emitStage("ACTIONS_FOUND",local-startCount,localChecks-startChecks,limit);
+                    emitStage("ACTIONS_FOUND",branchExpanded,branchChecks,limit);
                     return candidate(strategy,actionPath(node),yaw,pitch);
                 }
                 // A quantized cast can finish half a block above a slab; gravity completes the route.
@@ -628,7 +790,7 @@ public final class CorridorPlanner {
                     var steps=new ArrayList<>(actionPath(node));
                     steps.add(segment(Movement.FALL,p,goal,node.state.yaw,90,0));
                     complete=true;
-                    emitStage("ACTIONS_FOUND",local-startCount,localChecks-startChecks,limit);
+                    emitStage("ACTIONS_FOUND",branchExpanded,branchChecks,limit);
                     return candidate(strategy,steps,yaw,pitch);
                 }
                 if (node.state.travel>=180-options.distance()) {
@@ -642,7 +804,9 @@ public final class CorridorPlanner {
                             Point near=new Point(q.x(),Math.min(q.y()+6,p.y()),q.z());
                             var edges=new ArrayList<Segment>();
                             if (p.distance(near)>.05) edges.add(segment(Movement.FALL,p,near,node.state.yaw,90,0));
-                            var reset=checkedCast(near,node.state.yaw,90,near.distance(q));
+                            branchChecks++;
+                            var reset=near.distance(q)>options.distance()?null:
+                                    castLanding(near,node.state.yaw,90,near.distance(q));
                             if (q.equals(reset)) {
                                 edges.add(cast(near,q,node.state.yaw,90,near.distance(q)));
                                 offer(node,edges,0);
@@ -660,7 +824,7 @@ public final class CorridorPlanner {
                 var targets=List.copyOf(aims);
                 var probes=new Segment[targets.size()*9];
                 var rays=new GpuCollision.Cast[probes.length];
-                localChecks+=probes.length;
+                branchChecks+=probes.length;
                 double finishDistance=Math.min(p.distance(goal),options.distance());
                 workers.check(targets.size(),3,i->{
                     Point aim=targets.get(i);
@@ -711,8 +875,8 @@ public final class CorridorPlanner {
                 for(var step:walk)offer(node,List.of(step),0);
                 if(root){
                     boolean legal=hasFrontier();
-                    launchSucceeded|=legal;
-                    launchBlocked|=!legal && masked.isEmpty() && !strategy.equals("SIMPLE_CLEARANCE");
+                    branchLaunchSucceeded|=legal;
+                    branchLaunchBlocked|=!legal && masked.isEmpty() && !strategy.equals("SIMPLE_CLEARANCE");
                     if(audit!=null){
                         var rejected=new EnumMap<LaunchCheck,Integer>(LaunchCheck.class);
                         for(var verdict:launchVerdicts)if(verdict!=null)rejected.merge(verdict,1,Integer::sum);
@@ -724,7 +888,7 @@ public final class CorridorPlanner {
                 }
             }
             emitStage(cancelled.getAsBoolean()?"CANCELLED":hasFrontier()?"LOCAL_BUDGET":"NO_LOCAL_ACTION",
-                    local-startCount,localChecks-startChecks,limit);
+                    branchExpanded,branchChecks,limit);
             return null;
         }
 
@@ -751,7 +915,7 @@ public final class CorridorPlanner {
             double d=segmentDistance(p,line.get(i),line.get(i+1));
             if (d<=offset) {offset=d;nearest=i;}
         }
-        if (offset>RADIUS) return;
+        if (offset>(options.mode()==Mode.CORRIDOR?CORRIDOR_MODE_RADIUS:RADIUS)) return;
         var last=edges.isEmpty()?null:edges.getLast();
         var state=new State(p,last==null?old.state.yaw:last.yaw(),last==null?old.state.pitch:last.pitch(),travel);
         double cost=old.cost;
@@ -765,7 +929,7 @@ public final class CorridorPlanner {
         open.add(new Action(state,cost,remaining+cost*(options.mode()==Mode.WEIGHTED?.07:.03),nearest,old,edges));
     }
     private List<Object> localKey(State state) {
-        return options.mode()==Mode.WEIGHTED?List.of(state):List.of(state.point,(int)(state.travel/options.distance()));
+        return robust()?List.of(state):List.of(state.point,(int)(state.travel/options.distance()));
     }
 
     private Point checkedCast(Point p,double yaw,double pitch,double distance) {
@@ -872,7 +1036,7 @@ public final class CorridorPlanner {
             status=Status.MAP_MISSING;
         return new Result(status,List.of(),requested,goal,start,0,coarse+local,terrain.missing(),reason);
     }
-    private void emit(String event,Map<String,Object> fields){if(audit!=null)audit.emit(event,fields);}
+    private synchronized void emit(String event,Map<String,Object> fields){if(audit!=null)audit.emit(event,fields);}
     private static Point centered(Point p){return new Point(Math.floor(p.x())+.5,p.y(),Math.floor(p.z())+.5);}
     private static double length(List<Point> points){double sum=0;for(int i=1;i<points.size();i++)sum+=points.get(i-1).distance(points.get(i));return sum;}
     private static double segmentDistance(Point p,Point a,Point b) {

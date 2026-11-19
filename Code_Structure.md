@@ -2154,3 +2154,88 @@ Java 25 离线构建和六组寻路回归通过。强制 GPU 初始化失败时�
 - [ClientPathFinding](src/client/java/com/kuangsanfeng/ultimategarden/client/function/path_finding/execution/ClientPathFinding.java) 在 Farm 已用的主动 GUI 输入入口接收背包、Esc、聊天和命令键。先取消当前票据、释放寻路输入、清掉旧 ESP，再由原版打开界面。待恢复目标仅在内存保留，绑定客户端世界、连接和可用的实例上下文。开始热键从当前脚部坐标、视角和运动状态重新规划，实际到达或上下文变化时清除目标。日志分别记录计划目标、停止脚部坐标、恢复脚部坐标与阻断状态。
 
 JDK 25 离线构建、六组寻路回归和热键回归通过。本地 Fabric 中，P2→P6 经 E 停止、实际走动和转向、使用开始热键恢复，确认到达 `(-9.5,145,-19.5)`。最终尝试确认 28 次传送，途中一次自动重规划成功替换旧路线，到达后实测清除旧目标、ESP 和阻断。槽位 1 改绑 R 后，验证了两类阻断各自及重叠时对原版输入的筛选和虚拟热栏操作。原版聊天可继续输入数字，两个阻断解除后 R 与滚轮恢复。截图核对四层 ESP，边界检查未发现共用面。P2→P5 的重规划事件记录旧 ESP 清除和输入阻断保持，之后仍触及预演上限。八组规划复测有七组生成完整计划，两组通过离线预演并进入客户端，一组实际到达。见 [复测报告](build/path-audit/route-esp-relay-report.md) 和 [合并 JSONL](build/path-audit/route-esp-relay.jsonl)。
+
+### 2026-11-19 · CORRIDOR 通道模式与临时接回导航
+
+- **模式与配置。** `PathTypes.Mode.CORRIDOR` 是第三个可保存模式，和 NORMAL、WEIGHTED 并列。新建或缺字段的配置使用每轮 2,000,000 节点、2 轮，每次全局规划总上限 4,000,000。明确保存的预算仍按原字段加载。菜单和本地化新增 Corridor / 通道模式，CPU 保留当前固定分批。
+- **通道执行。** `CorridorPlanner` 继续用既有空间和动作搜索生成经过几何验证的有序路线。CORRIDOR 分支和 ESP 使用 25 格，NORMAL、WEIGHTED 的原通道半径仍为 15 格。 `CorridorRepair` 把参考段及其下落、传送取整的折点作为连续中心线，按玩家脚底到三维线段的距离判断范围。推进日志输出弧长。候选优先比较当前朝向、终点方向和局部中心线趋势，保留低转向前进的选项。参考点参与投影和方向参考。预演逐步验证动作，施放前由实际脚底与视角重算射线、量化落点及后继可行性。
+- **临时接回。** `CorridorRejoin` 从客户端采集的状态在规划线程搜索地面、跳跃、落下和经时序与碰撞验算的传送后继，限定 32 格、96 次展开、10 个动作。客户端确认进展期间使用实际地形复查普通动作和传送，落点还需有合法的后继。成功后 `PathService` 保留原走廊，按实际进度、脚底、速度和视角预演后半段，替换旧动作。局部失败才进入有界的全局回退，第二次全局重规划会检查上一份全局搜索的输入是否有实质变化。两种旧模式继续使用原有参考点候选，恢复入口同样使用临时搜索。
+- **瞄准和观测。** `ViewRotationPlanner` 用最短 Yaw 与线性 Pitch 共用现有帧预算，`NativeViewInput` 与 `FlightTiming` 共用有边界的 Pitch 量化。 `CORRIDOR_REGION_ACTION`、`CORRIDOR_CAST_CONTINUATION`、`REJOIN_NAV_*` 和 `REPLAN_SUPPRESSED` 分别记录候选、实时施放后继、接回和去重。终态记录原生输入消费期间逐帧累计的 Yaw/Pitch 转动。
+
+
+- **本次验证。** Java 25 离线构建与五项定向回归通过。两条 Dwarven Mines 本地客户端试验均在初次区域预演触限，角色留在起点。P2→P5 的第二次等价全局重规划被抑制。真实动作推进和临时接回仍待客户端验证。[验证报告](build/path-audit/corridor-mode-v1/corridor-mode-report.md)
+
+
+### 2026-11-19 · CORRIDOR 冻结路线与实验性预演
+
+- `FrozenCorridorReplay` 从首个成功规划段和配套初始预演事件构建冻结快照，验证有序动作链、弯折中心线、地图指纹与碰撞物理指纹。离线入口直接恢复 `CorridorRepair`，不调用全局规划。P1→P2 与 P2→P5 的原预演基线逐项复现。
+- `ExperimentalCorridorRehearsal` 复用 CORRIDOR 的预测及碰撞检查，以 5/8/15/25 格保留分层前沿，先用精确静态净空筛选，再验证完整射线。缓存和精确去重绑定单次只读地图快照与执行状态。现有正式预演保持原策略。
+- `RollingCorridorReplay` 使用 96 格方向参考和 5／8／12 动作缓冲，传送用原模型重验，每条路线共用一个展开预算。普通地面输入闭环仍未实现，遇到不支持的动作时停止。全局规划、生产线程与接回执行入口未变。[八次对照与限制](build/path-audit/corridor-rehearsal-optimization/report.md)
+
+### 2026-11-19 · CORRIDOR Phase 2 离线混合动作实验
+
+- `OfflineMotionDriver` 为现有 FlightTiming 提供逐 Tick 输入，复用瞄准、重力、碰撞和传送量化。独立冻结首步 WALK 与 Dwarven Mines 的 Y=196.5 半砖落地通过；水平输入和台阶仍属实验模型。
+- `MixedRollingReplay` 新增完整状态校验、尾部补充、独立终点窗口及调用原接回规划的实验路径。CP2 的跃起传送测试断言与原量化落点冲突，依赖的整线滚动与接回验收按停止规则跳过。未启用到客户端。
+- `CorridorPhase2Audit` 和本地检查点脚本记录冻结基线、物理和终点断言，以及 CACHE_ONLY、DEDUP_ONLY 分离对照。原路线快照和生产代码仍沿用现有版本。[Phase 2 报告](build/path-audit/corridor-phase2/report.md)
+
+
+### CORRIDOR Phase 2 续跑 · 离线运动与接回验证
+
+- `OfflineMotionDriver` 记录施放帧的实际运动状态、原始射线终点、量化落点和确认后的接地状态。`CorridorPhase2Audit` 把 M11 拆为有支撑、无支撑两种空中施放场景，并逐例写出 M01–M16 的结果，合计 17 项通过。
+- `MixedRollingReplay` 在派发前检查完整起始状态和进度。空中缓冲不足且局部恢复无法继续时，先推进一帧无输入物理，再保存终态。短场景覆盖冻结 P1 的实际步行交接及前瞻补充、过期状态拦截、接回后重建缓冲并派发正常动作，以及 Y=196.5 的原始终点判定。真实异步发布和 LocalPlayer 逐 Tick 一致性待验证。
+- `CorridorPhase2Audit` 的续跑入口支持 `validate`、`physics`、`short C1…C4` 和 `end-to-end <route> ROLLING_NO_CACHE`，用 `ug.phase2.output` 指定续跑目录。两条整线均在耗尽两次局部恢复机会后止于 `GLOBAL_REPLAN_REQUIRED`。离线入口未进入全局规划，没有启动客户端。[续跑摘要](build/path-audit/corridor-phase2-resume/summary.json)
+
+
+### CORRIDOR 滚动补充定向诊断
+
+- 离线入口 `CorridorPhase2Audit refill-diagnosis <route>` 从现有冻结输入回放到指定窗口。按 `windowId` 和 `rejoinId` 记录实际状态、已验证前缀及预测尾、搜索退出分支和开放节点数、逐 Tick 复核、发布裁剪及接回交接。
+- 两次前缀回放复现 W1–W3。三窗的新动作均通过逐 Tick 复核，发布前因没有稳定终态被裁掉。搜索只报告退出时的开放节点数，现有接口无法续用前沿。[本轮摘要](build/path-audit/corridor-refill-diagnosis/summary.json)
+
+
+### CORRIDOR 实验性补充的候选接受
+
+- `MixedRollingReplay` 将原有逐 Tick 复核、链尾稳定裁剪和发布门槛作为实验性窗口搜索的候选接受条件。候选复核只构建局部过渡；未发布的候选节点仍可扩展，同一次搜索沿用队列、访问记录和剩余额度。通过后一次提交，派发前继续校验实际状态。
+- `CorridorPhase2Audit stable-tail <w1|w2|w3>` 恢复已保存的窗口，并用相同输入对照原策略。诊断每窗限额为首次候选后最多展开 128 个节点、共复核最多 8 条链。三窗均触及复核上限；C1 与脚本化候选的平地离线场景通过，合成场景验证了拒绝首链后继续搜索、发布稳定链并派发首个动作。[本轮摘要](build/path-audit/corridor-refill-stable-tail/summary.json)
+
+
+### CORRIDOR W3 有效前缀与落地探针
+
+- 实验性补充按窗口剩余动作容量限制逐 Tick 复核，键包含实际动作参数与复合动作边界。同一窗口只复核一次相同的有效前缀。已占满容量且无法发布的分支无需继续追加，因为后继无法改变进入复核的动作。
+- `CorridorPhase2Audit w3-effective-prefix` 直接恢复历史快照。W3 复核 8 条不同候选，仍无可发布链；第 8 和第 11 步的原始复核终态分别使用既有局部 24 Tick 时限完成自然下落探针，均未触及支撑。[结果摘要](build/path-audit/corridor-refill-effective-prefix/summary.json)
+
+
+### NORMAL / WEIGHTED 多前沿寻路与施放时序
+
+- `RouteCastTiming.castTick` 将现有逐帧瞄准估计对齐到客户端 Tick，正常施放增加一拍，高度修正时省去这一拍，CD、确认和瞄准门槛并行取最大值。`CorridorRepair` 预演和 `ClientPathFinding.NativeDriver` 使用同一门槛，实际施放仍须通过原生瞄准、射线和量化落点复核。
+- NORMAL／WEIGHTED 维护已确认动作的原线路线进度与高度差，从最新实测状态重新求解偏移候选。接续校验通过后恢复正常门槛，局部候选受阻时可转入原接回搜索。WEIGHTED 全局重规划继续沿用保存权重。
+- `CorridorPlanner` 的动作细化保留不同走法的优先队列。可并行的地图查询通过固定候选池分配分支切片，预留并汇总同轮预算。每个分支复用父动作链，空闲工作者可接收新分叉。候选工作者内部的几何批量同步执行，防止等待同一线程池。粗搜仍采用原队列，完整运动状态在定时预演阶段去重。已发现的完成路线在最快估时的 1.15 倍内比较瓶颈、连续高风险空中动作和累计风险。
+- `CorridorRepair` 可以为连续上升转近平飞提出一次辅助上升组合，复核顶棚、真实量化落点和后续瞬移窗口。稳定贴地候选可优先于窄窗口的空中方案。全局几何规划完成后的定时预演与接回仍通过现有 `PathService` 流程提交。
+- Java 25 离线 Gradle Build 通过。定向回归覆盖逐步 Pitch 和 Yaw 量化、N／N+1 门槛、辅助上升与顶棚阻断，以及共享预算下的并行分支。六项隔离客户端审计的独立终态与证据见[路线结果](build/path-audit/normal-weighted-robust-routes/routes.md)和[结构化摘要](build/path-audit/normal-weighted-robust-routes/summary.json)。
+
+
+- **客户端结果。** P1→P2 两档各耗尽 400 万展开。P2→P5 两档各有两次预演触限，同状态重规划随后被抑制。P2→P6 NORMAL 在确认 4 次瞬移后失败，WEIGHTED 确认 27 次并实际到达 `(-9.5,145,-19.5)`。WEIGHTED 观察到跨 9 跳的高度修正和接回后恢复一拍。六次均未选用辅助上升。实跑后独立时序适配并通过定向复验，历史冻结物理指纹一致。
+- **当前验证边界。** 15% 时间窗基于已经发现的候选，精细预演失败仍走现有接回或重规划流程。跨阶段恢复几何前沿，以及辅助上升的两跳耗时纳入全局路线比较，仍未接入。
+
+
+### P2→P6 NORMAL / WEIGHTED 定向诊断
+
+- 隔离审计开关 `ug.corridor.targetedDiagnosis` 记录第 2 跳的包应用、物理前后、原生视角和施放门槛，并在 NORMAL 第 5 跳进入恢复或 WEIGHTED 第 2 跳确认后停止。候选检查只写诊断事件。Java 25 构建与定向回归通过。
+- 两个短前缀均于第 6 Tick 派发第 2 跳，确认了预演与运行时采样间已有一次重力更新。历史 NORMAL 的第 7 Tick 原因仍缺门槛快照。历史第 5 跳离线模型复现原候选被拒，并验证到 `(101.5,198,160.5)` 的一条替代接续。[诊断摘要](build/path-audit/p2-p6-targeted-diagnosis/summary.md)
+
+
+### NORMAL / WEIGHTED 确认交接、候选回退与故障记录
+
+- `RouteCastTiming` 区分包应用和确认消费。普通／权重预演从预测的确认消费状态推进下一跳，实际复核使用已经消费确认的实测状态。物理交接与 N／N+1 瞄准门槛分开。
+- `LocalCandidateFallback` 在施放前拒绝后，从最新实测状态按原候选顺序重选，累计复核上限为 7。没有可用替代时使用既有接回流程。位置待确认时保留原动作。
+- `PathFailureTrace` 默认在 `logs/path-finding/failures.jsonl` 异步导出阻断、晚发、替换、局部恢复和失败终止的关联窗口。`ClientTerrain` 在原碰撞检查中提供命中的方块。两次短前缀和离线回归记录了晚发后确认、实际射线拒绝后替换，并复现历史建模替代候选。实跑后补充替代结果的关联导出，定向夹具通过。[报告与日志](build/path-audit/p2-p6-timing-and-fallback/summary.md)
+
+### 寻路发布与调试隔离
+
+- 本地 `test/path-finder-debug` 保存发布前的客户端审计入口、隔离启动器和短窗口夹具。发布 source set 只包含正常物品使用和服务器位置确认。主树删除本地寻路测试按钮与 `CorridorClientAudit`。保留合法的农场业务命令。
+- `PathSettings` 为缺失配置提供 60 Hz 原生瞄准刷新和 GPU 关闭。客户端与预演读取同一瞄准配置，物理 Tick 保持独立。`DetectedLocalMap` 用当前连接验证过的世界标识匹配本地 `map.json` 和区块索引，切换连接、世界或区域使会话和显示失效。识别结果在寻路设置只读展示。
+- `PathLatency` 用与 Zombie Shootout 相同的原生 Ping/Pong 传输，独立匹配请求和连接。客户端消费工作线程报告的动作计算阶段，从实际执行起点每三秒检查周期采样。任务结束时丢弃尚未返回的结果。
+- `InputRequests` 按来源合并各输入通道。路径会话在采样起点前申请输入阻断并在终态归还。U 持有鼠标位移与捕获释放请求。农场沿用原生逻辑抓取与桌面指针释放的协调，GUI、现有宏停止入口和程序内部模拟输入保留原有事件路径。
+- `PathSearchESP` 提供按尝试有界的节点和动作快照。粗搜从实际展开位置取样，动作层使用已预演的瞬移起点和量化落点、实时拒绝点和已执行移动轨迹。通道壳层独立读取模式限制。HUD 读取会话的阶段、预算、动作、恢复、输入及延迟。没有成本统计或现场观测的数据保持空白。
+- 开发者选项中的 `Enable Pathfinding Log` 默认关闭，开启后随下一次寻路会话创建记录器。日志写入运行目录的 `logs/path-finding/failures.jsonl`。`PathFailureTrace` 用动作、候选、确认与事件序号串起晚发、实时复核、改选及最终处置，按增量交给异步 JSONL 写入器。瞄准证据包含外层阈值、修正阈值和最近一次原生转动结果。
+- 账号配置页末尾的恢复功能使用 `MappingConfirmButton` 二次确认交互和账号修订号校验。正式配置编码器生成所选文件的默认内容，写入成功后重新加载该文件。
+- Java 25 离线发布构建和 `PathReleaseRegression` 覆盖默认值、地图匹配、输入所有权、延迟时钟、ESP、HUD、单文件恢复和故障日志夹具。鼠标捕获与 Mixin 的真实回调、服务器地图识别及实测延迟由后续现场确认。

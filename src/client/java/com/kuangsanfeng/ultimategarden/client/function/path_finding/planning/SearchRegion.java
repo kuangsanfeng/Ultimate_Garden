@@ -35,7 +35,7 @@ final class SearchRegion {
         return Map.of("minChunkX",minX,"maxChunkX",maxX,"minChunkZ",minZ,"maxChunkZ",maxZ,
                 "radialPaddingChunks",expanded?2:0,"metric","EUCLIDEAN_CHUNK_CENTERS");
     }
-    void visit(Point p,int stage){
+    synchronized void visit(Point p,int stage){
         if(track) visited.computeIfAbsent(Chunk.of(p),k->new long[4])[stage]++;
     }
     List<Map<String,Object>> drain(){

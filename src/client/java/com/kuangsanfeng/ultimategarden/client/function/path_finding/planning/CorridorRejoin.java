@@ -1,113 +1,128 @@
 package com.kuangsanfeng.ultimategarden.client.function.path_finding.planning;
 
 import com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.Point;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.FlightTiming;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.TransmissionModel;
+import com.kuangsanfeng.ultimategarden.client.platform.input.view.ViewAngles;
 
 import java.util.*;
 
 import static com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.*;
 
-/** Short ground-only search from actual feet. Teleport angles do not determine a corridor entrance. */
+/** Bounded temporary route to a region with a validated outgoing action. */
 public final class CorridorRejoin {
-    private static final int NODE_LIMIT=128, STEP_LIMIT=10;
+    private static final int NODE_LIMIT=96, STEP_LIMIT=10;
+    public static final double RANGE=32;
     private static final double MAX_STEP=.6;
-    private static final int[][] DIRECTIONS={{1,0},{-1,0},{0,1},{0,-1}};
-    private static final String[] AXES={"+X","-X","+Z","-Z"};
 
-    public record Edge(String direction, Point from, Point target, String reason) {}
     public record Entrance(Point point, double progress, int steps) {}
-    public record Search(List<Segment> actions, Entrance selected, int expanded, int open,
-                         List<Edge> firstEdges, List<Entrance> entrances) {}
-    private record Node(Point feet, Node parent, Segment step, int depth) {}
-    private record Candidate(Segment step, Point point, String reason) {}
+    public record Search(List<Segment> actions, Entrance selected, int expanded, int open, String reason) {}
+    private record Node(CorridorRepair.Start state, Node parent, Segment step, int depth, double cost, double rank) {}
+    private record Key(Point point, int yaw, int pitch, int travel) {}
 
     private CorridorRejoin() {}
 
     public static Search find(CorridorRepair corridor,CorridorRepair.Start start,double progress,Terrain terrain,
-                              Set<Point> rejected,double jumpHeight) {
-        Point feet=start.motion().feet();
-        var root=new Node(feet,null,null,0);
-        var queue=new ArrayDeque<Node>();
-        var visited=new HashSet<Point>();
-        var firstEdges=new ArrayList<Edge>();
-        var entrances=new ArrayList<Entrance>();
-        queue.add(root);
-        visited.add(feet);
-        Node selected=null;
-        double bestProgress=-1;
+                              Set<Point> rejected,double jumpHeight){
+        return find(corridor,start,progress,terrain,rejected,jumpHeight,()->false);
+    }
+
+    public static Search find(CorridorRepair corridor,CorridorRepair.Start start,double progress,Terrain terrain,
+                              Set<Point> rejected,double jumpHeight,java.util.function.BooleanSupplier cancelled){
+        Point origin=start.motion().feet();
+        var queue=new PriorityQueue<Node>(Comparator.comparingDouble(Node::rank).thenComparingInt(Node::depth));
+        var best=new HashMap<Key,Double>();
+        queue.add(new Node(start,null,null,0,0,0));
+        best.put(key(start),0.0);
         int expanded=0;
-        while(!queue.isEmpty() && expanded<NODE_LIMIT){
-            var node=queue.removeFirst();
+        while(!queue.isEmpty()&&expanded<NODE_LIMIT&&!cancelled.getAsBoolean()){
+            var node=queue.remove();
+            if(node.cost()>best.getOrDefault(key(node.state()),Double.POSITIVE_INFINITY))continue;
             expanded++;
-            if(node.depth>0 && !rejected.contains(node.feet)){
-                double at=corridor.rejoinProgress(node.feet,progress,terrain);
-                if(at>=0){
-                    entrances.add(new Entrance(node.feet,at,node.depth));
-                    if(selected==null || preference(at,node.depth,progress)>preference(bestProgress,selected.depth,progress)){
-                        selected=node;
-                        bestProgress=at;
-                    }
+            var state=node.state();
+            Point point=state.motion().feet();
+            if(node.depth()>0&&!rejected.contains(point)){
+                double next=corridor.confirmedRejoin(point,progress,terrain);
+                if(next>=0&&corridor.viable(state,next,terrain)){
+                    var route=new ArrayList<Segment>();
+                    for(var n=node;n.step()!=null;n=n.parent())route.add(n.step());
+                    Collections.reverse(route);
+                    return new Search(List.copyOf(route),new Entrance(point,next,node.depth()),expanded,queue.size(),"CONNECTED_REGION");
                 }
             }
-            if(node.depth==STEP_LIMIT)continue;
-            // All four directions are checked from the real starting position, even at a corridor boundary.
-            for(int d=0;d<DIRECTIONS.length;d++){
-                var vector=DIRECTIONS[d];
-                double x=Math.floor(node.feet.x())+.5+vector[0],z=Math.floor(node.feet.z())+.5+vector[1];
-                var candidate=neighbor(node.feet,x,z,terrain,jumpHeight);
-                if(node==root)firstEdges.add(new Edge(AXES[d],node.feet,candidate.point,candidate.reason));
-                if(candidate.step!=null && visited.add(candidate.point))
-                    queue.addLast(new Node(candidate.point,node,candidate.step,node.depth+1));
+            if(node.depth()>=STEP_LIMIT)continue;
+            var choices=new ArrayList<CorridorRepair.Choice>();
+            for(var step:movement(state,terrain,jumpHeight))
+                choices.add(new CorridorRepair.Choice(List.of(step),0,progress,null,0,0,false,"REJOIN_NAV_GROUND"));
+            choices.addAll(corridor.directionalCasts(state,progress,terrain,cancelled,true));
+            for(var choice:choices){
+                var step=choice.last();
+                if(step.to().distance(origin)>RANGE||step.from().distance(origin)>RANGE)continue;
+                var next=corridor.after(state,choice,terrain);
+                if(next==null)continue;
+                double cost=node.cost()+1+step.cost()+choice.castTick()*.12+CorridorRepair.rotationCost(state,step)*.016;
+                Key key=key(next);
+                if(cost>=best.getOrDefault(key,Double.POSITIVE_INFINITY))continue;
+                best.put(key,cost);
+                double distance=corridor.centerlineDistance(step.to());
+                double rank=cost+Math.min(RANGE,distance)*.18+step.to().distance(corridor.goal())*.025;
+                queue.add(new Node(next,node,step,node.depth()+1,cost,rank));
             }
         }
-        if(selected==null)return new Search(List.of(),null,expanded,queue.size(),List.copyOf(firstEdges),List.copyOf(entrances));
+        return new Search(List.of(),null,expanded,queue.size(),cancelled.getAsBoolean()?"CANCELLED":queue.isEmpty()?"REJOIN_REGION_UNREACHABLE":"REJOIN_NODE_BUDGET");
+    }
+
+    private static Key key(CorridorRepair.Start state){
+        return new Key(state.motion().feet(),(int)Math.round(ViewAngles.wrap(state.yaw())/15),
+                (int)Math.round(state.pitch()/15),(int)(state.airborneDistance()/6));
+    }
+
+    static List<Segment> movement(CorridorRepair.Start state,Terrain terrain,double jumpHeight){
+        var motion=state.motion();
+        Point from=motion.feet();
         var actions=new ArrayList<Segment>();
-        for(Node n=selected;n.step!=null;n=n.parent)actions.add(n.step);
-        Collections.reverse(actions);
-        return new Search(List.copyOf(actions),new Entrance(selected.feet,bestProgress,selected.depth),expanded,queue.size(),
-                List.copyOf(firstEdges),List.copyOf(entrances));
-    }
-
-    private static double preference(double at,int steps,double progress) {
-        // Prefer an entrance ahead of the old progress. Keep the approach short when progress is similar.
-        return (at>=progress?2:0)+(at-progress)-steps*.22;
-    }
-
-    private static Candidate neighbor(Point from,double x,double z,Terrain terrain,double jumpHeight) {
-        Point level=new Point(x,from.y(),z);
-        if(terrain.supported(level))return edge(from,level,terrain,jumpHeight);
-        double rise=Math.max(jumpHeight,MAX_STEP);
-        var support=terrain.localSurface(new Point(x,from.y()+rise,z),rise+MAX_STEP);
-        if(support.isPresent())return edge(from,support.get(),terrain,jumpHeight);
-        var check=terrain.motionSweep(level,level);
-        return new Candidate(null,level,switch(check){
-            case CLEAR -> "NO_SUPPORT_IN_STEP_OR_JUMP_RANGE";
-            case BLOCKED -> "BODY_COLLISION_OR_HEIGHT";
-            case UNKNOWN -> "UNKNOWN_GEOMETRY";
-        });
-    }
-
-    private static Candidate edge(Point from,Point to,Terrain terrain,double jumpHeight){
-        double dy=to.y()-from.y();
-        if(dy < -MAX_STEP-.001 || dy>Math.max(jumpHeight,MAX_STEP)+.001)
-            return new Candidate(null,to,"HEIGHT_DIFFERENCE");
-        if(!terrain.supported(to))return new Candidate(null,to,"NO_TARGET_SUPPORT");
-        Movement movement=dy>MAX_STEP?Movement.JUMP:Movement.WALK;
-        Terrain.MotionCheck check;
-        if(Math.abs(dy)<.001){
-            check=terrain.motionSweep(from,to);
-            if(check==Terrain.MotionCheck.CLEAR && !terrain.supported(new Point((from.x()+to.x())/2,from.y(),(from.z()+to.z())/2)))
-                return new Candidate(null,to,"NO_INTERMEDIATE_SUPPORT");
-        }else{
-            double top=Math.max(from.y(),to.y())+(movement==Movement.JUMP?.1:0);
-            Point up=new Point(from.x(),top,from.z()),across=new Point(to.x(),top,to.z());
-            check=terrain.motionSweep(from,up);
-            if(check==Terrain.MotionCheck.CLEAR)check=terrain.motionSweep(up,across);
-            if(check==Terrain.MotionCheck.CLEAR)check=terrain.motionSweep(across,to);
+        if(!motion.grounded()){
+            var settled=FlightTiming.predict(motion,24,terrain);
+            if(settled!=null&&settled.grounded()&&from.sameColumn(settled.feet())&&settled.feet().y()<from.y()-.05)
+                actions.add(new Segment(Movement.FALL,from,settled.feet(),state.yaw(),0,0,1));
+            return actions;
         }
-        if(check!=Terrain.MotionCheck.CLEAR)
-            return new Candidate(null,to,check==Terrain.MotionCheck.UNKNOWN?"UNKNOWN_GEOMETRY":"SWEPT_COLLISION");
+        // All eight neighbors are expanded repeatedly as graph edges, including diagonals.
+        for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+            if(dx==0&&dz==0)continue;
+            double x=Math.floor(from.x())+.5+dx,z=Math.floor(from.z())+.5+dz;
+            double rise=Math.max(jumpHeight,MAX_STEP);
+            Point level=new Point(x,from.y(),z);
+            if(terrain.supported(level))addGround(actions,from,level,terrain,jumpHeight);
+            else terrain.localSurface(new Point(x,from.y()+rise,z),rise+MAX_STEP)
+                    .ifPresent(surface->addGround(actions,from,surface,terrain,jumpHeight));
+        }
+        return actions;
+    }
+
+    public static boolean validateMotion(Segment step,CorridorRepair.Start start,Terrain terrain,double jumpHeight){
+        if(step.movement()==Movement.TRANSMISSION)return true;
+        Point from=start.motion().feet(),to=step.to();
+        if(step.movement()==Movement.FALL)
+            return from.sameColumn(to)&&from.y()>=to.y()&&terrain.sweep(from,to)&&terrain.supported(to);
+        if(!start.motion().grounded()||from.distance(to)>2.5)return false;
+        var available=new ArrayList<Segment>();
+        addGround(available,from,to,terrain,jumpHeight);
+        return !available.isEmpty()&&available.getFirst().movement()==step.movement();
+    }
+
+    private static void addGround(List<Segment> actions,Point from,Point to,Terrain terrain,double jumpHeight){
+        double dy=to.y()-from.y();
+        if(dy< -MAX_STEP-.001||dy>Math.max(jumpHeight,MAX_STEP)+.001||!terrain.clear(to)||!terrain.supported(to))return;
+        Movement movement=dy>MAX_STEP?Movement.JUMP:Movement.WALK;
+        if(Math.abs(dy)<.001){
+            if(!terrain.sweep(from,to)||!terrain.supported(new Point((from.x()+to.x())/2,from.y(),(from.z()+to.z())/2)))return;
+        }else{
+            double y=Math.max(from.y(),to.y())+(movement==Movement.JUMP?.1:0);
+            Point up=new Point(from.x(),y,from.z()),across=new Point(to.x(),y,to.z());
+            if(!terrain.sweep(from,up)||!terrain.sweep(up,across)||!terrain.sweep(across,to))return;
+        }
         double yaw=TransmissionModel.toward(from,to)[0];
-        return new Candidate(new Segment(movement,from,to,yaw,0,Math.max(0,dy),0),to,"LEGAL_"+movement.name());
+        actions.add(new Segment(movement,from,to,yaw,0,Math.max(0,dy),from.distance(to)));
     }
 }

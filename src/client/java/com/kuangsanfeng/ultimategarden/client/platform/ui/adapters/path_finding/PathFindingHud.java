@@ -39,6 +39,19 @@ public final class PathFindingHud {
             var point=waiting?candidate.point():new com.kuangsanfeng.ultimategarden.client.function.instant_transmission.flight.Point(-12,70,34);
             rows.add(new String[]{language.text(PREFIX+"candidate"),point.x()+" / "+point.y()+" / "+point.z()});
         }
+        var details=controller.hudFields();
+        if(!waiting && config.visible(ID,"status") && details.containsKey("status"))
+            rows.set(0,new String[]{language.text(PREFIX+"status"),details.get("status")});
+        for(String field:com.kuangsanfeng.ultimategarden.client.platform.persistence.config.model.display.HudConfig.fields(ID)){
+            if(field.equals("status")||!config.visible(ID,field)||!details.containsKey(field))continue;
+            rows.add(new String[]{language.text(PREFIX+field),details.get(field)});
+        }
+        if(config.visible(ID,"latency") && (editing||controller.service().stage()!=PathService.Stage.IDLE)){
+            Double latency=controller.latencyMilliseconds();
+            String value=latency==null?language.text(PREFIX+(controller.latencyStatus().equals("UNAVAILABLE")?
+                    "latency_unavailable":"latency_pending")):String.format(Locale.ROOT,"%.2f ms",latency);
+            rows.add(new String[]{language.text(PREFIX+"latency"),value});
+        }
         boolean progress=(waiting||editing) && config.visible(ID,"remaining");
         if(progress)rows.add(new String[]{language.text(PREFIX+"remaining"),String.format(Locale.ROOT,"%.2f s",waiting?candidate.remainingMs()/1000.0:5.0)});
         int width=235,height=progress?41:28;
@@ -57,7 +70,7 @@ public final class PathFindingHud {
         width=(int)Math.round(bw/scale);height=(int)Math.round(bh/scale);
         int accent=ThemePalette.from(configs.getUIConfig()).accent();
         g.pose().pushMatrix();g.pose().translate((float)x,(float)y);g.pose().scale(scale);
-        HudPanel.background(g,width,height,accent);HudPanel.title(g,language.text(PREFIX+"title"));
+        HudPanel.background(g,width,height,accent);HudPanel.title(g,language.text(PREFIX+"hud_title"));
         int rowY=26;
         for(var row:rows){int h=HudPanel.rowHeight(row[0],row[1],width);HudPanel.row(g,row[0],row[1],width,rowY,h,0xffffffff);rowY+=h;}
         if(progress){

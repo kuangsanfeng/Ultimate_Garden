@@ -330,6 +330,27 @@ public final class ConfigManager {
         defaults(module); return save(module);
     }
 
+    /** Uses the ordinary encoders and loading rules for one verified account file. */
+    public synchronized boolean restoreAccountDefaults(AccountDirectories.Profile expected,long revision,Module module) {
+        if(accounts==null || expected==null || !expected.equals(profile) || revision!=accountRevision
+                || pendingRestart.contains(module) || protectedFiles.contains(module)) return false;
+        try(var guard=accounts.lock()){
+            verifyStorage(module);
+            var defaults=new ConfigManager(true);
+            defaults.defaults(module);
+            var clean=defaults.encode(module,new JsonObject());
+            if(!io.write(file(module),clean))return false;
+            if(module==Module.ESP)esp.clearForAccount();
+            defaults(module);
+            load(module);
+            return true;
+        } catch(IOException | RuntimeException error){
+            Ultimate_Garden.LOGGER.error("Selected account defaults could not be restored",error);
+            return false;
+        }
+    }
+    private ConfigManager(boolean defaultsOnly) {}
+
     public record CopyPlan(AccountDirectories.Profile source, AccountDirectories.Profile target, Set<Module> modules, long revision) {
         public CopyPlan { modules = Set.copyOf(modules); }
     }

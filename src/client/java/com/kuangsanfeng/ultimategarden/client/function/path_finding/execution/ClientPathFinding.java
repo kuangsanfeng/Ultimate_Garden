@@ -1,6 +1,8 @@
 package com.kuangsanfeng.ultimategarden.client.function.path_finding.execution;
 
 import com.kuangsanfeng.ultimategarden.Ultimate_Garden;
+import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.JsonlWriter;
+import static com.kuangsanfeng.ultimategarden.client.platform.persistence.log.JsonSnapshot.map;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PathRouteESP;
 import com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput;
@@ -36,6 +38,7 @@ import java.io.UncheckedIOException;
 import java.util.Map;
 import java.util.List;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.FlightTiming;
+import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.RouteCastTiming;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.model.FlightTiming.*;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorRepair;
 import com.kuangsanfeng.ultimategarden.client.function.path_finding.planning.CorridorRejoin;
@@ -51,7 +54,7 @@ import java.util.function.Consumer;
 
 import static com.kuangsanfeng.ultimategarden.client.function.path_finding.PathTypes.*;
 
-/** Client-thread bridge. The debug transport is restricted to integrated-server sessions. */
+/** Client-thread bridge for native game inputs and server position updates. */
 public final class ClientPathFinding {
     private static final BiConsumer<String,Map<String,Object>> NO_EVENTS = (event,data) -> {};
     public static final ClientPathFinding INSTANCE=new ClientPathFinding();
@@ -62,15 +65,82 @@ public final class ClientPathFinding {
     private NativeDriver active;
     private Running running;
     private RouteRequest relay;
+    private NativeDriver sessionDriver;
+    public com.kuangsanfeng.ultimategarden.client.function.esp.ESPGeometry scanOverlay(int ageBand){
+        var driver=sessionDriver;
+        return driver==null||service.stage()!=PathService.Stage.PLANNING?null:driver.display.scan(ageBand);
+    }
+    public com.kuangsanfeng.ultimategarden.client.function.esp.ESPGeometry calculationOverlay(boolean verified){
+        var driver=sessionDriver;
+        return driver==null?null:driver.display.actions(verified);
+    }
+    public Map<String,String> hudFields(){
+        var fields=new LinkedHashMap<String,String>();
+        var driver=sessionDriver;
+        var c=Minecraft.getInstance();
+        var stage=service.stage();
+        if(driver!=null && running!=null && c.player!=null){
+            var goal=running.request().goal();
+            var progress=driver.searchProgress;
+            String phase=stage==PathService.Stage.PLANNING&&driver.calculationActive?"ACTION_CALCULATION":stage.name();
+            fields.put("status",driver.settings.mode+" / "+phase);
+            fields.put("goal",goal.x()+" / "+goal.y()+" / "+goal.z());
+            fields.put("stage_time",String.format(java.util.Locale.ROOT,"%.1f s",(System.nanoTime()-(phase.equals("ACTION_CALCULATION")?driver.calculationStarted:driver.stageStarted))/1e9));
+            long expanded=((Number)progress.getOrDefault("totalExpanded",0)).longValue();
+            long budget=(long)driver.settings.searchNodesPerSegment()*driver.settings.maximumSearchSegments();
+            fields.put("search_budget",expanded+" / "+budget+" | Round "+progress.getOrDefault("segment","-"));
+            var branches=driver.activeBranches;
+            if(branches!=null)fields.put("active_branches",branches.toString());
+            if(phase.equals("ACTION_CALCULATION")){
+                fields.put("progress",progress.getOrDefault("candidateChecksAtOrigin","-")+" checks");
+            }else if(stage==PathService.Stage.PLANNING)fields.put("progress",fields.get("search_budget"));
+            if(driver.rehearsal!=null && stage==PathService.Stage.EXECUTING){
+                fields.put("progress",String.format(java.util.Locale.ROOT,"%d / %d | %.1f blocks",
+                        Math.min(driver.previewIndex+1,driver.rehearsalChoices()),driver.rehearsalChoices(),driver.position().distance(goal)));
+            }
+            if(driver.step!=null)fields.put("current_action",driver.step.movement().name());
+            if(driver.castStatus!=null)fields.put("cast_status",driver.castStatus);
+            if(driver.heightCorrection!=null)fields.put("height_offset",driver.heightCorrection.toString());
+            if(driver.rejoinPending||driver.detour!=null)fields.put("recovery_status","Local Rejoin");
+            String reason=driver.failureReason!=null?driver.failureReason:driver.castStatus;
+            if(reason!=null)fields.put("reason",reason);
+            if(driver.lastFault!=null)fields.put("last_failure",driver.lastFault);
+        }else if(service.snapshot()!=null){
+            fields.put("last_failure",service.snapshot().reason());
+            fields.put("reason",service.snapshot().reason());
+        }
+        fields.put("input_status",com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.describe(c));
+        return fields;
+    }
+    public String latencyStatus(){return sessionDriver==null?"UNAVAILABLE":sessionDriver.latency.status().name();}
+    public Double latencyMilliseconds(){return sessionDriver==null?null:sessionDriver.latency.milliseconds();}
+    private record MapContext(ClientLevel level,ClientPacketListener connection,String island,String instance,String area,String map,boolean trusted) {}
+    private MapContext mapContext;
+    private DetectedLocalMap detectedMap=new DetectedLocalMap(DetectedLocalMap.Status.UNKNOWN,null);
 
-    private record RouteRequest(Object owner, String map, Point goal, double distance, boolean simulate,
+    public DetectedLocalMap detectedMap(){return detectedMap;}
+    private void refreshMap(Minecraft client,boolean force){
+        var info=WorldInfoService.snapshot();
+        var context=new MapContext(client.level,client.getConnection(),info.island(),info.instance(),info.subArea(),info.map(),WorldInfoService.trustedLocation());
+        if(!force && context.equals(mapContext))return;
+        if(mapContext!=null && !context.equals(mapContext)){
+            if(running!=null)service.contextChanged("LOCAL_MAP_CONTEXT_CHANGED");
+            relay=null;
+            candidate=null;
+            PathRouteESP.clear();
+        }
+        mapContext=context;
+        detectedMap=DetectedLocalMap.resolve(MappingPaths.root(client.gameDirectory.toPath()),info,context.trusted());
+    }
+
+    private record RouteRequest(Object owner, String map, Point goal, double distance,
                                 BooleanSupplier equipped, TransmissionEquipment weapon,
                                 BiConsumer<String,Map<String,Object>> events, Consumer<Result> completion,
                                 ClientLevel level, ClientPacketListener connection, String island, String instance) {
         boolean matches(Minecraft c) {
             if (level!=c.level || connection!=c.getConnection()) return false;
             var world=WorldInfoService.snapshot();
-            return simulate || java.util.Objects.equals(instance,world.instance())
+            return java.util.Objects.equals(instance,world.instance())
                     && java.util.Objects.equals(island,world.island());
         }
     }
@@ -159,14 +229,15 @@ public final class ClientPathFinding {
     }
 
     private void startTarget(Point goal) {
-        String world=WorldInfoService.snapshot().island();
-        if (world==null || world.isBlank()) {hint("world_unavailable");return;}
         var c=Minecraft.getInstance();
+        refreshMap(c,true);
+        if(detectedMap.status()!=DetectedLocalMap.Status.FOUND){hint("local_map_"+detectedMap.status().name().toLowerCase(java.util.Locale.ROOT));return;}
+        String world=detectedMap.name();
         var settings=Ultimate_GardenClient.getConfigManager().getPathSettings();
         var weapon=settings.transmission?TransmissionEquipment.select(c.player.getInventory()).orElse(null):null;
         if (weapon==null) hint(settings.transmission?"no_weapon":"walking_only");
         try {
-            menuTicket=start(menuOwner,world,goal,weapon==null?12:weapon.range(),false,
+            menuTicket=start(menuOwner,world,goal,weapon==null?12:weapon.range(),
                     () -> weapon!=null && equipped(c,weapon),weapon,NO_EVENTS,result->{});
         } catch (IllegalStateException failure) {hint("start_unavailable");}
     }
@@ -182,6 +253,7 @@ public final class ClientPathFinding {
 
     public void register() {
         ClientTickEvents.END_CLIENT_TICK.register(c->{
+            refreshMap(c,false);
             if (candidate!=null && confirmation()==null) candidate=null;
             if (relay!=null && !relay.matches(c)) relay=null;
             if (running!=null && !running.request().matches(c)) service.contextChanged("WORLD_CONTEXT_CHANGED");
@@ -191,6 +263,7 @@ public final class ClientPathFinding {
                 pendingInput=null;
                 if (c.player!=null && c.level!=null) startTarget(goal);
             }
+            if(sessionDriver!=null)sessionDriver.sessionTick();
             service.tick();
         });
         ClientContextEvents.onDisconnect((handler,client)->{service.contextChanged("DISCONNECTED");clear();});
@@ -198,6 +271,8 @@ public final class ClientPathFinding {
         ClientContextEvents.onStopping(client->{service.close();clear();});
     }
     private void clear() {
+        mapContext=null;
+        detectedMap=new DetectedLocalMap(DetectedLocalMap.Status.UNKNOWN,null);
         candidate=null;
         pendingInput=null;
         relay=null;
@@ -213,6 +288,7 @@ public final class ClientPathFinding {
     public void positionUpdate(Vec3 position) {
         positionSequence++;
         lastPositionUpdate=point(position);
+        if(active!=null)active.packetApplied(lastPositionUpdate);
     }
     public void aimFrame() {
         if (active!=null) active.frame();
@@ -224,60 +300,47 @@ public final class ClientPathFinding {
         return service.stage().name()+(result==null?"":" / "+result.reason());
     }
     public boolean menuTaskActive() { return menuTicket!=null && service.stage()!=PathService.Stage.IDLE; }
-    public boolean menuTestAvailable() {
-        var c=Minecraft.getInstance();
-        return c.getSingleplayerServer()!=null && c.player!=null && !conflict() && c.hitResult instanceof BlockHitResult
-                && service.stage()==PathService.Stage.IDLE;
-    }
     public void cancelMenuTask() { if (menuTaskActive()) service.cancel(menuTicket); }
-    public void startMenuTest(String localMap) {
-        var c=Minecraft.getInstance();
-        if (!menuTestAvailable() || !(c.hitResult instanceof BlockHitResult hit)) throw new IllegalStateException("Local target unavailable");
-        var pos=hit.getBlockPos();
-        var shape=c.level.getBlockState(pos).getCollisionShape(c.level,pos);
-        if (shape.isEmpty()) throw new IllegalStateException("Target has no standing surface");
-        String world=localMap.strip();
-        if (world.isBlank()) throw new IllegalStateException("Enter the local map name");
-        var goal=new Point(pos.getX()+.5,pos.getY()+shape.max(net.minecraft.core.Direction.Axis.Y),pos.getZ()+.5);
-        menuTicket=start(menuOwner,world,goal,12,true,()->false,NO_EVENTS,result->{});
-        c.setScreen(null);
-    }
-    /** Caller supplies the confirmed range and a live check of the equipped AOTE/AOTV. */
-    public PathService.Ticket start(Object owner,String world,Point goal,double distance,boolean localSimulation,
-                                    BooleanSupplier equipped,BiConsumer<String,Map<String,Object>> events,Consumer<Result> completion) {
-        return start(owner,world,goal,distance,localSimulation,equipped,null,events,completion);
-    }
-    private PathService.Ticket start(Object owner,String world,Point goal,double distance,boolean localSimulation,
+
+    private PathService.Ticket start(Object owner,String world,Point goal,double distance,
                                      BooleanSupplier equipped,TransmissionEquipment weapon,BiConsumer<String,Map<String,Object>> events,
                                      Consumer<Result> completion) {
         var c=Minecraft.getInstance();
         var info=WorldInfoService.snapshot();
-        return start(new RouteRequest(owner,world,goal,distance,localSimulation,equipped,weapon,events,completion,
+        return start(new RouteRequest(owner,world,goal,distance,equipped,weapon,events,completion,
                 c.level,c.getConnection(),info.island(),info.instance()));
     }
 
     private PathService.Ticket start(RouteRequest request) {
         var c=Minecraft.getInstance();
-        if (!c.isSameThread() || c.player==null || c.level==null || conflict())
+        if (!c.isSameThread() || c.player==null || c.level==null || service.stage()!=PathService.Stage.IDLE || conflict())
             throw new IllegalStateException("Input unavailable");
-        if (request.simulate() && c.getSingleplayerServer()==null)
-            throw new IllegalStateException("Local simulator requires integrated server");
 
         PathSettings settings=Ultimate_GardenClient.getConfigManager().getPathSettings();
-        boolean transmission=settings.transmission && (request.simulate() || request.weapon()!=null || request.equipped().getAsBoolean());
+        boolean transmission=settings.transmission && (request.weapon()!=null || request.equipped().getAsBoolean());
         var path=MappingPaths.root(c.gameDirectory.toPath());
         var options=new Options(settings.mode,transmission,true,request.distance(),settings.jumpDetection?measurements.jump():1,
                 settings.searchNodesPerSegment(),settings.weights);
         var timing=new CorridorPlanner.Timing(settings.teleportCooldownMs(),settings.speedDetection?measurements.speed():4.3,settings.aim(PathSettings.Aim.SPEED),50);
-        var driver=new NativeDriver(c,settings,request.distance(),request.simulate(),request.equipped(),request.weapon(),transmission,request.events());
-        var ticket=service.start(request.owner(),point(c.player.position()),request.goal(),c.player.getYRot(),c.player.getXRot(),options,
+        var driver=new NativeDriver(c,settings,request.distance(),request.equipped(),request.weapon(),transmission,request.events(),request.map());
+        PhysicalGameInput.beginPath(c,driver);
+        PathService.Ticket ticket;
+        try {
+            ticket=service.start(request.owner(),point(c.player.position()),request.goal(),c.player.getYRot(),c.player.getXRot(),options,
                 ()->{try{return new MapTerrain(new MapRepository(path,request.map()));}catch(java.io.IOException e){throw new UncheckedIOException(e);}},
                 timing,driver,result->{
                     running=null;
+                    if(sessionDriver==driver)sessionDriver=null;
                     if (result.status()==Status.ARRIVED) relay=null;
                     driver.finishInput(result);
                     request.completion().accept(result);
                 });
+        } catch (RuntimeException | Error failure) {
+            PhysicalGameInput.endPath(driver);
+            driver.closeSession();
+            throw failure;
+        }
+        sessionDriver=driver;
         running=new Running(request,ticket);
         relay=null;
         return ticket;
@@ -304,7 +367,19 @@ public final class ClientPathFinding {
         private boolean downwardCast;
         private record DescentSample(CorridorRepair.Start start,long tick,long sequence) {}
         private DescentSample descentSample;
-        private final double aimDraw=Math.random();
+        private final double aimDraw;
+        private Double heightCorrection;
+        private int correctionHops,plannedCastAfter,consecutiveClimbs;
+        private boolean upwardTurnUsed;
+        private long actionStartTick;
+        private boolean normalWeighted;
+        private final PathFailureTrace faultTrace;
+        private JsonlWriter failureWriter;
+        private final LocalCandidateFallback fallback=new LocalCandidateFallback();
+        private long packetTick;
+        private int estimatedAimAfter;
+        private boolean aimWithinTolerance,actionWasLate;
+        private volatile Map<String,Object> lastPlanningSummary=Map.of();
         private CorridorRepair.Rehearsal rehearsal;
         private PathRouteESP.Prepared overlay;
         private CorridorRepair.Choice choice, rejected;
@@ -312,7 +387,11 @@ public final class ClientPathFinding {
         private final java.util.Set<Point> repositioned=new java.util.HashSet<>();
         private double routeProgress, pendingProgress;
         private CorridorRejoin.Search detour;
-        private int detourStep, rejoinWait;
+        private java.util.concurrent.Future<CorridorRejoin.Search> detourPlanning;
+        private Point detourPlanningOrigin;
+        private int detourStep, rejoinWait, rejoinAttempts;
+        private Point rejoinOrigin;
+        private double totalYaw, totalPitch;
         private final java.util.Set<Point> triedEntrances=new java.util.HashSet<>();
         private PathService.CorridorContinuation continuation;
         private boolean rejoinPending;
@@ -323,7 +402,6 @@ public final class ClientPathFinding {
         private final CastGate gate=new CastGate();
         private final PathSettings settings;
         private final double range;
-        private final boolean simulate;
         private final BooleanSupplier equipped;
         private final TransmissionEquipment weapon;
         private final boolean transmission;
@@ -344,17 +422,107 @@ public final class ClientPathFinding {
         private Point probe;
         private long probeSequence;
         private int probeTicks;
-        NativeDriver(Minecraft c,PathSettings settings,double range,boolean simulate,BooleanSupplier equipped,TransmissionEquipment weapon,boolean transmission,BiConsumer<String,Map<String,Object>> events) {
+        NativeDriver(Minecraft c,PathSettings settings,double range,BooleanSupplier equipped,TransmissionEquipment weapon,boolean transmission,BiConsumer<String,Map<String,Object>> events,String mapId) {
             client=c;world=c.level;player=c.player;keyboard=new VirtualKeyboard(c);this.settings=settings;
-            this.range=range;this.simulate=simulate;this.equipped=equipped;this.events=events;
+            this.range=range;this.equipped=equipped;this.events=events;
             this.weapon=weapon;this.transmission=transmission;selectingWeapon=weapon!=null;
+            aimDraw=Math.random();
+            faultTrace=!settings.pathfindingLog()?null:new PathFailureTrace(settings.mode.name(),mapId,this::writeFailure);
         }
+        private volatile Map<String,Object> searchProgress=Map.of();
+        private volatile int hudAttempt=-1;
+        private volatile Number activeBranches;
+        private long stageStarted=System.nanoTime();
+        private PathService.Stage lastStage;
+        private String castStatus,lastFault;
+        private double aimLastElapsed,aimLastMovement;
+        private final com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PathSearchESP display=
+                new com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PathSearchESP(
+                        ()->Ultimate_GardenClient.getConfigManager().getESPConfig().pathScan(),
+                        ()->Ultimate_GardenClient.getConfigManager().getESPConfig().pathCalculation());
+        private final PathLatency latency=new PathLatency(com.kuangsanfeng.ultimategarden.client.platform.network.ClientRttConnection.pathService());
+        private volatile int calculationAttempt=-1;
+        private volatile boolean logClosed;
+        private volatile long calculationStarted;
+        private volatile boolean calculationActive;
+        private void sessionTick(){
+            var connection=client.getConnection();
+            long now=System.nanoTime();
+            var stage=INSTANCE.service.stage();
+            if(stage!=lastStage){lastStage=stage;stageStarted=now;}
+            latency.tick(connection,now,calculationAttempt,
+                    com.kuangsanfeng.ultimategarden.client.platform.network.ClientRttConnection.sender(connection),
+                    (phase,at)->{
+                        if(logging())trace("LATENCY_REQUEST","END_CLIENT_TICK",map("stage",phase,"source","NATIVE_PING_PONG","requestNanos",at));
+                    });
+            if(latency.newResult()&&logging())trace("LATENCY_STATUS","END_CLIENT_TICK",
+                    map("stage",latency.phase(),"source","NATIVE_PING_PONG","status",latency.status(),"milliseconds",latency.milliseconds()));
+        }
+        private void closeSession(){latency.close();if(failureWriter!=null)failureWriter.close();}
+        private boolean logging(){
+            if(faultTrace==null)return false;
+            if(!Ultimate_GardenClient.getConfigManager().getPathSettings().pathfindingLog()&&!logClosed){
+                logClosed=true;
+                if(failureWriter!=null)failureWriter.close();
+            }
+            return faultTrace!=null&&!logClosed;
+        }
+
+        private void trace(String event,String phase,Map<String,Object> data){
+            if(logging()&&client.level==world)
+                faultTrace.add(event,phase,client.level.getGameTime(),positionSequence,data);
+            else if(logging()&&event.equals("TASK_END"))
+                faultTrace.add(event,phase,-1,positionSequence,data);
+        }
+
+        private void exportFailure(String reason){
+            if(logging())faultTrace.export(reason);
+        }
+
+        private void writeFailure(Map<String,Object> packet){
+            if(failureWriter==null){
+                var root=client.gameDirectory.toPath().resolve("logs").resolve("path-finding");
+                failureWriter=new JsonlWriter(root,(String)packet.get("runId"),true,writer->{
+                    if(writer.error!=null)Ultimate_Garden.LOGGER.warn("Path failure journal {}",writer.error);
+                });
+            }
+            if(packet.get("reason") instanceof String reason&&(reason.startsWith("ARRIVED:")||reason.startsWith("CANCELLED:"))){
+                failureWriter.endBatch("failures.jsonl",packet);
+            }else if(!failureWriter.offer("failures.jsonl",packet))
+                Ultimate_Garden.LOGGER.warn("Path failure window dropped {}",packet.get("runId"));
+            if(events!=NO_EVENTS)events.accept("PATH_FAILURE_WINDOW",packet);
+        }
+
+        private void packetApplied(Point feet){
+            if(logging()&&client.level==world){
+                packetTick=client.level.getGameTime();
+                trace("PACKET_APPLIED","POSITION_PACKET_TAIL",Map.of("state",forecast(),"packetFeet",feet));
+            }
+        }
+
         public Point position(){return point(client.player.position());}
         public boolean usable(){return client.level==world && client.player==player && client.player.isAlive() && !conflict();}
         public void begin(Segment action) {
+            latency.beginExecution(System.nanoTime());
             step=action;active=this;failed=jumpPressed=seenAir=done=false;ticks=0;previous=position();predicted=null;
             failureReason=null;
             descentSample=null;
+            actionStartTick=client.level.getGameTime();
+            plannedCastAfter=0;
+            estimatedAimAfter=0;
+            aimWithinTolerance=false;
+            actionWasLate=false;
+            if(logging())faultTrace.begin();
+            castStatus=null;
+            if(display.calculating()&&choice!=null)display.choice(choice,true);
+            if(normalWeighted&&action.movement()==Movement.TRANSMISSION){
+                var initial=forecast();
+                var estimate=RouteCastTiming.estimate(initial.yaw(),initial.pitch(),action.yaw(),action.pitch(),initial.aim());
+                estimatedAimAfter=detour==null&&choice!=null&&legIndex==0?RouteCastTiming.aimTick(choice.aimMs()):
+                        estimate==null?-1:RouteCastTiming.aimTick(estimate.ms());
+                plannedCastAfter=detour==null&&choice!=null&&legIndex==0?choice.castTick():
+                        estimate==null?0:RouteCastTiming.castTick(initial.ready(),estimate.ms(),heightCorrection!=null);
+            }
             mustGround=action.movement()==Movement.FALL && sameVerticalColumn(action)
                     && new ClientTerrain(client.level).descent(action.to(),action.to()).knowledge()==Knowledge.CLEAR;
             previousPositionSequence=positionSequence;
@@ -367,8 +535,20 @@ public final class ClientPathFinding {
             fields.put("pitch",pitch());
             if (frame!=null && frame.guide()!=null) fields.put("guide",frame.guide());
             events.accept("ACTION_START",fields);
+            if(logging())trace("ACTION_SELECTED","END_CLIENT_TICK_AFTER_PHYSICS",map(
+                    "state",forecast(),"action",action,"choice",choice,"progress",routeProgress,
+                    "startTick",actionStartTick,"expectedAimTick",estimatedAimAfter<0?null:actionStartTick+estimatedAimAfter,
+                    "expectedCastTick",actionStartTick+plannedCastAfter,"mode",heightCorrection==null?"N_PLUS_ONE":"N",
+                    "timingReason",heightCorrection==null?"NORMAL_FOLLOW":"HEIGHT_CORRECTION",
+                    "forecastOriginStage","CONFIRMATION_CONSUMED","plannedPhysicsSteps",plannedCastAfter,
+                    "matchedRehearsal",previewIndex<rehearsalChoices()?rehearsal.choices().get(previewIndex):null,
+                    "matchedRehearsalInput",previewIndex<rehearsalInputs()?rehearsal.actionInputs().get(previewIndex):null));
         }
+        private int rehearsalChoices(){return rehearsal==null?0:rehearsal.choices().size();}
+        private int rehearsalInputs(){return rehearsal==null?0:rehearsal.actionInputs().size();}
         public void planReady(Result result) {
+            trace("EXECUTABLE_PLAN","PLANNING_COMPLETED",Map.of("expanded",result.explored(),"completeCandidatesAtLeast",1,
+                    "actions",result.segments().size(),"farthest",result.end(),"reason",result.reason()));
             events.accept("EXECUTABLE_PLAN",Map.of("steps",result.segments().size(),"cost",result.cost(),"expanded",result.explored(),"reason",result.reason()));
         }
         private Motion motion() {
@@ -380,9 +560,17 @@ public final class ClientPathFinding {
                     (int)settings.aim(PathSettings.Aim.RATE),settings.aim(PathSettings.Aim.TOLERANCE),settings.aim(PathSettings.Aim.CORRECTION),
                     client.options.sensitivity().get(),client.options.invertMouseX().get(),client.options.invertMouseY().get(),aimDraw);
             return new CorridorRepair.Start(motion(),yaw(),pitch(),confirmedTravel,aim,
-                    new Ready(gate.remainingMs(System.nanoTime(),settings.teleportCooldownMs()),0,0));
+                    new Ready(gate.remainingMs(System.nanoTime(),settings.teleportCooldownMs()),0,0),
+                    heightCorrection,consecutiveClimbs,upwardTurnUsed);
         }
         @Override public void rehearsalStarting(CorridorRepair.Start initial,int limit){
+            if(!calculationActive){
+                calculationActive=true;
+                calculationStarted=System.nanoTime();
+                calculationAttempt++;
+            }
+            display.calculation();
+            trace("REHEARSAL_INPUT","END_CLIENT_TICK_SNAPSHOT",Map.of("state",initial,"limit",limit));
             events.accept("REHEARSAL_INPUT",Map.of("state",initial,"limit",limit));
         }
         @Override public void prepareRehearsalOverlay(CorridorRepair.Rehearsal result,BooleanSupplier cancelled) {
@@ -390,6 +578,10 @@ public final class ClientPathFinding {
         }
         public void rehearsalReady(CorridorRepair.Rehearsal result) {
             rehearsal=result;
+            if(display.calculating())result.choices().stream().limit(12).forEach(candidate->display.choice(candidate,true));
+            fallback.reset();
+            normalWeighted=!result.corridor().regional();
+            if(!rejoinPending){heightCorrection=null;correctionHops=consecutiveClimbs=0;upwardTurnUsed=false;}
             PathRouteESP.show(overlay);
             choice=rejected=null;
             previewIndex=legIndex=localRetries=settleWait=0;
@@ -397,18 +589,28 @@ public final class ClientPathFinding {
             routeProgress=result.initialProgress();
             rejoinWait=0;
             detour=null;
+            detourPlanning=null;
             if(rejoinPending) {
                 events.accept("REJOIN_REHEARSAL_RESULT",Map.of("actual",position(),"startProgress",routeProgress,
                         "finalProgress",result.progress(),"status",result.reason(),"expanded",result.expanded(),
                         "remaining",result.open(),"blockedAt",result.blockedAt()));
+                events.accept(result.complete()?"REJOIN_NAV_SUCCESS":"REJOIN_NAV_FAILED",
+                        Map.of("actual",position(),"progress",routeProgress,"reason",result.reason()));
                 rejoinPending=false;
-            }else triedEntrances.clear();
+            }else {triedEntrances.clear();rejoinAttempts=0;}
             step=lastActualCast=null;
             failed=false;
             terminalMovement=null;
+            var rehearsalStatus=map("status",result.reason(),"expanded",result.expanded(),"open",result.open(),
+                    "completeCandidates",result.complete()?1:0,"blockedAt",result.blockedAt(),"progress",result.progress(),
+                    "deadEnds",result.deadEnds(),"blockingSample",result.lastGeometryCheck());
+            trace("REHEARSAL_END","REHEARSAL_COMPLETED",rehearsalStatus);
+            if(!result.complete())exportFailure("REHEARSAL_"+result.reason());
             events.accept("REHEARSAL_END",Map.of("status",result.reason(),"verifiedChoices",result.choices().size(),"open",result.open(),"progress",result.progress(),
                     "deadEnds",result.deadEnds(),"lastGeometryCheck",result.lastGeometryCheck(),
                     "end",result.blockedAt(),"expanded",result.expanded(),"aim",forecast().aim()));
+            if(events==NO_EVENTS)return;
+            int rehearsalIndex=0;
             for(var proposed:result.choices()) {
                 var original=result.corridor().reference(proposed.reference());
                 var row=new LinkedHashMap<String,Object>();
@@ -416,6 +618,11 @@ public final class ClientPathFinding {
                 row.put("rehearsedY",proposed.castOrigin()==null?proposed.actions().getFirst().from().y():proposed.castOrigin().feet().y());
                 row.put("aimMs",proposed.aimMs());row.put("castTickAfterAimStart",proposed.castTick());row.put("reason",proposed.reason());
                 row.put("steps",proposed.actions());row.put("jumpAssist",proposed.jumpAssist());
+                if(!result.corridor().regional()){
+                    row.put("forecast",proposed.forecast());row.put("castOrigin",proposed.castOrigin());
+                    if(rehearsalIndex<result.actionInputs().size())row.put("input",result.actionInputs().get(rehearsalIndex));
+                }
+                rehearsalIndex++;
                 events.accept("REHEARSAL_ACTION",row);
             }
         }
@@ -440,6 +647,7 @@ public final class ClientPathFinding {
                 keyboard.releaseAll();
                 return false;
             }
+            if(detourPlanning!=null){pollDetour(corridor);return false;}
             if(detour!=null){advanceDetour(corridor);return false;}
             if(choice==null) {
                 var terrain=new LivePathTerrain(client.level);
@@ -475,24 +683,49 @@ public final class ClientPathFinding {
                             "aimYaw",yaw(),"aimPitch",pitch(),"confirmedTravel",confirmedTravel,"previewIndex",previewIndex,
                             "repositioned",List.copyOf(repositioned)));
                     if(!initial.motion().grounded() && rejoinWait++<24)return false;
-                    if(!initial.motion().grounded() || !startDetour(corridor,initial,terrain))fail("NO_CONNECTED_LOCAL_ACTION");
+                    if(!startDetour(corridor,initial))fail("NO_CONNECTED_LOCAL_ACTION");
                     return false;
                 }
                 legIndex=0;
                 settleWait=0;
                 choiceTick=client.level.getGameTime();
+                if(corridor.regional()){
+                    var data=new LinkedHashMap<String,Object>();
+                    data.put("mode","CORRIDOR");data.put("actual",position());
+                    data.put("yaw",yaw());data.put("pitch",pitch());
+                    data.put("radius",corridor.radius());data.put("arcProgress",corridor.arc(routeProgress));
+                    data.put("centerlineDistance",corridor.centerlineDistance(position()));
+                    data.put("referenceTargeted",false);data.put("reason",choice.reason());
+                    data.put("turn",CorridorRepair.rotationCost(initial,choice.actions().getFirst()));
+                    data.put("nextArcProgress",corridor.arc(choice.progress()));
+                    data.put("continuationRehearsed",hint!=null&&choice.reason().equals("REHEARSED_ANGLE"));
+                    events.accept("CORRIDOR_REGION_ACTION",data);
+                }
+                if(choice.reason().equals("UPWARD_TURN_ASSIST"))
+                    events.accept("UPWARD_TURN_SELECTED",Map.of("actual",position(),"direct","UNSTABLE_OR_BLOCKED",
+                            "actions",choice.actions(),"extraCasts",1,"plannedFirstCastTick",choice.castTick()));
                 events.accept("CORRIDOR_ACTION",Map.of("segment",choice.reference(),"progress",routeProgress,"nextProgress",choice.progress(),
                         "reason",choice.reason(),"actual",position(),"aimMs",choice.aimMs(),"startTick",choiceTick,
                         "expectedCastTick",choiceTick+choice.castTick(),"actions",choice.actions()));
                 begin(choice.actions().getFirst());
             }
-            if(!completed())return false;
-            if(failed)return false;
+            boolean actionDone=completed();
+            if(failed){
+                if((corridor.regional()||heightCorrection!=null)&&!failureReason().equals("TELEPORT_TRANSPORT_OR_WEAPON_UNAVAILABLE"))
+                    recoverRegion(corridor,failureReason());
+                return false;
+            }
+            if(!actionDone)return false;
             if(step.movement()!=Movement.TRANSMISSION&&!accepts(step)) {
-                fail("CORRIDOR_MOVEMENT_DIVERGED");
+                if(corridor.regional()||heightCorrection!=null)recoverRegion(corridor,"CORRIDOR_MOVEMENT_DIVERGED");
+                else fail("CORRIDOR_MOVEMENT_DIVERGED");
                 return false;
             }
             var movement=step.movement();
+            if(logging()&&movement!=Movement.TRANSMISSION){
+                trace("MOVEMENT_ACCEPTED","END_CLIENT_TICK_AFTER_PHYSICS",Map.of("action",step,"state",forecast()));
+                faultTrace.fallbackOutcome("FALLBACK_MOVEMENT_ACCEPTED");
+            }
             terminalMovement=choice.jumpAssist()?TerminalMovement.JUMP_ASSIST:TerminalMovement.valueOf(movement.name());
             release();
             step=null;
@@ -503,60 +736,159 @@ public final class ClientPathFinding {
             double verified=movement==Movement.TRANSMISSION?pendingProgress:
                     corridor.advanceTo(position(),routeProgress,new LivePathTerrain(client.level));
             if(verified>routeProgress) {
-                if(verified>=routeProgress+1 && Math.floor(verified)>Math.floor(routeProgress))triedEntrances.clear();
+                if(verified>=routeProgress+1 && Math.floor(verified)>Math.floor(routeProgress)){triedEntrances.clear();rejoinAttempts=0;}
                 routeProgress=verified;
                 rejoinWait=0;
                 repositioned.clear();
             } else if(corridor.reached(motion(),lastActualCast,new LivePathTerrain(client.level)))routeProgress=choice.progress();
             else if(choice.reason().equals("ADJUST_LAUNCH_POSITION")&&corridor.connected(position(),routeProgress,new LivePathTerrain(client.level)))
                 repositioned.add(choice.last().to());
-            else {fail("CORRIDOR_MOVEMENT_DID_NOT_REJOIN");return false;}
+            else {
+                if(corridor.regional()||heightCorrection!=null)recoverRegion(corridor,"CORRIDOR_MOVEMENT_DID_NOT_REJOIN");
+                else fail("CORRIDOR_MOVEMENT_DID_NOT_REJOIN");
+                return false;
+            }
+            if(normalWeighted){
+                boolean climbing=movement==Movement.TRANSMISSION&&lastActualCast!=null
+                        &&lastActualCast.to().y()-lastActualCast.from().y()>=1&&lastActualCast.pitch()<=-30;
+                consecutiveClimbs=climbing?consecutiveClimbs+1:0;
+                if(!climbing)upwardTurnUsed=false;
+                if(movement==Movement.TRANSMISSION)updateHeightCorrection(corridor);
+            }
             choice=rejected=null;
             localRetries=0;
+            fallback.reset();
             while(previewIndex<rehearsal.choices().size()&&rehearsal.choices().get(previewIndex).progress()<=routeProgress+.01)previewIndex++;
             PathRouteESP.advance(previewIndex,routeProgress);
             return false;
         }
-        private boolean startDetour(CorridorRepair corridor,CorridorRepair.Start start,LivePathTerrain terrain){
-            if(triedEntrances.size()>=3)return false;
-            var found=CorridorRejoin.find(corridor,start,routeProgress,terrain,triedEntrances,corridor.jumpHeight());
-            var details=new LinkedHashMap<String,Object>();
-            details.put("from",position());details.put("progress",routeProgress);details.put("expanded",found.expanded());
-            details.put("remaining",found.open());details.put("firstEdges",found.firstEdges());
-            details.put("entrances",found.entrances());details.put("selected",found.selected());details.put("actions",found.actions());
-            events.accept("REJOIN_SEARCH",details);
-            if(found.selected()==null)return false;
+        private void updateHeightCorrection(CorridorRepair corridor){
+            double original=corridor.originalHeight(routeProgress);
+            double delta=lastPositionUpdate.y()-original;
+            if(heightCorrection==null&&delta>=-.35)return;
+            if(heightCorrection!=null)correctionHops++;
+            var terrain=new LivePathTerrain(client.level);
+            if(heightCorrection!=null&&corridor.resumesOriginal(forecast(),routeProgress,terrain)){
+                events.accept("HEIGHT_CORRECTION_REJOINED",Map.of("actual",lastPositionUpdate,"referenceY",original,
+                        "progress",routeProgress,"deltaY",delta,"correctionHops",correctionHops,"nextAimExtraTicks",1));
+                heightCorrection=null;
+                correctionHops=0;
+            }else{
+                heightCorrection=Math.min(0,delta);
+                events.accept("HEIGHT_CORRECTION",Map.of("actual",lastPositionUpdate,"referenceY",original,
+                        "progress",routeProgress,"deltaY",delta,"correctionHops",correctionHops,"nextAimExtraTicks",0));
+            }
+        }
+
+        private void recoverRegion(CorridorRepair corridor,String reason){
+            release();
+            step=null;
+            choice=rejected=null;
+            failed=false;
+            if(!startDetour(corridor,forecast()))fail(reason);
+        }
+
+        private boolean startDetour(CorridorRepair corridor,CorridorRepair.Start start){
+            if(rejoinAttempts++>=3){
+                trace("REJOIN_NAV_FAILED","END_CLIENT_TICK",Map.of("state",start,"reason","LOCAL_ATTEMPT_LIMIT"));
+                exportFailure("REJOIN_NAV_FAILED");
+                events.accept("REJOIN_NAV_FAILED",Map.of("actual",position(),"reason","LOCAL_ATTEMPT_LIMIT"));
+                return false;
+            }
+            trace("REJOIN_NAV_START","END_CLIENT_TICK",Map.of("state",start,"progress",routeProgress,
+                    "attempt",rejoinAttempts,"decision","SCHEDULE_LOCAL_REJOIN"));
+            if(logging())exportFailure("LOCAL_REJOIN_STARTED");
+            events.accept("REJOIN_NAV_START",Map.of("actual",position(),"yaw",yaw(),"pitch",pitch(),"progress",routeProgress,
+                    "radius",corridor.radius(),"reason",corridor.centerlineDistance(position())>corridor.radius()
+                            ?"OUTSIDE_CORRIDOR":"NO_CONNECTED_LOCAL_ACTION"));
+            release();
+            step=null;
+            choice=rejected=null;
+            detourPlanningOrigin=start.motion().feet();
+            detourPlanning=service.planRejoin(corridor,start,routeProgress,triedEntrances);
+            return true;
+        }
+
+        private void pollDetour(CorridorRepair corridor){
+            if(!detourPlanning.isDone())return;
+            CorridorRejoin.Search found;
+            try{
+                found=detourPlanning.get();
+            }catch(InterruptedException e){
+                Thread.currentThread().interrupt();
+                fail("REJOIN_PLANNING_INTERRUPTED");
+                return;
+            }catch(java.util.concurrent.ExecutionException|java.util.concurrent.CancellationException e){
+                trace("REJOIN_NAV_FAILED","END_CLIENT_TICK",map("state",forecast(),"reason",e.toString()));
+                exportFailure("REJOIN_NAV_FAILED");
+                events.accept("REJOIN_NAV_FAILED",Map.of("actual",position(),"reason",e.toString()));
+                fail("REJOIN_PLANNING_FAILED");
+                return;
+            }finally{
+                detourPlanning=null;
+            }
+            if(position().distance(detourPlanningOrigin)>.75){
+                trace("REJOIN_NAV_FAILED","END_CLIENT_TICK",map("state",forecast(),"reason","START_MOVED_DURING_SEARCH"));
+                exportFailure("REJOIN_NAV_FAILED");
+                events.accept("REJOIN_NAV_FAILED",Map.of("actual",position(),"reason","START_MOVED_DURING_SEARCH"));
+                if(!startDetour(corridor,forecast()))fail("REJOIN_START_MOVED");
+                return;
+            }
+            trace("REJOIN_NAV_PLAN","END_CLIENT_TICK",Map.of("state",forecast(),"expanded",found.expanded(),
+                    "open",found.open(),"reason",found.reason(),"selected",found.selected()!=null));
+            if(found.selected()==null)exportFailure("LOCAL_REJOIN_FAILED");
+            events.accept("REJOIN_NAV_PLAN",Map.of("actual",position(),"progress",routeProgress,"expanded",found.expanded(),
+                    "remaining",found.open(),"reason",found.reason(),"actions",found.actions()));
+            if(found.selected()==null){
+                trace("REJOIN_NAV_FAILED","END_CLIENT_TICK",map("state",forecast(),"reason",found.reason(),"expanded",found.expanded()));
+                exportFailure("REJOIN_NAV_FAILED");
+                events.accept("REJOIN_NAV_FAILED",Map.of("actual",position(),"reason",found.reason()));
+                fail(found.reason());
+                return;
+            }
             triedEntrances.add(found.selected().point());
             release();
             choice=rejected=null;
             detour=found;
             detourStep=0;
-            begin(found.actions().getFirst());
-            return true;
+            rejoinOrigin=position();
+            beginDetourAction();
+        }
+
+        private void beginDetourAction(){
+            var action=detour.actions().get(detourStep);
+            if(!CorridorRejoin.validateMotion(action,forecast(),new LivePathTerrain(client.level),rehearsal.corridor().jumpHeight())){
+                rejectDetour("REJOIN_ACTION_GEOMETRY_CHANGED");
+                return;
+            }
+            choiceTick=client.level.getGameTime();
+            events.accept("REJOIN_NAV_ACTION",Map.of("index",detourStep,"actual",position(),"action",action));
+            begin(action);
         }
 
         private void advanceDetour(CorridorRepair corridor){
             boolean done=completed();
             if(!done&&!failed)return;
             Point actual=position();
-            var expected=step.to();
-            events.accept("REJOIN_STEP",Map.of("index",detourStep,"actual",actual,"target",expected,
-                    "movement",step.movement(),"grounded",client.player.onGround(),"status",failed?failureReason():"COMPLETED"));
-            if(failed || !accepts(step)){
-                rejectDetour("REJOIN_MOVEMENT_DIVERGED");
+            if(failed||!accepts(step)){
+                rejectDetour(failed?failureReason():"REJOIN_MOVEMENT_DIVERGED");
                 return;
             }
+            events.accept("REJOIN_NAV_CONFIRMED",Map.of("index",detourStep,"actual",actual,"target",step.to(),"movement",step.movement()));
             release();
             step=null;
             if(++detourStep<detour.actions().size()){
-                begin(detour.actions().get(detourStep));
+                beginDetourAction();
                 return;
             }
-            double joined=corridor.confirmedRejoin(actual,routeProgress,new LivePathTerrain(client.level));
-            if(!client.player.onGround()||joined<0){
-                rejectDetour("REJOIN_ENTRANCE_NOT_CONFIRMED");
+            var terrain=new LivePathTerrain(client.level);
+            double joined=corridor.confirmedRejoin(actual,routeProgress,terrain);
+            if(!client.player.onGround()||joined<0||!corridor.viable(forecast(),joined,terrain)){
+                rejectDetour("REJOIN_ENTRANCE_NOT_VIABLE");
                 return;
             }
+            trace("REJOIN_CONFIRMED","END_CLIENT_TICK",Map.of("state",forecast(),"oldProgress",routeProgress,"newProgress",joined));
+            exportFailure("LOCAL_REJOIN_CONFIRMED");
             events.accept("REJOIN_CONFIRMED",Map.of("actual",actual,"plannedEntrance",detour.selected(),
                     "previousProgress",routeProgress,"newProgress",joined,"yaw",yaw(),"pitch",pitch()));
             detour=null;
@@ -565,14 +897,14 @@ public final class ClientPathFinding {
         }
 
         private void rejectDetour(String reason){
-            events.accept("REJOIN_FAILED",Map.of("actual",position(),"target",detour.selected().point(),"reason",reason));
+            trace("REJOIN_NAV_FAILED","END_CLIENT_TICK",Map.of("state",forecast(),"reason",reason));
+            exportFailure("REJOIN_NAV_FAILED");
+            events.accept("REJOIN_NAV_FAILED",Map.of("actual",position(),"target",detour.selected().point(),"reason",reason));
             detour=null;
             release();
             step=null;
             failed=false;
-            var initial=forecast();
-            if(!initial.motion().grounded() || !startDetour(rehearsal.corridor(),initial,new LivePathTerrain(client.level)))
-                fail(reason);
+            if(!startDetour(rehearsal.corridor(),forecast()))fail(reason);
         }
 
         @Override public PathService.CorridorContinuation takeCorridorContinuation(){
@@ -587,7 +919,45 @@ public final class ClientPathFinding {
                     && Math.abs(a.last().castDistance()-b.last().castDistance())<.15;
         }
         private void recoverCast(String reason) {
-            if(++localRetries>3){fail(reason);return;}
+            if(logging()){
+                trace("CAST_REJECTED","END_CLIENT_TICK_AFTER_PHYSICS",map("reason",reason,"state",forecast(),
+                        "action",step,"choice",choice,"progress",routeProgress,"pending",gate.pending()));
+                exportFailure(reason);
+            }
+            if(normalWeighted&&detour==null){
+                if(gate.pending())return;
+                if(heightCorrection!=null)
+                    events.accept("HEIGHT_CORRECTION_BLOCKED",Map.of("reason",reason,"actual",position(),"beforeDispatch",true));
+                var corridor=rehearsal.corridor();
+                var actual=forecast();
+                var terrain=new LivePathTerrain(client.level);
+                var decision=fallback.choose(corridor,actual,routeProgress,positionSequence,false,choice,terrain,
+                        candidate->!candidate.reason().equals("ADJUST_LAUNCH_POSITION")||
+                                repositioned.size()<4&&!repositioned.contains(candidate.last().to()));
+                var details=Map.<String,Object>of("cause",reason,"state",actual,"decision",decision,"progress",routeProgress);
+                trace("LOCAL_CANDIDATE_FALLBACK","END_CLIENT_TICK_AFTER_PHYSICS",details);
+                events.accept("LOCAL_CANDIDATE_FALLBACK",details);
+                exportFailure(decision.reason());
+                if(decision.choice()!=null){
+                    long rejectedActionId=faultTrace==null?0:faultTrace.actionId();
+                    release();
+                    choice=decision.choice();
+                    rejected=null;
+                    legIndex=0;
+                    choiceTick=client.level.getGameTime();
+                    begin(choice.actions().getFirst());
+                    if(logging()){
+                        faultTrace.replaces(rejectedActionId);
+                        trace("FALLBACK_ACTION_SELECTED","END_CLIENT_TICK_AFTER_PHYSICS",
+                                Map.of("choice",choice,"state",actual,"replacesActionId",rejectedActionId));
+                    }
+                    if(step.movement()==Movement.TRANSMISSION)align(step.yaw(),step.pitch());
+                }else{
+                    recoverRegion(corridor,reason);
+                }
+                return;
+            }
+            if(detour!=null||++localRetries>3){fail(reason);return;}
             events.accept("LOCAL_CAST_REPAIR",Map.of("reason",reason,"segment",choice.reference(),"position",position(),"attempt",localRetries));
             rejected=choice;
             PathRouteESP.advance(previewIndex,routeProgress);
@@ -601,22 +971,44 @@ public final class ClientPathFinding {
                     || (settings.jumpDetection&&settings.initialJump&&!measurements.initialJumpTried);
         }
         @Override public SearchAudit planningAudit(int attempt) {
-            if (events==NO_EVENTS) return null;
+            boolean detailed=logging()||events!=NO_EVENTS;
+            if(logging())faultTrace.planAttempt(attempt);
+            hudAttempt=attempt;searchProgress=Map.of();activeBranches=null;calculationActive=false;display.coarse();
             return new SearchAudit((event, data) -> {
-                var fields=new LinkedHashMap<String,Object>(data);
-                fields.put("planAttempt",attempt);
-                events.accept("PLANNING_"+event,fields);
-            });
+                if(hudAttempt!=attempt)return;
+                if(event.equals("ACTION_CALCULATION_START")){
+                    if(!calculationActive){
+                        calculationActive=true;
+                        calculationStarted=System.nanoTime();
+                        calculationAttempt++;
+                    }
+                    display.calculation();
+                }
+                if(event.equals("COARSE_PLANNING_START")){
+                    calculationActive=false;
+                    display.coarse();
+                }
+                if(event.equals("WORK_PROGRESS"))searchProgress=data;
+                if(event.equals("BRANCH_BATCH"))activeBranches=(Number)data.get("activeBranches");
+                if(event.equals("WORKER_END")||event.equals("DECISION")){
+                    lastPlanningSummary=Map.copyOf(data);
+                }
+                if(events!=NO_EVENTS){
+                    var fields=new LinkedHashMap<String,Object>(data);
+                    fields.put("planAttempt",attempt);
+                    events.accept("PLANNING_"+event,fields);
+                }
+            },()->detailed&&!logClosed,display);
         }
         @Override public int candidateWorkers(){return settings.effectiveWorkers();}
         @Override public boolean gpuAcceleration(){return settings.gpuAcceleration();}
         @Override public int rehearsalLimit(){
-            return simulate?Math.max(1,Integer.getInteger("ug.path.rehearsalLimit",CorridorRepair.DEFAULT_SEARCH_LIMIT)):
-                    CorridorRepair.DEFAULT_SEARCH_LIMIT;
+            return CorridorRepair.DEFAULT_SEARCH_LIMIT;
         }
         @Override public void terminalPosition(Point measured,Point planned){
             var fields=new LinkedHashMap<String,Object>();
             fields.put("lastMeasuredFeet",measured);fields.put("plannedEnd",planned);
+            fields.put("nativeYawDegrees",totalYaw);fields.put("nativePitchDegrees",totalPitch);
             events.accept("TERMINAL_POSITION",fields);
         }
         public int maximumSearchSegments(){return settings.maximumSearchSegments();}
@@ -714,12 +1106,27 @@ public final class ClientPathFinding {
             long now=System.nanoTime();
             double elapsed=aimClock.step(now,(int)settings.aim(PathSettings.Aim.RATE));
             try {
-                if (elapsed>0) mouse.aim(client,aimYaw,aimPitch,settings.aim(PathSettings.Aim.SPEED),settings.aim(PathSettings.Aim.CURVE),elapsed);
+                aimLastElapsed=elapsed;aimLastMovement=0;
+                if (elapsed>0){
+                    double beforeYaw=yaw(),beforePitch=pitch();
+                    mouse.aim(client,aimYaw,aimPitch,settings.aim(PathSettings.Aim.SPEED),settings.aim(PathSettings.Aim.CURVE),elapsed);
+                    aimLastMovement=ViewAngles.error(beforeYaw,beforePitch,yaw(),pitch());
+                    totalYaw+=Math.abs(ViewAngles.wrap(yaw()-beforeYaw));
+                    totalPitch+=Math.abs(pitch()-beforePitch);
+                }
                 double error=ViewAngles.error(yaw(),pitch(),aimYaw,aimPitch);
+                boolean readyBefore=aimReady;
                 if (correction.ready(error,settings.aim(PathSettings.Aim.TOLERANCE),settings.aim(PathSettings.Aim.CORRECTION),now,()->aimDraw)) {
                     if (!aimReady) {alignedY=position().y();alignedAt=now;}
                     aimReady=true;
                 } else aimReady=false;
+                if(logging()){
+                    boolean within=error<=settings.aim(PathSettings.Aim.TOLERANCE);
+                    if(within!=aimWithinTolerance||readyBefore!=aimReady)
+                        trace("AIM_FRAME","RENDER_AFTER_CLIENT_TICKS",Map.of("state",forecast(),"errorDegrees",error,
+                                "withinTolerance",within,"ready",aimReady,"targetYaw",aimYaw,"targetPitch",aimPitch,"aimController",aimEvidence()));
+                    aimWithinTolerance=within;
+                }
             } catch (IllegalStateException unavailable) {
                 fail("AIM_FAILED");
                 events.accept("AIM_FAILED",Map.of("reason",unavailable.getMessage(),"feet",position()));
@@ -751,46 +1158,101 @@ public final class ClientPathFinding {
         public void replanning(String reason,int attempt){
             settleTicks=0;
             PathRouteESP.clear();
+            trace("REPLAN","END_CLIENT_TICK",Map.of("reason",reason,"attempt",attempt,"state",forecast()));
+            exportFailure("GLOBAL_REPLAN");
             events.accept("REPLAN",Map.of("reason",reason,"attempt",attempt,"actual",position(),
                     "pathInputBlocked",PhysicalGameInput.pathBlocked(),"routeEspCleared",PathRouteESP.snapshot()==null,
-                    "strategy",attempt==2&&settings.mode==Mode.WEIGHTED?Mode.NORMAL:settings.mode));
+                    "strategy",settings.mode));
+        }
+        @Override public void replanSuppressed(String reason){
+            trace("REPLAN_SUPPRESSED","END_CLIENT_TICK",Map.of("reason",reason,"state",forecast(),
+                    "basis","UNCHANGED_SEARCH_INPUT","comparedFields",List.of("feet","yaw","pitch","options","timing")));
+            exportFailure("REPLAN_SUPPRESSED");
+            events.accept("REPLAN_SUPPRESSED",Map.of("actual",position(),"yaw",yaw(),"pitch",pitch(),
+                    "reason",reason,"basis","UNCHANGED_SEARCH_INPUT"));
         }
         public boolean readyForReplan(){return client.player.onGround()||++settleTicks>=18;}
         public String failureReason(){return failureReason==null?"INPUT_UNAVAILABLE":failureReason;}
-        private void fail(String reason){failed=true;failureReason=reason;}
+        private void fail(String reason){
+            failed=true;failureReason=reason;lastFault=reason;
+            if(logging()&&client.level==world){
+                trace("DRIVER_FAILURE","END_CLIENT_TICK",Map.of("reason",reason,"state",forecast()));
+                exportFailure(reason);
+            }
+        }
         public boolean completed() {
             if(done||failed) return done;
-            if(client.screen!=null||client.isPaused()||!client.isWindowActive()||!client.mouseHandler.isMouseGrabbed()) {keyboard.releaseAll();return false;}
+            if(client.screen!=null||client.isPaused()||!client.isWindowActive()||!client.mouseHandler.isMouseGrabbed()) {
+                if(step!=null&&step.movement()==Movement.TRANSMISSION)castGate("CLIENT_INPUT_UNAVAILABLE",null,null,null);
+                keyboard.releaseAll();return false;
+            }
             if(++ticks>200){fail(gate.pending()?"POSITION_CONFIRMATION_TIMEOUT":"ACTION_TIMEOUT");return false;}
             if (gate.pending()) {
-                if (!confirmPosition()) return done;
+                if (!confirmPosition()){
+                    if(logging()&&step!=null&&step.movement()==Movement.TRANSMISSION&&positionSequence==confirmationSequence)
+                        trace("WAITING_AFTER_DISPATCH","END_CLIENT_TICK",Map.of("state",forecast(),"reason","POSITION_CONFIRMATION_PENDING"));
+                    return done;
+                }
                 if (!downwardCast) return done;
             }
-            if (PhysicalGameInput.beginPath(client,this)) {
-                var fields=Map.<String,Object>of("actualFeet",position(),"firstAction",step.movement(),
-                        "focusBlocked",PhysicalGameInput.focusReleased());
-                Ultimate_Garden.LOGGER.info("Path INPUT_BLOCK_STARTED {}",fields);
-                events.accept("INPUT_BLOCK_STARTED",fields);
+            if(step.movement()==Movement.TRANSMISSION) cast();
+            else {
+                if(display.calculating()&&previous!=null)display.movement(previous,position());
+                move();
             }
-            if(step.movement()==Movement.TRANSMISSION) cast(); else move();
             return done;
         }
+        private Map<String,Object> aimEvidence(){
+            return map("aimActive",aimActive,"readyFlag",aimReady,"outerThreshold",settings.aim(PathSettings.Aim.TOLERANCE),
+                    "correctionActive",correction.active(),"correctionThreshold",correction.active()?correction.threshold():null,
+                    "lastFrameElapsed",aimLastElapsed,"lastFrameViewChange",aimLastMovement,"nativeInput",aimLastElapsed<=0?"FRAME_RATE_WAIT":mouse.lastStep(),"readyMonotonicNanos",aimReady?alignedAt:null);
+        }
+        private void castGate(String blocker,Boolean aligned,Boolean schedule,Boolean cooldownPassed){
+            castStatus=blocker;
+            if(!logging())return;
+            long at=client.level.getGameTime(),expected=actionStartTick+plannedCastAfter;
+            faultTrace.gate(at,expected,positionSequence,blocker,map("firstBlocker",blocker,"aimController",aimEvidence(),
+                    "state",forecast(),"expectedAimTick",estimatedAimAfter<0?null:actionStartTick+estimatedAimAfter,
+                    "expectedCastTick",expected,"actionStartTick",actionStartTick,
+                    "targetYaw",step.yaw(),"targetPitch",step.pitch(),
+                    "errorDegrees",ViewAngles.error(yaw(),pitch(),step.yaw(),step.pitch()),
+                    "tolerance",settings.aim(PathSettings.Aim.TOLERANCE),
+                    "aligned",aligned==null?"NOT_EVALUATED":aligned,"schedulePassed",schedule==null?"NOT_EVALUATED":schedule,
+                    "cooldownPassed",cooldownPassed==null?"NOT_EVALUATED":cooldownPassed,
+                    "cooldownRemainingMs",gate.remainingMs(System.nanoTime(),settings.teleportCooldownMs()),
+                    "confirmationPending",gate.pending(),"confirmationGate",blocker.equals("CLIENT_INPUT_UNAVAILABLE")?
+                            "NOT_EVALUATED":!gate.pending(),"timing",heightCorrection==null?"N_PLUS_ONE":"N"));
+        }
+
         private void cast() {
-            if (!canCast()){fail("TELEPORT_TRANSPORT_OR_WEAPON_UNAVAILABLE");return;}
-            if (choice.jumpAssist()) {
+            if (!canCast()){
+                castGate("TELEPORT_TRANSPORT_OR_WEAPON_UNAVAILABLE",null,null,null);
+                fail("TELEPORT_TRANSPORT_OR_WEAPON_UNAVAILABLE");return;
+            }
+            if (choice!=null&&choice.jumpAssist()) {
                 if(!jumpPressed&&client.player.onGround()) {keyboard.keyDown("SPACE");jumpPressed=true;}
                 else keyboard.keyUp("SPACE");
                 if(!client.player.onGround())seenAir=true;
             }
-            if (!align(step.yaw(),step.pitch())) return;
-            if(choice.jumpAssist() && (!seenAir||client.player.onGround())){
+            boolean aligned=align(step.yaw(),step.pitch());
+            String timingBlocker=RouteCastTiming.aimScheduleBlocker(normalWeighted,client.level.getGameTime(),
+                    actionStartTick,plannedCastAfter,aligned);
+            if(!timingBlocker.equals("NONE")){
+                castGate(timingBlocker,aligned,aligned?Boolean.FALSE:null,null);return;
+            }
+            if(choice!=null&&choice.jumpAssist() && (!seenAir||client.player.onGround())){
+                castGate("JUMP_WINDOW_NOT_READY",true,true,null);
                 if(seenAir)recoverCast("JUMP_WINDOW_PASSED");
                 else if(ticks>=5)recoverCast("JUMP_DID_NOT_TAKE_OFF");
                 return;
             }
-            if (!gate.ready(System.nanoTime(),settings.teleportCooldownMs())) return;
+            if (!gate.ready(System.nanoTime(),settings.teleportCooldownMs())){
+                castGate("CAST_COOLDOWN",true,true,false);return;
+            }
+            castGate("NONE",true,true,true);
             Point feet=position();
             double yaw=yaw(),pitch=pitch(),distance=step.castDistance();
+            if(!RouteCastTiming.validView(yaw,pitch)){recoverCast("CAST_VIEW_OUT_OF_RANGE");return;}
             if(client.player.onGround())confirmedTravel=0;
             if(confirmedTravel+distance>180 && !(pitch>=89&&distance<=6.1)){
                 recoverCast("LANDING_REQUIRED");
@@ -799,25 +1261,73 @@ public final class ClientPathFinding {
             var terrain=new LivePathTerrain(client.level);
             Point actualLanding=TransmissionModel.landing(feet,yaw,pitch,distance);
             var corridor=rehearsal.corridor();
-            pendingProgress=corridor.castProgress(feet,actualLanding,yaw,pitch,distance,routeProgress,terrain);
-            if(!tryDispatch(new ClientTerrain(client.level),feet,yaw,pitch,distance,step.to(),false)){
+            pendingProgress=detour==null?corridor.castProgress(feet,actualLanding,yaw,pitch,distance,routeProgress,terrain):-1;
+            if(upwardFirst()){
+                if(!corridor.insideAction(new Segment(Movement.TRANSMISSION,feet,actualLanding,yaw,pitch,0,0,distance))
+                        ||actualLanding.distance(step.to())>.25){
+                    recoverCast("UPWARD_TURN_LIFT_CHANGED");return;
+                }
+                var onward=choice.actions().get(1);
+                var live=forecast();
+                var alignedNext=RouteCastTiming.estimate(yaw,pitch,onward.yaw(),onward.pitch(),live.aim());
+                var raised=RouteCastTiming.expectedHandoff(Motion.confirmed(actualLanding,terrain),terrain).motion();
+                var nextMotion=alignedNext==null||raised==null?null:FlightTiming.predict(raised,
+                        RouteCastTiming.castTick(new Ready(0,0,0),alignedNext.ms(),heightCorrection!=null),terrain);
+                var nextLanding=nextMotion==null?null:CorridorRepair.landing(nextMotion.feet(),alignedNext.yaw(),
+                        alignedNext.pitch(),onward.castDistance(),terrain);
+                if(nextLanding==null||corridor.castProgress(nextMotion.feet(),nextLanding,alignedNext.yaw(),
+                        alignedNext.pitch(),onward.castDistance(),routeProgress,terrain)<=routeProgress){
+                    recoverCast("UPWARD_TURN_CONTINUATION_CHANGED");return;
+                }
+            }
+            if(!upwardFirst()&&detour==null&&(corridor.regional()||heightCorrection!=null)&&pendingProgress>routeProgress){
+                var packetMotion=Motion.confirmed(actualLanding,terrain);
+                var handoff=normalWeighted?RouteCastTiming.expectedHandoff(packetMotion,terrain):null;
+                var landingMotion=handoff==null?packetMotion:handoff.motion();
+                var next=landingMotion==null?null:new CorridorRepair.Start(landingMotion,yaw,pitch,
+                        landingMotion.grounded()?0:confirmedTravel+distance,forecast().aim(),new Ready(0,0,0));
+                var continuation=next==null?new CorridorRepair.Continuation(false,"CONFIRMATION_MOTION_UNKNOWN"):
+                        corridor.continuation(next,pendingProgress,terrain);
+                boolean connected=continuation.connected();
+                trace("CAST_CONTINUATION","END_CLIENT_TICK_AFTER_PHYSICS",map("state",forecast(),
+                        "landing",actualLanding,"pendingProgress",pendingProgress,"continuation",continuation,
+                        "packetMotion",packetMotion,"handoff",handoff,
+                        "rayAndLandingCheck",connected?"PENDING":"NOT_EVALUATED"));
+                events.accept("CORRIDOR_CAST_CONTINUATION",Map.of("actual",feet,"predicted",actualLanding,
+                        "yaw",yaw,"pitch",pitch,"nextArcProgress",corridor.arc(pendingProgress),"connected",connected));
+                if(!connected){
+                    if(display.calculating())display.reject(actualLanding);
+                    recoverCast("REGION_LANDING_HAS_NO_CONTINUATION");
+                    return;
+                }
+            }
+            if(!tryDispatch(new ClientTerrain(client.level,logging()||display.calculating()),feet,yaw,pitch,distance,step.to(),false)){
                 recoverCast("CAST_RECHECK_FAILED");
                 return;
             }
             lastActualCast=new Segment(Movement.TRANSMISSION,feet,actualLanding,yaw,pitch,0,0,distance);
+            if(upwardFirst()&&gate.pending())upwardTurnUsed=true;
+        }
+        private boolean upwardFirst(){
+            return normalWeighted&&detour==null&&choice!=null&&legIndex==0&&choice.reason().equals("UPWARD_TURN_ASSIST");
         }
         private boolean canCast() {
-            return transmission&&settings.transmission&&(simulate?client.getSingleplayerServer()!=null:
-                    equipped.getAsBoolean()&&!client.player.isShiftKeyDown()&&!client.options.keyShift.isDown());
+            return transmission&&settings.transmission&&equipped.getAsBoolean()
+                    &&!client.player.isShiftKeyDown()&&!client.options.keyShift.isDown();
         }
         private boolean confirmPosition() {
             if (positionSequence==confirmationSequence) return false;
             gate.confirm();
             mouse.consumed();
+            if(logging())trace("CONFIRMATION_CONSUMED","END_CLIENT_TICK_AFTER_PHYSICS",
+                    Map.of("state",forecast(),"packetTick",packetTick,
+                            "elapsedLevelTicksSincePacket",client.level.getGameTime()-packetTick,"packetFeet",lastPositionUpdate));
             events.accept("POSITION_CONFIRMATION",Map.of("predicted",predicted,"actual",lastPositionUpdate,
                     "actualY",lastPositionUpdate.y(),"delayMs",(System.nanoTime()-dispatchTime)/1e6,"downwardBurst",downwardCast));
             boolean near=lastPositionUpdate.distance(predicted)<=.25;
-            if(!downwardCast&&choice!=null){
+            if(upwardFirst()){
+                if(!near)fail("UPWARD_TURN_CONFIRMATION_DIFFERS");
+            }else if(!downwardCast&&choice!=null){
                 var geometry=new LivePathTerrain(client.level);
                 var corridor=rehearsal.corridor();
                 double next=near&&lastActualCast!=null
@@ -835,36 +1345,80 @@ public final class ClientPathFinding {
                 }
             } else if(!near)fail("CONFIRMED_POSITION_DIFFERS");
             if (!failed) confirmedTravel+=pendingDistance;
+            if(logging()){
+                trace("CONFIRMATION_DISPOSITION","END_CLIENT_TICK",map("accepted",!failed,"packetFeet",lastPositionUpdate,
+                        "reason",failed?failureReason():null));
+                if(actionWasLate)exportFailure(failed?"LATE_INPUT_CONFIRMATION_REJECTED":"LATE_INPUT_CONFIRMED");
+                faultTrace.fallbackOutcome(failed?"FALLBACK_CONFIRMATION_REJECTED":"FALLBACK_INPUT_CONFIRMED");
+            }
             if(!downwardCast) done=true;
             return !failed;
         }
         private boolean tryDispatch(ClientTerrain terrain,Point feet,double yaw,double pitch,double distance,Point expected,boolean burst) {
+            if(!RouteCastTiming.validView(yaw,pitch))return false;
             var raw=TransmissionModel.raw(feet,yaw,pitch,distance);
             predicted=TransmissionModel.landing(feet,yaw,pitch,distance);
             var segment=terrain.transfer(feet,raw);
+            var segmentHit=terrain.lastHit();
             var arrival=terrain.transfer(raw,predicted);
-            boolean inCorridor=burst?predicted.equals(expected):pendingProgress>routeProgress;
-            boolean legal=inCorridor && !predicted.equals(feet) && segment.knowledge()==Knowledge.CLEAR && arrival.knowledge()==Knowledge.CLEAR;
+            var arrivalHit=terrain.lastHit();
+            boolean inCorridor=burst?predicted.equals(expected):detour!=null?
+                    predicted.distance(expected)<=.25&&predicted.distance(rejoinOrigin)<=CorridorRejoin.RANGE
+                            &&feet.distance(rejoinOrigin)<=CorridorRejoin.RANGE:
+                    upwardFirst()?predicted.distance(expected)<=.25:pendingProgress>routeProgress;
+            String geometryBlocker=!inCorridor?"OUTSIDE_CONNECTED_CORRIDOR":predicted.equals(feet)?"ZERO_MOVEMENT":
+                    segment.knowledge()!=Knowledge.CLEAR?"CAST_RAY_"+segment.knowledge():
+                    arrival.knowledge()!=Knowledge.CLEAR?"QUANTIZED_ARRIVAL_"+arrival.knowledge():"NONE";
+            boolean legal=geometryBlocker.equals("NONE");
             var details=new LinkedHashMap<String,Object>();
             details.put("planningY",choice==null?step.from().y():rehearsal.corridor().reference(choice.reference()).from().y());
             details.put("rehearsedY",choice==null||choice.castOrigin()==null?step.from().y():choice.castOrigin().feet().y());
             details.put("corridorSegment",choice==null?-1:choice.reference());details.put("castTick",client.level.getGameTime());
             details.put("expectedCastTick",choice==null?client.level.getGameTime():choiceTick+choice.castTick());
             details.put("theoreticalAimMs",choice==null?0:choice.aimMs());
+            if(normalWeighted&&!burst){
+                details.put("expectedCastTick",actionStartTick+plannedCastAfter);
+                details.put("heightCorrecting",heightCorrection!=null);
+                details.put("aimExtraTicks",heightCorrection==null?1:0);
+            }
             String correctionReason=!inCorridor?"OUTSIDE_CONNECTED_CORRIDOR":
                     segment.knowledge()!=Knowledge.CLEAR?"CAST_RAY_"+segment.knowledge():
                     arrival.knowledge()!=Knowledge.CLEAR?"QUANTIZED_ARRIVAL_"+arrival.knowledge():
-                    burst?"VERTICAL_DESCENT":!predicted.equals(expected)?"CONNECTED_LANDING_OFFSET":choice.reason();
+                    burst?"VERTICAL_DESCENT":detour!=null?"REJOIN_NAV_TRANSMISSION":!predicted.equals(expected)?"CONNECTED_LANDING_OFFSET":choice==null?"DIRECT_ACTION":choice.reason();
             details.put("correctionReason",correctionReason);details.put("aimStartY",startAimY);details.put("alignedY",alignedY);
             details.put("castY",feet.y());details.put("predictedY",predicted.y());details.put("origin",feet);
             details.put("predicted",predicted);details.put("planned",step.to());details.put("yaw",yaw);details.put("pitch",pitch);
             details.put("segment",segment);details.put("arrival",arrival);details.put("compatibleWithPlannedAction",inCorridor);
             details.put("aimMs",(alignedAt-aimStarted)/1e6);details.put("postAlignmentMs",(System.nanoTime()-alignedAt)/1e6);
             details.put("downwardBurst",burst);
+            if(logging())trace("CAST_GEOMETRY","END_CLIENT_TICK_AFTER_PHYSICS",map(
+                    "state",forecast(),"origin",feet,"raw",raw,"landing",predicted,"range",distance,"yaw",yaw,"pitch",pitch,
+                    "rayVerdict",segment.knowledge().name(),"rayReason",segment.reason(),"rayHit",segmentHit,
+                    "arrivalVerdict",arrival.knowledge().name(),"arrivalReason",arrival.reason(),"arrivalHit",arrivalHit,
+                    "collisionSource","LIVE_CLIENT_SWEEP","blockDetails",segmentHit!=null||arrivalHit!=null?"AVAILABLE":
+                            "NO_BLOCK_HIT_OR_GEOMETRY_UNKNOWN","connectedProgress",inCorridor,"legal",legal,
+                    "plannedOrigin",choice==null?null:choice.castOrigin(),"plannedLanding",expected,
+                    "firstBlocker",geometryBlocker,"expectedCastTick",actionStartTick+plannedCastAfter));
+            if(!legal&&display.calculating()){
+                var hit=segmentHit!=null?segmentHit:arrivalHit;
+                display.reject(hit==null?predicted:new Point(hit.x()+.5,hit.y()+.5,hit.z()+.5));
+            }
             if (!legal) {if (!burst)events.accept("CAST_RECHECK_FAILED",details);return false;}
             confirmationSequence=positionSequence;
-            if(simulate) client.player.connection.sendCommand("tp @s "+predicted.x()+" "+predicted.y()+" "+predicted.z());
-            else if(!mouse.click(client)) return true;
+            if(!mouse.click(client)){
+                trace("INPUT_NOT_SENT","END_CLIENT_TICK",Map.of("reason","NATIVE_USE_INPUT_BUSY"));
+                exportFailure("NATIVE_USE_INPUT_BUSY");
+                return true;
+            }
+            if(logging()){
+                long at=client.level.getGameTime(),extra=Math.max(0,at-actionStartTick-plannedCastAfter);
+                trace("INPUT_SENT","END_CLIENT_TICK_AFTER_PHYSICS",Map.of("state",forecast(),"origin",feet,"raw",raw,
+                        "landing",predicted,"expectedCastTick",actionStartTick+plannedCastAfter,
+                        "extraPhysicsTicksByLevelClock",extra,"transport","NATIVE_MOUSE"));
+                actionWasLate=!burst&&extra>0;
+                if(actionWasLate)exportFailure("LATE_INPUT_SENT");
+                faultTrace.fallbackOutcome("FALLBACK_INPUT_SENT");
+            }
             dispatchTime=System.nanoTime();
             pendingDistance=distance;downwardCast=burst;
             long interval=gate.dispatch(dispatchTime);
@@ -885,7 +1439,8 @@ public final class ClientPathFinding {
             var start=sample.start();
             var estimate=FlightTiming.estimate(start.yaw(),start.pitch(),aimYaw,90,start.aim());
             if(estimate==null)return;
-            int tick=start.ready().castTick(estimate.ms());
+            int tick=normalWeighted?RouteCastTiming.castTick(start.ready(),estimate.ms(),start.heightCorrection()!=null):
+                    start.ready().castTick(estimate.ms());
             var origin=FlightTiming.predict(start.motion(),tick,new LivePathTerrain(client.level));
             details.put("theoreticalAimMs",estimate.ms());
             details.put("expectedCastTick",sample.tick()+tick);
@@ -905,11 +1460,18 @@ public final class ClientPathFinding {
                 return;
             }
             if (!transmission || !settings.transmission || !feet.sameColumn(to)) return;
-            if (!simulate && (!equipped.getAsBoolean() || p.isShiftKeyDown() || client.options.keyShift.isDown())) return;
+            if (!equipped.getAsBoolean() || p.isShiftKeyDown() || client.options.keyShift.isDown()) return;
             double retainedYaw=aimActive?aimYaw:yaw();
             if(descentSample==null||descentSample.sequence()!=positionSequence)
                 descentSample=new DescentSample(forecast(),client.level.getGameTime(),positionSequence);
-            if (!align(retainedYaw,90) || !gate.ready(System.nanoTime(),settings.teleportCooldownMs())) return;
+            boolean aligned=align(retainedYaw,90);
+            if(normalWeighted){
+                var start=descentSample.start();
+                var aim=RouteCastTiming.estimate(start.yaw(),start.pitch(),retainedYaw,90,start.aim());
+                if(aim==null||!RouteCastTiming.ready(client.level.getGameTime(),descentSample.tick(),
+                        RouteCastTiming.castTick(start.ready(),aim.ms(),heightCorrection!=null),aligned))return;
+            }else if(!aligned)return;
+            if(!gate.ready(System.nanoTime(),settings.teleportCooldownMs()))return;
             feet=position();
             if (p.onGround() || p.getDeltaMovement().y>0) return;
             double distance=Math.min(range,feet.y()-to.y());
@@ -961,6 +1523,20 @@ public final class ClientPathFinding {
             if(active==this)active=null;
         }
         private void finishInput(Result result) {
+            try {
+            if(logging()){
+                trace("TASK_END","CLIENT_TASK_COMPLETION",Map.of("status",result.status().name(),"reason",result.reason(),
+                        "end",result.end(),"expanded",result.explored(),"planningSummary",lastPlanningSummary,"evidenceSource","LIVE_CLIENT",
+                        "planningFrontierEvidence",lastPlanningSummary.isEmpty()?"NOT_AVAILABLE_WITHOUT_SEARCH_AUDIT":"STAGE_LOGS"));
+                exportFailure(result.status().name()+":"+result.reason());
+                if(failureWriter!=null)failureWriter.close();
+            }
+            } finally {
+                closeSession();
+                finishInputOwnership(result);
+            }
+        }
+        private void finishInputOwnership(Result result){
             boolean wasBlocked=PhysicalGameInput.endPath(this);
             PathRouteESP.clear();
             if (wasBlocked) {
