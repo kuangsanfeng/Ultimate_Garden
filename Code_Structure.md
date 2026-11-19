@@ -2239,3 +2239,17 @@ JDK 25 离线构建、六组寻路回归和热键回归通过。本地 Fabric �
 - 开发者选项中的 `Enable Pathfinding Log` 默认关闭，开启后随下一次寻路会话创建记录器。日志写入运行目录的 `logs/path-finding/failures.jsonl`。`PathFailureTrace` 用动作、候选、确认与事件序号串起晚发、实时复核、改选及最终处置，按增量交给异步 JSONL 写入器。瞄准证据包含外层阈值、修正阈值和最近一次原生转动结果。
 - 账号配置页末尾的恢复功能使用 `MappingConfirmButton` 二次确认交互和账号修订号校验。正式配置编码器生成所选文件的默认内容，写入成功后重新加载该文件。
 - Java 25 离线发布构建和 `PathReleaseRegression` 覆盖默认值、地图匹配、输入所有权、延迟时钟、ESP、HUD、单文件恢复和故障日志夹具。鼠标捕获与 Mixin 的真实回调、服务器地图识别及实测延迟由后续现场确认。
+
+### 寻路任务所有权、末端连接与独立日志
+
+- `ClientPathFinding` 分开保存候选坐标、已提交坐标、活动票据和显式 GUI 暂停目标。确认新坐标时清空旧恢复目标。结果只由对应会话提交，终态清理动作、ESP、输入请求、延迟和规划结果。HUD 可保留最近处置文本。
+- 绑定的寻路热键在原生键鼠事件入口处理。活动会话收到按下事件时立即取消自己的票据，按住产生的重复事件不会重新启动寻路。已发出的瞬移由 `PathPositionReceipt` 按世界、连接和会话隔离，停止后匹配的迟到更新只解除旧确认屏障。
+- `CorridorRepair.terminalDecision` 在终点附近先用现有局部地形和运动模型验证步行、跳跃或自然下落，保留半砖脚底高度。普通移动失败时仅选取通过既有传送模型且具备普通后继的末端候选，派发前复核实时落点的后继。日志区分普通无路、地图缺失、预算触限和候选处置。
+- 日志启用时，`PathTaskLog` 在当前实例的 `logs/ultimategarden/` 为每个独立任务创建 JSONL。本地时间精确到毫秒，文件名包含地图和目标，重名采用独占创建并附短 runId。首末行为 `TASK_START` 和 `TASK_END`。重规划、接回及故障证据共用本次任务的文件，历史共享文件照常保留。
+- Java 25 定向夹具为 `PathTaskLifecycleRegression`。覆盖目标切换、后台取消、迟到更新隔离、末端动作及独立日志。测试含合成地形和输入决策，未启动客户端或连接服务器。
+
+### 寻路请求分流
+
+- `PathRequest` 携带来源、操作、坐标及用途。手动、聊天确认和功能调用通过 `START_NEW` 启动新票据。即使坐标相同，也按新任务生命周期初始化。运行中的寻路热键只停止，暂停路线需通过寻路菜单的显式恢复按钮提交 `RESUME_EXPLICIT`。
+- `PathService` 在采样新起点前作废并清理旧票据。`NativeDriver` 持有本任务的测量和确认状态。工作结果按尝试代数校验；`REJOIN_CURRENT` 和 `REPLAN_CURRENT` 校验任务票据，使用恢复起点并保留原终点。
+- 单路线 JSONL 增加 `PATH_REQUEST`、`TASK_INITIALIZED`、`FIRST_ACTION_HANDOFF` 与 `FIRST_ACTION_DISPATCH`。请求记录包含原目标、新旧票据和 runId，以及实际处置。任务内恢复沿用原文件。

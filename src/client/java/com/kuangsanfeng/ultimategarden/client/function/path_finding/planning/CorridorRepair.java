@@ -260,17 +260,86 @@ public final class CorridorRepair {
                 start.heightCorrection(),climbs,climbing&&start.upwardTurnUsed());
     }
 
+    private static final int TERMINAL_GROUND_BUDGET=100;
+    public record TerminalDecision(String ordinaryReason,String decision,long expanded,List<Choice> choices){
+        public TerminalDecision{choices=List.copyOf(choices);}
+    }
+    private record OrdinaryEnd(String reason,long expanded,List<Segment> actions) {
+        boolean valid(){return reason.equals("ORDINARY_PATH")||reason.equals("ALREADY_AT_TARGET");}
+    }
+    private boolean terminalApproach(Point feet,double progress){
+        return !air&&terminalZone(feet,progress)&&feet.distance(goal())<=Math.max(15,options.distance()+2);
+    }
+    private OrdinaryEnd ordinaryEnd(Motion motion,double yaw,double pitch,Terrain terrain,BooleanSupplier cancelled){
+        if(reached(motion,null,terrain))return new OrdinaryEnd("ALREADY_AT_TARGET",0,List.of());
+        var actions=new ArrayList<Segment>();
+        var feet=motion.feet();
+        if(!motion.grounded()){
+            var settled=FlightTiming.predict(motion,24,terrain);
+            if(settled==null||!settled.grounded()||!feet.sameColumn(settled.feet())
+                    ||settled.feet().y()>=feet.y()||!terrain.sweep(feet,settled.feet()))
+                return new OrdinaryEnd(terrain.missing().isEmpty()?"ORDINARY_NO_SAFE_FALL":"ORDINARY_MAP_MISSING",0,List.of());
+            actions.add(new Segment(Movement.FALL,feet,settled.feet(),yaw,0,0,0));
+            if(reached(settled,null,terrain))return new OrdinaryEnd("ORDINARY_PATH",0,actions);
+            feet=settled.feet();
+        }
+        var walk=new Options(options.mode(),false,false,options.distance(),options.jumpHeight(),TERMINAL_GROUND_BUDGET,options.weights());
+        var result=new PathPlanner().planTerminalGround(feet,goal(),yaw,pitch,walk,terrain,cancelled);
+        if(result.status()==Status.ARRIVED && reached(Motion.confirmed(result.end(),terrain),null,terrain)
+                && result.segments().stream().allMatch(e->regional()?insideAction(e):within(e.to()))){
+            actions.addAll(result.segments());
+            if(!actions.isEmpty())return new OrdinaryEnd("ORDINARY_PATH",result.explored(),actions);
+        }
+        String reason=switch(result.status()){
+            case CANCELLED->"ORDINARY_CANCELLED";
+            case BUDGET_EXHAUSTED->"ORDINARY_BUDGET_EXHAUSTED";
+            case MAP_MISSING->"ORDINARY_MAP_MISSING";
+            default->terrain.missing().isEmpty()?"ORDINARY_NO_PATH":"ORDINARY_MAP_MISSING";
+        };
+        return new OrdinaryEnd(reason,result.explored(),List.of());
+    }
+    public boolean terminalLandingConnects(Motion packet,double yaw,double pitch,Terrain terrain){
+        if(packet==null)return false;
+        var motion=regional()?packet:RouteCastTiming.expectedHandoff(packet,terrain).motion();
+        return motion!=null&&ordinaryEnd(motion,yaw,pitch,terrain,()->false).valid();
+    }
+    public TerminalDecision terminalDecision(Start start,double progress,Terrain terrain,int limit,BooleanSupplier cancelled){
+        if(references.isEmpty()||!terminalApproach(start.motion().feet(),progress))return null;
+        var ordinary=ordinaryEnd(start.motion(),start.yaw(),start.pitch(),terrain,cancelled);
+        if(ordinary.valid()){
+            var choices=ordinary.actions().isEmpty()?List.<Choice>of():
+                    List.of(new Choice(ordinary.actions(),referenceIndex(progress),references.size(),null,0,0,false,"TERMINAL_ORDINARY"));
+            return new TerminalDecision(ordinary.reason(),"ORDINARY",ordinary.expanded(),choices);
+        }
+        if(cancelled.getAsBoolean())return new TerminalDecision(ordinary.reason(),"CANCELLED",ordinary.expanded(),List.of());
+        if(!options.transmission())return new TerminalDecision(ordinary.reason(),"TRANSMISSION_DISABLED",ordinary.expanded(),List.of());
+        var casts=new ArrayList<>(regional()?directionalCasts(start,progress,terrain,cancelled,false):
+                castChoices(start,progress,terrain,limit,cancelled,false));
+        if(!regional()&&start.motion().grounded())casts.addAll(castChoices(start,progress,terrain,limit,cancelled,true));
+        var connected=new ArrayList<Choice>();
+        int checked=0;
+        for(var candidate:casts){
+            if(checked++>=limit*2)break;
+            if(cancelled.getAsBoolean())break;
+            var after=after(start,candidate,terrain);
+            if(after!=null && ordinaryEnd(after.motion(),after.yaw(),after.pitch(),terrain,cancelled).valid()){
+                connected.add(new Choice(candidate.actions(),candidate.reference(),candidate.progress(),candidate.castOrigin(),
+                        candidate.castTick(),candidate.aimMs(),candidate.jumpAssist(),"TERMINAL_TRANSMISSION",candidate.forecast()));
+                if(connected.size()>=limit)break;
+            }
+        }
+        String decision=!connected.isEmpty()?"TRANSMISSION":casts.isEmpty()?"NO_LEGAL_TERMINAL_CAST":checked>limit*2?"TERMINAL_CAST_CHECK_LIMIT":"NO_ORDINARY_CONTINUATION_AFTER_CAST";
+        return new TerminalDecision(ordinary.reason(),decision,ordinary.expanded(),connected);
+    }
+
     public List<Choice> choices(Start start,double progress,Terrain terrain,int limit,BooleanSupplier cancelled) {
         if(references.isEmpty()||cancelled.getAsBoolean())return List.of();
+        var terminal=terminalDecision(start,progress,terrain,limit,cancelled);
+        if(terminal!=null)return terminal.choices();
         if(regional())return regionalChoices(start,progress,terrain,limit,cancelled);
         Point feet=start.motion().feet();
         int first=referenceIndex(progress),last=Math.min(references.size()-1,first+LOOK_AHEAD);
         Segment ref=references.get(first);
-        if(start.motion().grounded()&&!air && terminalZone(feet,progress)) {
-            var ground=groundPath(feet,goal(),start.yaw(),start.pitch(),terrain,cancelled,100);
-            if(!ground.isEmpty()&&ground.stream().allMatch(e->within(e.to())))
-                return List.of(new Choice(ground,first,references.size(),null,0,0,false,"TERMINAL_GROUND_PATH"));
-        }
         var moves=new ArrayList<Choice>();
         if(ref.movement()==Movement.FALL && feet.sameColumn(ref.to()) && feet.y()>ref.to().y()) {
             Point end=new Point(feet.x(),ref.to().y(),feet.z());
@@ -313,17 +382,6 @@ public final class CorridorRepair {
                 ordinary=combined;
             }
         }
-        if(moves.isEmpty() && start.motion().grounded() &&
-                terminalZone(feet,progress)
-                && ordinary.stream().noneMatch(c->reached(Motion.confirmed(c.last().to(),terrain),c.last(),terrain))) {
-            var boosted=castChoices(start,progress,terrain,limit,cancelled,true);
-            if(!boosted.isEmpty()){
-                var combined=new ArrayList<>(ordinary);
-                combined.addAll(boosted);
-                ordinary=combined.stream().sorted(Comparator.<Choice>comparingDouble(Choice::progress).reversed()
-                        .thenComparing(Choice::jumpAssist).thenComparingInt(Choice::castTick)).limit(limit).toList();
-            }
-        }
         if(ordinary.isEmpty() && moves.isEmpty() && start.motion().grounded()){
             double x=Math.floor(feet.x())+.5,z=Math.floor(feet.z())+.5;
             for(int[] direction:new int[][]{{1,0},{-1,0},{0,1},{0,-1}}){
@@ -350,11 +408,6 @@ public final class CorridorRepair {
         Point feet=start.motion().feet();
         int index=referenceIndex(progress);
         if(centerlineDistance(feet)>radius())return List.of();
-        if(start.motion().grounded()&&!air&&feet.distance(goal())<=15){
-            var ground=groundPath(feet,goal(),start.yaw(),start.pitch(),terrain,cancelled,100);
-            if(!ground.isEmpty()&&ground.stream().allMatch(this::insideAction))
-                return List.of(new Choice(ground,index,references.size(),null,0,0,false,"REGION_TERMINAL_GROUND"));
-        }
         var candidates=new ArrayList<Choice>();
         for(var step:CorridorRejoin.movement(start,terrain,jumpHeight())){
             double next=advanceTo(step.to(),progress,terrain);

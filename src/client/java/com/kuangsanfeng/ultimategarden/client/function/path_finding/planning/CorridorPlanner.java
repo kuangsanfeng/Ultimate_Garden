@@ -100,7 +100,7 @@ public final class CorridorPlanner {
         this.pitch = pitch;
         this.initialTravel = travel;
         this.retainPartial = retainPartial;
-        goal = centered(requested);
+        goal = com.kuangsanfeng.ultimategarden.client.function.path_finding.TargetCoordinates.centered(requested);
         if (!terrain.clear(start) || !terrain.clear(goal))
             return failure(requested, goal, start, terrain.missing().isEmpty() ? Status.NO_SPACE_CORRIDOR : Status.MAP_MISSING, "ENDPOINT_REJECTED");
         air = !terrain.supported(goal);

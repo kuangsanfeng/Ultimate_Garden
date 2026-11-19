@@ -64,6 +64,9 @@ public class WindowsMouseMixin {
         if (com.kuangsanfeng.ultimategarden.client.macro.zombie_shoot.aim.ShootoutMouseInput.dispatching()) return;
         if (com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.isActive()) { com.kuangsanfeng.ultimategarden.client.platform.ui.hud.HudAdjustmentController.button(buttonInfo.button(), action); ci.cancel(); return; }
         var client = Minecraft.getInstance();
+        if(window==client.getWindow().handle()&&MacroKeyBindings.dispatchPathMouse(buttonInfo.button(),action)){
+            ci.cancel();return;
+        }
         if (window == client.getWindow().handle() && PhysicalGameInput.inGame(client,BUTTONS)) {
             MacroKeyBindings.dispatchBlockedMouse(buttonInfo.button(), action);
             ci.cancel();

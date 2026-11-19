@@ -1094,8 +1094,8 @@
   "ui.ultimategarden.path_finding.candidate": "\u5f85\u786e\u8ba4\u5750\u6807",
   "ui.ultimategarden.path_finding.pending": "\u7b49\u5f85\u786e\u8ba4",
   "ui.ultimategarden.path_finding.remaining": "\u5269\u4f59\u65f6\u95f4",
-  "key.ultimate_garden.start_pathfinding": "\u542f\u52a8\u5bfb\u8def",
-  "key.ultimate_garden.start_pathfinding.help": "\u786e\u8ba4\u804a\u5929\u5750\u6807\u6216\u5728\u672c\u5730\u8f93\u5165\u7ec8\u70b9\u3002",
+  "key.ultimate_garden.start_pathfinding": "切换寻路",
+  "key.ultimate_garden.start_pathfinding.help": "输入坐标开始，或停止当前寻路。",
   "ui.ultimategarden.hud.show_path_finding": "自动寻路 HUD",
   "ui.ultimategarden.hud.panel.PATH_FINDING": "\u81ea\u52a8\u5bfb\u8def",
   "ui.ultimategarden.hud.panel.PATH_FINDING.compact_content": "简洁模式内容",
@@ -1127,5 +1127,6 @@
   "ui.ultimategarden.path_finding.last_failure": "最近失败",
   "ui.ultimategarden.path_finding.latency": "延迟",
   "ui.ultimategarden.path_finding.latency_pending": "等待样本",
-  "ui.ultimategarden.path_finding.latency_unavailable": "不可用"
+  "ui.ultimategarden.path_finding.latency_unavailable": "不可用",
+  "ui.ultimategarden.path_finding.resume": "恢复已暂停的路线"
 }

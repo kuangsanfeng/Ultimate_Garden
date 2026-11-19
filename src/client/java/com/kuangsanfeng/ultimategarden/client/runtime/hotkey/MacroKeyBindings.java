@@ -33,7 +33,7 @@ public final class MacroKeyBindings {
             new Binding("Loadout", "Execute /loadout", LOADOUT_KEY),
             new Binding("Select crop", "Choose crop and mode through chat.", CROP_CHANGE_KEY),
             new Binding("Instant Transmission Full Path Test", "Measures the full teleport path and displacement sequence for single or repeated casts.", TRANSMISSION_KEY),
-            new Binding("Start Pathfinding", "Confirm a chat coordinate or enter a local destination.", PATH_FINDING_KEY),
+            new Binding("Toggle Pathfinding", "Start or stop pathfinding.", PATH_FINDING_KEY),
             new Binding("Instant Transmission Y Rounding Test", "Keeps yaw fixed and casts once per trial to measure how the resulting feet Y coordinate is rounded at different pitch angles and cast heights.", TRANSMISSION_Y_KEY),
             new Binding("Toggle Zombie Shootout", "Start or stop Zombie Shootout.", SHOOTOUT_KEY),
             new Binding("Initialize Mapping", "Initialize the base map.", MAPPING_INIT_KEY),
@@ -53,13 +53,27 @@ public final class MacroKeyBindings {
     public static boolean matchesMenuKey(net.minecraft.client.input.KeyEvent event) { return OPEN_MENU_KEY.matches(event); }
     /** Mouse-bound controls must still reach their hotkey edges while physical mouse actions are suppressed. */
     public static void dispatchBlockedMouse(int button, int action) {
-        setBlockedMouseControl(PATH_FINDING_KEY, button, action);
         setBlockedMouseControl(WINDOW_FOCUS_KEY, button, action);
     }
     private static void setBlockedMouseControl(KeyMapping mapping, int button, int action) {
         var key = ((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor) mapping).getKey();
         if (key.getType() == InputConstants.Type.MOUSE && key.getValue() == button)
             mapping.setDown(action != GLFW.GLFW_RELEASE);
+    }
+    public static boolean dispatchPathKey(net.minecraft.client.input.KeyEvent event,int action){
+        return dispatchPathPress(HotkeySwitches.enabled(PATH_FINDING_KEY)&&PATH_FINDING_KEY.matches(event),action);
+    }
+    public static boolean dispatchPathMouse(int button,int action){
+        var key=((com.kuangsanfeng.ultimategarden.client.mixin.KeyMappingAccessor)PATH_FINDING_KEY).getKey();
+        return dispatchPathPress(HotkeySwitches.enabled(PATH_FINDING_KEY)&&key.getType()==InputConstants.Type.MOUSE
+                &&key.getValue()==button,action);
+    }
+    private static boolean dispatchPathPress(boolean bound,int action){
+        var path=com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE;
+        if(!bound)return false;
+        var decision=PathHotkey.decide(true,path.hotkeyAvailable(),action);
+        if(decision==PathHotkey.Decision.TOGGLE)path.startHotkey();
+        return decision!=PathHotkey.Decision.PASS;
     }
     public static void clearMenuClicks() { while (OPEN_MENU_KEY.consumeClick()) { } }
     public static boolean isMenuKeyPhysicallyDown() {
@@ -90,7 +104,6 @@ public final class MacroKeyBindings {
     private static final KeyEdge MAPPING_INIT_EDGE = new KeyEdge(), MAPPING_TOGGLE_EDGE = new KeyEdge(), MAPPING_REDRAW_EDGE = new KeyEdge();
     private static final KeyMapping TRANSMISSION_KEY = register("toggle_instant_transmission", GLFW.GLFW_KEY_UNKNOWN);
     private static final KeyMapping PATH_FINDING_KEY = register("start_pathfinding", GLFW.GLFW_KEY_UNKNOWN);
-    private static final KeyEdge PATH_FINDING_EDGE = new KeyEdge();
     private static final KeyMapping TRANSMISSION_Y_KEY = register("toggle_instant_transmission_y_rounding", GLFW.GLFW_KEY_UNKNOWN);
     private static final KeyEdge TRANSMISSION_Y_EDGE = new KeyEdge();
     private static final KeyEdge TRANSMISSION_EDGE = new KeyEdge();
@@ -402,10 +415,6 @@ public final class MacroKeyBindings {
                     boolean transmissionToggle=TRANSMISSION_EDGE.rising(isPressed(TRANSMISSION_KEY));
                     while(TRANSMISSION_KEY.consumeClick()){}
                     if(transmissionToggle && hudInputAllowed) com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.toggle(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.HOTKEY);
-                    boolean startPath = PATH_FINDING_EDGE.rising(isPressed(PATH_FINDING_KEY));
-                    while (PATH_FINDING_KEY.consumeClick()) {}
-                    if (startPath && hudInputAllowed)
-                        com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.startHotkey();
                     boolean transmissionYToggle=TRANSMISSION_Y_EDGE.rising(isPressed(TRANSMISSION_Y_KEY));
                     while(TRANSMISSION_Y_KEY.consumeClick()){}
                     if(transmissionYToggle && hudInputAllowed) com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.INSTANCE.toggleYRound(com.kuangsanfeng.ultimategarden.client.function.instant_transmission.debug.InstantTransmissionController.StartSource.HOTKEY);

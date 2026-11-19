@@ -1094,8 +1094,8 @@
   "ui.ultimategarden.path_finding.candidate": "Destination",
   "ui.ultimategarden.path_finding.pending": "Waiting for Confirmation",
   "ui.ultimategarden.path_finding.remaining": "Time Remaining",
-  "key.ultimate_garden.start_pathfinding": "Start Pathfinding",
-  "key.ultimate_garden.start_pathfinding.help": "Confirm a chat coordinate or enter a local destination.",
+  "key.ultimate_garden.start_pathfinding": "Toggle Pathfinding",
+  "key.ultimate_garden.start_pathfinding.help": "Start with coordinates or stop the current path.",
   "ui.ultimategarden.hud.show_path_finding": "Pathfinding HUD",
   "ui.ultimategarden.hud.panel.PATH_FINDING": "Pathfinding",
   "ui.ultimategarden.hud.panel.PATH_FINDING.compact_content": "Compact Content",
@@ -1127,5 +1127,6 @@
   "ui.ultimategarden.path_finding.last_failure": "Last Failure",
   "ui.ultimategarden.path_finding.latency": "Latency",
   "ui.ultimategarden.path_finding.latency_pending": "Waiting for Sample",
-  "ui.ultimategarden.path_finding.latency_unavailable": "Unavailable"
+  "ui.ultimategarden.path_finding.latency_unavailable": "Unavailable",
+  "ui.ultimategarden.path_finding.resume": "Resume Paused Route"
 }

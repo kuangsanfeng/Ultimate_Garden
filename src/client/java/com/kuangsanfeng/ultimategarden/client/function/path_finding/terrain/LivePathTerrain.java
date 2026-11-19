@@ -11,11 +11,14 @@ import java.util.*;
 /** Client-thread checks. Reuses the live body, chunk and support checks used at dispatch. */
 public final class LivePathTerrain implements Terrain {
     private final ClientTerrain live;
+    private boolean unknown;
 
     public LivePathTerrain(ClientLevel level) { live=new ClientTerrain(level); }
 
     @Override public MotionCheck motionSweep(Point from,Point to) {
-        return switch(live.transfer(from,to).knowledge()){
+        var knowledge=live.transfer(from,to).knowledge();
+        unknown|=knowledge==Knowledge.UNKNOWN;
+        return switch(knowledge){
             case CLEAR->MotionCheck.CLEAR;
             case BLOCKED->MotionCheck.BLOCKED;
             case UNKNOWN->MotionCheck.UNKNOWN;
@@ -23,8 +26,12 @@ public final class LivePathTerrain implements Terrain {
     }
     @Override public boolean sweep(Point from,Point to){return motionSweep(from,to)==MotionCheck.CLEAR;}
     @Override public boolean clear(Point feet){return sweep(feet,feet);}
-    @Override public boolean supported(Point feet){return live.descent(feet,feet).knowledge()==Knowledge.CLEAR;}
-    @Override public Set<String> missing(){return Set.of();}
+    @Override public boolean supported(Point feet){
+        var support=live.descent(feet,feet).knowledge();
+        unknown|=support==Knowledge.UNKNOWN;
+        return support==Knowledge.CLEAR;
+    }
+    @Override public Set<String> missing(){return unknown?Set.of("LIVE_TERRAIN_UNKNOWN"):Set.of();}
     @Override public Optional<Point> localSurface(Point top,double maxDrop){return live.supportSurface(top,maxDrop);}
     @Override public Optional<Point> ground(Point feet){
         // Search only for nearby local landings. Never look through a blocked or unknown segment.

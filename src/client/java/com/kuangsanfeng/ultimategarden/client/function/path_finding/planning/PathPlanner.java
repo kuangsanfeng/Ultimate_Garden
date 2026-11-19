@@ -34,6 +34,7 @@ public final class PathPlanner {
   private long explored,order,checks;
   private java.util.function.Consumer<GraphProgress> observe;
   private Result terminal;
+  private boolean terminalMovement;
 
   GraphSearch(Point start,Point requested,double yaw,double pitch,Options options,Terrain terrain,BooleanSupplier cancelled,boolean groundAStar,SearchRegion region){
    this.region=region;
@@ -45,7 +46,7 @@ public final class PathPlanner {
    terrain=this.terrain;
    var previousMissing=terrain.missing();
    auditMode=options.mode();
-   Point destination=new Point(Math.floor(requested.x())+.5,requested.y(),Math.floor(requested.z())+.5);
+   Point destination=com.kuangsanfeng.ultimategarden.client.function.path_finding.TargetCoordinates.centered(requested);
    boolean airTarget=!terrain.supported(destination);
    String rejected=null;
    if(!terrain.clear(start)||!terrain.clear(destination)) rejected="OCCUPIED_ENDPOINT_OR_UNKNOWN";
@@ -109,7 +110,16 @@ public final class PathPlanner {
    if(region!=null)region.visit(p,3);
    if(p.distance(goal)<.1||air&&p.distance(goal)<=options.distance()/2){progress(explored,best.size(),queue,node,goal,false);return terminal=terminalResult(Status.ARRIVED,node,p,"BEST_CHECKED_HEADING_GRAPH");}
    var edges=new ArrayList<Segment>();if(audit!=null)audit.context("NODE_CLASSIFICATION",p,p,node.key.yaw,node.key.pitch);boolean grounded=terrain.supported(p);
-   if(grounded){for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){if(dx==0&&dz==0)continue;Point q=new Point(Math.floor(p.x())+.5+dx,p.y(),Math.floor(p.z())+.5+dz);countCandidate("WALK",p,q);
+   if(terminalMovement&&grounded){
+    edges.addAll(CorridorRejoin.groundMovement(p,terrain,options.jumpHeight()));
+    for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+     if(dx==0&&dz==0)continue;
+     var lip=new Point(Math.floor(p.x())+.5+dx,p.y(),Math.floor(p.z())+.5+dz);
+     var drop=terrain.ground(lip);
+     if(drop.isPresent()&&drop.get().y()<p.y()&&terrain.sweep(p,lip)&&terrain.sweep(lip,drop.get())
+             &&terrain.supported(drop.get()))add(edges,Movement.FALL,p,drop.get(),0,options,node);
+    }
+   }else if(grounded){for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){if(dx==0&&dz==0)continue;Point q=new Point(Math.floor(p.x())+.5+dx,p.y(),Math.floor(p.z())+.5+dz);countCandidate("WALK",p,q);
     if(terrain.clear(q)&&terrain.supported(q)&&terrain.sweep(p,q)&&terrain.supported(new Point((p.x()+q.x())/2,p.y(),(p.z()+q.z())/2)))add(edges,Movement.WALK,p,q,0,options,node);
     else for(int rise=1;rise<=Math.floor(options.jumpHeight());rise++){q=new Point(Math.floor(p.x())+.5+dx,p.y()+rise,Math.floor(p.z())+.5+dz);Point apex=new Point(p.x(),q.y()+.1,p.z());countCandidate("JUMP",p,q);if(terrain.clear(q)&&terrain.supported(q)&&terrain.sweep(p,apex)&&terrain.sweep(apex,q)){add(edges,Movement.JUMP,p,q,rise,options,node);break;}}
     countCandidate("FALL",p,new Point(Math.floor(p.x())+.5+dx,p.y(),Math.floor(p.z())+.5+dz));var drop=terrain.ground(new Point(Math.floor(p.x())+.5+dx,p.y(),Math.floor(p.z())+.5+dz));if(drop.isPresent()&&drop.get().y()<p.y()&&terrain.sweep(p,new Point(drop.get().x(),p.y(),drop.get().z()))&&terrain.sweep(new Point(drop.get().x(),p.y(),drop.get().z()),drop.get()))add(edges,Movement.FALL,p,drop.get(),0,options,node);
@@ -161,6 +171,11 @@ public final class PathPlanner {
  private Mode auditMode;
  public Result planGround(Point start,Point requested,double yaw,double pitch,Options options,Terrain terrain,BooleanSupplier cancelled){
   return groundSearch(start,requested,yaw,pitch,options,terrain,cancelled,null).advance(options.budget());
+ }
+ Result planTerminalGround(Point from,Point to,double yaw,double pitch,Options options,Terrain terrain,BooleanSupplier cancelled){
+  var search=groundSearch(from,to,yaw,pitch,options,terrain,cancelled,null);
+  search.terminalMovement=true;
+  return search.advance(options.budget());
  }
  private List<Segment> path(Node n){var result=new ArrayList<Segment>();while(n!=null&&n.edge!=null){result.add(n.edge);n=n.previous;}Collections.reverse(result);return result;}
  private Node direct(Point start,Point goal,double yaw,double pitch,Options o,Terrain t,BooleanSupplier cancelled) {

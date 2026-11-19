@@ -87,6 +87,11 @@ public final class CorridorRejoin {
                 actions.add(new Segment(Movement.FALL,from,settled.feet(),state.yaw(),0,0,1));
             return actions;
         }
+        return groundMovement(from,terrain,jumpHeight);
+    }
+
+    static List<Segment> groundMovement(Point from,Terrain terrain,double jumpHeight){
+        var actions=new ArrayList<Segment>();
         // All eight neighbors are expanded repeatedly as graph edges, including diagonals.
         for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
             if(dx==0&&dz==0)continue;

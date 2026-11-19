@@ -32,7 +32,11 @@ public final class PathService implements AutoCloseable {
   default boolean prepare(){return true;}
   default boolean readyForReplan(){return true;}
   default int maximumSearchSegments(){return DEFAULT_SEARCH_ROUNDS;}
+  default void requestRouted(PathRequest input,Ticket previous,Ticket next,Point originalGoal,String disposition){}
+  default void sessionStarted(Ticket ticket,Point start,Point goal){}
+  default void planningRequested(Ticket ticket,int attempt,Point start,Point goal){}
   default SearchAudit planningAudit(int attempt){return null;}
+  default SearchAudit planningAudit(int attempt,BooleanSupplier valid){return planningAudit(attempt);}
   default int candidateWorkers(){return Runtime.getRuntime().availableProcessors();}
   default boolean gpuAcceleration(){return true;}
   default int rehearsalLimit(){return CorridorRepair.DEFAULT_SEARCH_LIMIT;}
@@ -41,7 +45,9 @@ public final class PathService implements AutoCloseable {
   default Options updateOptions(Options original){return original;}
   default CorridorPlanner.Timing updateTiming(CorridorPlanner.Timing original){return original;}
  }
- public record Ticket(Object owner,long sequence){}
+ public record Ticket(Object owner,long sequence,String runId,Point destination){
+  private Ticket(Object owner,long sequence,Point destination){this(owner,sequence,java.util.UUID.randomUUID().toString(),destination);}
+ }
  public record CorridorContinuation(CorridorRepair corridor,double progress){}
  private static final AtomicReference<PathService> INPUT_LEASE=new AtomicReference<>();
  private final ExecutorService worker=Executors.newSingleThreadExecutor(r->{var t=new Thread(r,"ug-path-planning");t.setDaemon(true);return t;});
@@ -49,9 +55,29 @@ public final class PathService implements AutoCloseable {
  private Driver autoDriver;
  private Point lastMeasured;
  private record Request(Point goal,Options options,Supplier<Terrain> terrain,CorridorPlanner.Timing timing,int segments){}
- private record Planned(Result result,Terrain geometry,CorridorRepair.Rehearsal rehearsal){}
+ private record Planned(long revision,Result result,Terrain geometry,CorridorRepair.Rehearsal rehearsal){}
+ record Launch(Object owner,Point feet,double yaw,double pitch,Options options,Supplier<Terrain> terrain,
+               CorridorPlanner.Timing timing,Driver driver,Consumer<Result> completion){}
+ private record Activation(PathRequest input,Ticket previous){}
+ synchronized Ticket launch(PathRequest input,Supplier<Launch> prepare){
+  if(closed)throw new IllegalStateException("PATH_SERVICE_CLOSED");
+  if(input.operation()!=PathRequest.Operation.START_NEW&&input.operation()!=PathRequest.Operation.RESUME_EXPLICIT)
+   throw new IllegalArgumentException("Expected activation request");
+  Ticket previous=current;
+  if(input.operation()==PathRequest.Operation.RESUME_EXPLICIT){
+   if(current!=null)throw new IllegalStateException("PATH_INPUT_OWNED");
+   previous=input.ticket();
+  }else if(current!=null){
+   var owner=driver!=null?driver:autoDriver;
+   if(owner!=null)owner.requestRouted(input,current,null,request.goal,"INVALIDATED_FOR_NEW_TARGET");
+   finish(Status.CANCELLED,"NEW_TARGET_SUBMITTED");
+  }
+  var launch=prepare.get();
+  return start(launch.owner(),launch.feet(),input.coordinate(),launch.yaw(),launch.pitch(),launch.options(),
+          launch.terrain(),launch.timing(),launch.driver(),launch.completion(),new Activation(input,previous));
+ }
  private Request request;
- private int replans;private boolean preparing;
+ private int replans;private boolean preparing,rehearsing;
  private boolean waitingForReplan;
  private record SearchStart(Point feet,double yaw,double pitch,Options options,CorridorPlanner.Timing timing) {
   boolean equivalent(SearchStart other){
@@ -72,24 +98,34 @@ public final class PathService implements AutoCloseable {
  public synchronized Ticket plan(Object owner,Point start,Point goal,double yaw,double pitch,Options options,Supplier<Terrain> terrain,CorridorPlanner.Timing timing,int maxSegments,Consumer<Result> completion){
   if(maxSegments<1)throw new IllegalArgumentException("Invalid segment limit");
   Math.multiplyExact(options.budget(),maxSegments);
-  if(closed)throw new IllegalStateException("PATH_SERVICE_CLOSED");if(current!=null)throw new IllegalStateException("PATH_INPUT_OWNED");long id=revision.incrementAndGet();current=new Ticket(java.util.Objects.requireNonNull(owner),id);callback=completion;
+  if(closed)throw new IllegalStateException("PATH_SERVICE_CLOSED");if(current!=null)throw new IllegalStateException("PATH_INPUT_OWNED");long id=revision.incrementAndGet();current=new Ticket(java.util.Objects.requireNonNull(owner),id,goal);callback=completion;
   result=null;lastMeasured=null;request=new Request(goal,options,terrain,timing,maxSegments);replans=0;submit(start,yaw,pitch,id);return current;
  }
  public synchronized Ticket start(Object owner,Point start,Point goal,double yaw,double pitch,Options options,Supplier<Terrain> terrain,CorridorPlanner.Timing timing,Driver driver,Consumer<Result> completion){
+  return start(owner,start,goal,yaw,pitch,options,terrain,timing,driver,completion,null);
+ }
+ private Ticket start(Object owner,Point start,Point goal,double yaw,double pitch,Options options,Supplier<Terrain> terrain,
+                      CorridorPlanner.Timing timing,Driver driver,Consumer<Result> completion,Activation activation){
   java.util.Objects.requireNonNull(driver);
   Math.multiplyExact(options.budget(),driver.maximumSearchSegments());
   if(closed||current!=null||!INPUT_LEASE.compareAndSet(null,this))throw new IllegalStateException("PATH_INPUT_OWNED");
-  current=new Ticket(java.util.Objects.requireNonNull(owner),revision.incrementAndGet());
+  current=new Ticket(java.util.Objects.requireNonNull(owner),revision.incrementAndGet(),goal);
+  index=0;active=false;previousSearch=null;replanReason=null;
   lastMeasured=start;
   this.driver=driver;request=new Request(goal,options,terrain,timing,driver.maximumSearchSegments());callback=completion;result=null;replans=0;preparing=driver.needsPreparation();
+  driver.sessionStarted(current,start,goal);
+  if(activation!=null)driver.requestRouted(activation.input(),activation.previous(),current,goal,
+          activation.input().operation()==PathRequest.Operation.START_NEW?"STARTED_NEW":"RESUMED_EXPLICIT");
   if(!preparing){autoDriver=driver;this.driver=null;submit(start,yaw,pitch,revision.get());}
   return current;
  }
  public synchronized void execute(Ticket ticket,Driver driver){require(ticket);if(planning!=null||result==null||result.status()!=Status.ARRIVED)throw new IllegalStateException("NO_EXECUTABLE_PLAN");java.util.Objects.requireNonNull(driver);if(INPUT_LEASE.get()!=this&&!INPUT_LEASE.compareAndSet(null,this))throw new IllegalStateException("PATH_INPUT_OWNED");this.driver=driver;lastMeasured=driver.position();index=0;active=false;}
  private void submit(Point start,double yaw,double pitch,long id) {
+  rehearsing=false;
   var args=request;
   previousSearch=new SearchStart(start,yaw,pitch,args.options,args.timing);
-  SearchAudit audit=autoDriver==null?null:autoDriver.planningAudit(replans);
+  if(autoDriver!=null)autoDriver.planningRequested(current,replans,start,args.goal);
+  SearchAudit audit=autoDriver==null?null:autoDriver.planningAudit(replans,()->!cancelled(id));
   int threads=autoDriver==null?Runtime.getRuntime().availableProcessors():autoDriver.candidateWorkers();
   boolean gpu=autoDriver==null||autoDriver.gpuAcceleration();
   long queued=System.nanoTime();
@@ -104,21 +140,30 @@ public final class PathService implements AutoCloseable {
             ()->cancelled(id),audit,start,args.goal,yaw,pitch,threads,gpu);
     if(audit!=null)audit.emit("WORKER_END",java.util.Map.of("status",route.status(),"reason",route.reason(),
             "expanded",route.explored(),"plannedEnd",route.end(),"workMs",(System.nanoTime()-began)/1e6));
-    return new Planned(route,geometry,null);
+    return new Planned(id,route,geometry,null);
    } catch(RuntimeException failure) {
     if(audit!=null)audit.emit("WORKER_ERROR",java.util.Map.of("reason",failure.toString(),"start",start));
     throw failure;
    }
   });
  }
- synchronized Future<CorridorRejoin.Search> planRejoin(CorridorRepair corridor,CorridorRepair.Start start,
+ synchronized Future<CorridorRejoin.Search> planRejoin(PathRequest input,CorridorRepair corridor,CorridorRepair.Start start,
                                                          double progress,java.util.Set<Point> rejected){
+  if(!routeCurrent(input,PathRequest.Operation.REJOIN_CURRENT,"REJOIN_SCHEDULED"))return null;
+  if(localRejoin!=null)localRejoin.cancel(true);
   long id=revision.get();
   var geometry=request.terrain;
   var excluded=java.util.Set.copyOf(rejected);
   localRejoin=worker.submit(()->CorridorRejoin.find(corridor,start,progress,geometry.get(),excluded,
           corridor.jumpHeight(),()->cancelled(id)));
   return localRejoin;
+ }
+ private boolean routeCurrent(PathRequest input,PathRequest.Operation expected,String accepted){
+  if(input.operation()!=expected)throw new IllegalArgumentException("Unexpected path operation");
+  var owner=driver!=null?driver:autoDriver;
+  boolean valid=current!=null&&current.equals(input.ticket());
+  if(owner!=null)owner.requestRouted(input,input.ticket(),current,input.ticket().destination(),valid?accepted:"DROPPED_STALE");
+  return valid;
  }
  private boolean cancelled(long id){return revision.get()!=id||Thread.currentThread().isInterrupted();}
  private void rehearse(Planned plan,CorridorRepair.Start initial){
@@ -131,6 +176,7 @@ public final class PathService implements AutoCloseable {
   var clientDriver=autoDriver;
   int limit=clientDriver.rehearsalLimit();
   clientDriver.rehearsalStarting(initial,limit);
+  rehearsing=true;
   planning=worker.submit(()->{
    BooleanSupplier cancelled=()->cancelled(id);
    Terrain terrain=geometry.get();
@@ -138,11 +184,19 @@ public final class PathService implements AutoCloseable {
    double progress=continuation==null?0:continuation.progress();
    var rehearsal=corridor.rehearse(initial,terrain,cancelled,limit,progress);
    if(rehearsal.complete()&&!cancelled.getAsBoolean())clientDriver.prepareRehearsalOverlay(rehearsal,cancelled);
-   return new Planned(plan,null,rehearsal);
+   return new Planned(id,plan,null,rehearsal);
   });
  }
 
  public synchronized Result snapshot(){return result;}
+ synchronized String workPhase(){
+  if(waitingForReplan)return "REPLAN_WAIT";
+  if(localRejoin!=null&&!localRejoin.isDone())return "LOCAL_REJOIN";
+  if(planning!=null&&rehearsing)return "REHEARSAL";
+  if(planning!=null&&replans>0)return "GLOBAL_REPLAN";
+  return stage().name();
+ }
+ synchronized void discardFinishedResult(){if(current==null)result=null;}
  public synchronized void tick(){try{advance();}catch(RuntimeException e){finish(Status.EXECUTION_FAILED,"DRIVER_EXCEPTION:"+e.getClass().getSimpleName());}}
  private void advance(){
   if(current==null)return;
@@ -160,6 +214,7 @@ public final class PathService implements AutoCloseable {
     driver.replanSuppressed(replanReason);
     finish(Status.EXECUTION_FAILED,replanReason);return;
    }
+   if(!routeCurrent(PathRequest.replan(current,at),PathRequest.Operation.REPLAN_CURRENT,"REPLAN_SCHEDULED"))return;
    autoDriver=driver;driver=null;submit(at,yaw,pitch,revision.incrementAndGet());return;
   }
   if(preparing){
@@ -174,8 +229,10 @@ public final class PathService implements AutoCloseable {
   if(planning!=null&&planning.isDone()) {
    try {
     var planned=planning.get();
+    if(planned.revision()!=revision.get()){planning=null;return;}
     result=planned.result();
     planning=null;
+    rehearsing=false;
     if(result.status()!=Status.ARRIVED)finish(result.status(),result.reason());
     else if(autoDriver!=null) {
      var next=autoDriver;
@@ -189,7 +246,7 @@ public final class PathService implements AutoCloseable {
       next.rehearsalReady(planned.rehearsal());
       if(!planned.rehearsal().complete()) {
        driver=next;
-       retry(planned.rehearsal().reason());
+       retryCurrent(planned.rehearsal().reason());
        return;
       }
      }
@@ -206,12 +263,13 @@ public final class PathService implements AutoCloseable {
   if(!driver.usable()){finish(Status.EXECUTION_FAILED,driver.failureReason());return;}
   if(driver.followsCorridor()) {
    boolean arrived=driver.advanceCorridor();
-   if(driver.failed())retry(driver.failureReason());
+   if(driver.failed())retryCurrent(driver.failureReason());
    else if(arrived)finish(Status.ARRIVED,"EXECUTION_CONFIRMED");
    else {
     var continuation=driver.takeCorridorContinuation();
     if(continuation!=null){
      var initial=driver.forecast();
+     if(!routeCurrent(PathRequest.rejoin(current,initial.motion().feet()),PathRequest.Operation.REJOIN_CURRENT,"REJOIN_SUFFIX"))return;
      driver.release();
      autoDriver=driver;
      driver=null;
@@ -222,10 +280,10 @@ public final class PathService implements AutoCloseable {
   }
   if(index==result.segments().size()){finish(Status.ARRIVED,"EXECUTION_CONFIRMED");return;}
   if(!active){driver.begin(result.segments().get(index));active=true;}
-  if(driver.failed()){retry(driver.failureReason());return;}
+  if(driver.failed()){retryCurrent(driver.failureReason());return;}
   if(driver.completed()){
    var action=result.segments().get(index);
-   if(driver.failed()||!driver.accepts(action)){retry(driver.failed()?driver.failureReason():"ACTUAL_POSITION_DIFFERS_REPLAN_REQUIRED");return;}
+   if(driver.failed()||!driver.accepts(action)){retryCurrent(driver.failed()?driver.failureReason():"ACTUAL_POSITION_DIFFERS_REPLAN_REQUIRED");return;}
    driver.release();index++;active=false;
    if(index<result.segments().size()){
     driver.begin(result.segments().get(index));active=true;
@@ -234,7 +292,12 @@ public final class PathService implements AutoCloseable {
    }
   }
  }
- private void retry(String reason){
+ private void retryCurrent(String reason){
+  replan(PathRequest.replan(current,driver.position()),reason);
+ }
+ synchronized void replan(PathRequest input,String reason){
+  if(!routeCurrent(input,PathRequest.Operation.REPLAN_CURRENT,"REPLAN_REQUESTED"))return;
+  if(driver==null||waitingForReplan)return;
   if(!driver.canReplan()||replans>=2){finish(Status.EXECUTION_FAILED,reason);return;}
   driver.release();
   replanReason=reason;
@@ -254,7 +317,7 @@ public final class PathService implements AutoCloseable {
   try{if(last!=null&&last.usable())lastMeasured=last.position();}catch(RuntimeException e){status=Status.EXECUTION_FAILED;why="POSITION_READ_FAILED";}
   Point p=lastMeasured!=null?lastMeasured:planned!=null?planned:new Point(0,0,0);
   try{if(last!=null){last.release();last.terminalPosition(lastMeasured,planned);}}catch(RuntimeException e){status=Status.EXECUTION_FAILED;why="INPUT_RELEASE_FAILED";}
-  finally{driver=null;autoDriver=null;current=null;request=null;lastMeasured=null;preparing=false;waitingForReplan=false;INPUT_LEASE.compareAndSet(this,null);}
+  finally{driver=null;autoDriver=null;current=null;request=null;lastMeasured=null;preparing=false;rehearsing=false;waitingForReplan=false;INPUT_LEASE.compareAndSet(this,null);}
   result=new Result(status,result==null?java.util.List.of():result.segments(),result==null?p:result.requested(),result==null?p:result.resolved(),p,result==null?0:result.cost(),result==null?0:result.explored(),result==null?java.util.Set.of():result.missing(),why);
   if(callback!=null){var cb=callback;callback=null;cb.accept(result);}
  }

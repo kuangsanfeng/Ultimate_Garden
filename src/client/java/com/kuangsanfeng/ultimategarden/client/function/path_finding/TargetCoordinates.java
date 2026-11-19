@@ -11,6 +11,10 @@ public final class TargetCoordinates {
             +"[,\uff0c]?\\s+y\\s*[:=]\\s*"+VALUE+"[,\uff0c]?\\s+z\\s*[:=]\\s*"+VALUE+"(?![.\\p{L}\\p{N}])");
     private TargetCoordinates() {}
 
+    public static Point centered(Point requested){
+        return new Point(Math.floor(requested.x())+.5,requested.y(),Math.floor(requested.z())+.5);
+    }
+
     public static Optional<Point> extractReceived(String input) {
         var labeled=LABELED.matcher(input);
         if (!labeled.find()) return extract(input);

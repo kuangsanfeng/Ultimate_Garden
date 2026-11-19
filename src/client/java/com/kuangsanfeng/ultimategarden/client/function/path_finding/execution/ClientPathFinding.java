@@ -1,7 +1,6 @@
 package com.kuangsanfeng.ultimategarden.client.function.path_finding.execution;
 
 import com.kuangsanfeng.ultimategarden.Ultimate_Garden;
-import com.kuangsanfeng.ultimategarden.client.platform.persistence.log.JsonlWriter;
 import static com.kuangsanfeng.ultimategarden.client.platform.persistence.log.JsonSnapshot.map;
 import com.kuangsanfeng.ultimategarden.client.Ultimate_GardenClient;
 import com.kuangsanfeng.ultimategarden.client.function.esp.adapters.PathRouteESP;
@@ -60,11 +59,12 @@ public final class ClientPathFinding {
     public static final ClientPathFinding INSTANCE=new ClientPathFinding();
     private final PathService service=new PathService();
     private final Object menuOwner=new Object();
-    private MovementMeasurements measurements=new MovementMeasurements();
     private PathService.Ticket menuTicket;
     private NativeDriver active;
     private Running running;
-    private RouteRequest relay;
+    private Running relay;
+    private String lastOutcome;
+    private final PathPositionReceipt positionReceipt=new PathPositionReceipt();
     private NativeDriver sessionDriver;
     public com.kuangsanfeng.ultimategarden.client.function.esp.ESPGeometry scanOverlay(int ageBand){
         var driver=sessionDriver;
@@ -105,9 +105,9 @@ public final class ClientPathFinding {
             String reason=driver.failureReason!=null?driver.failureReason:driver.castStatus;
             if(reason!=null)fields.put("reason",reason);
             if(driver.lastFault!=null)fields.put("last_failure",driver.lastFault);
-        }else if(service.snapshot()!=null){
-            fields.put("last_failure",service.snapshot().reason());
-            fields.put("reason",service.snapshot().reason());
+        }else if(lastOutcome!=null){
+            fields.put("last_failure",lastOutcome);
+            fields.put("reason",lastOutcome);
         }
         fields.put("input_status",com.kuangsanfeng.ultimategarden.client.platform.input.PhysicalGameInput.describe(c));
         return fields;
@@ -133,7 +133,7 @@ public final class ClientPathFinding {
         detectedMap=DetectedLocalMap.resolve(MappingPaths.root(client.gameDirectory.toPath()),info,context.trusted());
     }
 
-    private record RouteRequest(Object owner, String map, Point goal, double distance,
+    private record RouteRequest(Object owner, String map, Point goal, String rawInput, String inputSource, double distance,
                                 BooleanSupplier equipped, TransmissionEquipment weapon,
                                 BiConsumer<String,Map<String,Object>> events, Consumer<Result> completion,
                                 ClientLevel level, ClientPacketListener connection, String island, String instance) {
@@ -146,11 +146,11 @@ public final class ClientPathFinding {
     }
 
     private record Running(RouteRequest request, PathService.Ticket ticket) {}
-    private long positionSequence;
     private Candidate candidate;
-    private Point pendingInput;
+    private record SubmittedTarget(PathRequest request,String raw) {}
+    private SubmittedTarget pendingInput;
     private PathChatInput chatScreen;
-    private record Candidate(Point point, long started, long duration) {}
+    private record Candidate(Point point, String raw, long started, long duration) {}
     public record Confirmation(Point point, long remainingMs, double fraction) {}
 
     public Confirmation confirmation() {
@@ -168,42 +168,48 @@ public final class ClientPathFinding {
         if (raw.contains("[UltimateGarden]")) return;
         TargetCoordinates.extractReceived(raw).ifPresent(point -> {
             long duration=Ultimate_GardenClient.getConfigManager().getPathSettings().coordinateWindowMs()*1_000_000L;
-            candidate=new Candidate(point,System.nanoTime(),duration);
+            candidate=new Candidate(point,raw,System.nanoTime(),duration);
         });
+    }
+
+    public boolean hotkeyAvailable(){
+        var c=Minecraft.getInstance();
+        return running!=null||c.screen==null&&c.player!=null&&c.level!=null&&!conflict();
     }
 
     public void startHotkey() {
         var c=Minecraft.getInstance();
-        if (c.screen!=null || c.player==null || c.level==null || service.stage()!=PathService.Stage.IDLE || conflict()) return;
-        if (relay != null) {
-            RouteRequest saved=relay;
-            if (saved.matches(c)) {
-                try {
-                    PathService.Ticket ticket=start(saved);
-                    relay=saved;
-                    candidate=null;
-                    if (saved.owner()==menuOwner) menuTicket=ticket;
-                    emitRelay(saved,"RELAY_RESUMED",Map.of("goal",saved.goal(),"actualStart",point(c.player.position()),
-                            "yaw",c.player.getYRot(),"pitch",c.player.getXRot(),"velocity",point(c.player.getDeltaMovement()),
-                            "grounded",c.player.onGround(),"pathBlocked",PhysicalGameInput.pathBlocked()));
-                } catch (IllegalStateException failure) {hint("start_unavailable");}
-                return;
-            }
-            relay=null;
-        }
-        var confirm=confirmation();
-        candidate=null;
-        if (confirm!=null) {
-            startTarget(confirm.point());
+        if(running!=null){
+            var current=running;
+            sessionDriver.milestone("HOTKEY",map("received",true,"decision","STOP","stage",service.stage(),
+                    "waitingForPosition",sessionDriver.gate.pending(),"workPhase",service.workPhase(),"localRejoin",sessionDriver.detourPlanning!=null||sessionDriver.detour!=null));
+            relay=null;candidate=null;pendingInput=null;
+            service.cancel(current.ticket(),"HOTKEY_STOP");
             return;
         }
-        chatScreen=new PathChatInput(value-> {
-            pendingInput=TargetCoordinates.extract(value).orElse(null);
-            if (pendingInput==null) hint("coordinate_error");
+        if(!hotkeyAvailable())return;
+        // A submitted coordinate has priority over resuming an explicit GUI pause.
+        if(pendingInput!=null){acceptPending();return;}
+        if(confirmation()!=null){
+            var accepted=candidate;
+            submitDestination(PathRequest.start(PathRequest.Source.CHAT_HOTKEY,accepted.point()),accepted.raw());
+            return;
+        }
+        relay=null;candidate=null;pendingInput=null;
+        chatScreen=new PathChatInput(value->{
+            var point=TargetCoordinates.extract(value).orElse(null);
+            if(point==null){hint("coordinate_error");return;}
+            relay=null;candidate=null;
+            pendingInput=new SubmittedTarget(PathRequest.start(PathRequest.Source.MANUAL,point),value);
         });
         c.setScreen(chatScreen);
         hint("coordinate_prompt");
         hint("coordinate_local");
+    }
+    private void acceptPending(){
+        var submitted=pendingInput;
+        pendingInput=null;
+        submitDestination(submitted.request(),submitted.raw());
     }
     public void stopForPlayerGui(PlayerGuiInput.Kind kind) {
         var current=running;
@@ -214,7 +220,7 @@ public final class ClientPathFinding {
             return;
         }
         var request=current.request();
-        relay=request;
+        relay=current;
         candidate=null;
         var fields=Map.<String,Object>of("goal",request.goal(),"actualFeet",point(c.player.position()),
                 "yaw",c.player.getYRot(),"pitch",c.player.getXRot(),"screen",kind.name(),
@@ -228,18 +234,45 @@ public final class ClientPathFinding {
         request.events().accept(event,fields);
     }
 
-    private void startTarget(Point goal) {
+    public boolean canResumePausedRoute(){
+        return relay!=null&&running==null&&relay.request().matches(Minecraft.getInstance());
+    }
+
+    public void resumePausedRoute(){
         var c=Minecraft.getInstance();
+        if(!c.isSameThread()||!canResumePausedRoute()||conflict())return;
+        var saved=relay;
+        relay=null;candidate=null;pendingInput=null;
+        c.setScreen(null);
+        try{
+            menuTicket=start(PathRequest.resume(saved.request().goal(),saved.ticket()),saved.request(),"GUI_RESUME");
+        }catch(IllegalStateException failure){hint("start_unavailable");}
+    }
+
+    /** Client-thread entry for confirmed coordinates, including submissions from other Mod features. */
+    public void submitDestination(PathRequest input,String raw){
+        if(input.operation()!=PathRequest.Operation.START_NEW)throw new IllegalArgumentException("Expected START_NEW");
+        var c=Minecraft.getInstance();
+        if(!c.isSameThread()||c.player==null||c.level==null||conflict())return;
+        relay=null;candidate=null;pendingInput=null;
+        if(chatScreen!=null&&c.screen==chatScreen)c.setScreen(null);
+        chatScreen=null;
         refreshMap(c,true);
-        if(detectedMap.status()!=DetectedLocalMap.Status.FOUND){hint("local_map_"+detectedMap.status().name().toLowerCase(java.util.Locale.ROOT));return;}
-        String world=detectedMap.name();
+        if(detectedMap.status()!=DetectedLocalMap.Status.FOUND){
+            if(running!=null)service.cancel(running.ticket(),"NEW_TARGET_MAP_UNAVAILABLE");
+            hint("local_map_"+detectedMap.status().name().toLowerCase(java.util.Locale.ROOT));
+            return;
+        }
+        var world=detectedMap.name();
         var settings=Ultimate_GardenClient.getConfigManager().getPathSettings();
         var weapon=settings.transmission?TransmissionEquipment.select(c.player.getInventory()).orElse(null):null;
-        if (weapon==null) hint(settings.transmission?"no_weapon":"walking_only");
-        try {
-            menuTicket=start(menuOwner,world,goal,weapon==null?12:weapon.range(),
-                    () -> weapon!=null && equipped(c,weapon),weapon,NO_EVENTS,result->{});
-        } catch (IllegalStateException failure) {hint("start_unavailable");}
+        if(weapon==null)hint(settings.transmission?"no_weapon":"walking_only");
+        var info=WorldInfoService.snapshot();
+        try{
+            menuTicket=start(input,new RouteRequest(menuOwner,world,input.coordinate(),raw,input.source().name(),weapon==null?12:weapon.range(),
+                    ()->weapon!=null&&equipped(c,weapon),weapon,NO_EVENTS,result->{},c.level,c.getConnection(),info.island(),info.instance()),
+                    input.source()==PathRequest.Source.CHAT_HOTKEY?"HOTKEY_CONFIRM":input.source().name());
+        }catch(IllegalStateException failure){hint("start_unavailable");}
     }
     private static boolean equipped(Minecraft c, TransmissionEquipment weapon) {
         if (c.player==null) return false;
@@ -249,24 +282,23 @@ public final class ClientPathFinding {
     private static void hint(String key) {
         HintManager.printFor("CropSelect",new LanguageManager(Ultimate_GardenClient.getConfigManager()).text("ui.ultimategarden.path_finding."+key));
     }
-    private Point lastPositionUpdate;
 
     public void register() {
         ClientTickEvents.END_CLIENT_TICK.register(c->{
+            positionReceipt.context(c.getConnection(),c.level);
             refreshMap(c,false);
             if (candidate!=null && confirmation()==null) candidate=null;
-            if (relay!=null && !relay.matches(c)) relay=null;
+            if (relay!=null && !relay.request().matches(c)) relay=null;
             if (running!=null && !running.request().matches(c)) service.contextChanged("WORLD_CONTEXT_CHANGED");
             if (chatScreen!=null && c.screen!=chatScreen) chatScreen=null;
-            if (pendingInput!=null && c.screen==null && c.mouseHandler.isMouseGrabbed()) {
-                Point goal=pendingInput;
-                pendingInput=null;
-                if (c.player!=null && c.level!=null) startTarget(goal);
-            }
+            if(pendingInput!=null&&c.screen==null&&c.player!=null&&c.level!=null&&running==null)
+                acceptPending();
             if(sessionDriver!=null)sessionDriver.sessionTick();
             service.tick();
         });
-        ClientContextEvents.onDisconnect((handler,client)->{service.contextChanged("DISCONNECTED");clear();});
+        ClientContextEvents.onDisconnect((handler,client)->{
+            service.contextChanged("DISCONNECTED");clear();positionReceipt.context(null,null);
+        });
         ClientContextEvents.onChange(event->{service.contextChanged(event.change().name());clear();});
         ClientContextEvents.onStopping(client->{service.close();clear();});
     }
@@ -280,67 +312,79 @@ public final class ClientPathFinding {
         var c=Minecraft.getInstance();
         if (chatScreen!=null && c.screen==chatScreen) c.setScreen(null);
         chatScreen=null;
-        measurements=new MovementMeasurements();
         menuTicket=null;
-        positionSequence=0;
-        lastPositionUpdate=null;
+        positionReceipt.context(c.getConnection(),c.level);
+        lastOutcome=null;
     }
-    public void positionUpdate(Vec3 position) {
-        positionSequence++;
-        lastPositionUpdate=point(position);
-        if(active!=null)active.packetApplied(lastPositionUpdate);
+    public void positionUpdate(ClientPacketListener connection,Vec3 position) {
+        if(Minecraft.getInstance().getConnection()!=connection)return;
+        positionReceipt.context(connection,Minecraft.getInstance().level);
+        Point feet=point(position);
+        if(sessionDriver!=null)sessionDriver.motionSequence++;
+        var recipient=positionReceipt.accept(feet);
+        if(recipient==null||recipient!=sessionDriver||recipient!=active)return;
+        active.packetApplied(feet);
     }
     public void aimFrame() {
         if (active!=null) active.frame();
     }
-    public boolean observingPosition() { return active!=null; }
+    public boolean observingPosition() { return active!=null||positionReceipt.pending(); }
     public PathService service() { return service; }
     public String status() {
         var result=service.snapshot();
-        return service.stage().name()+(result==null?"":" / "+result.reason());
+        return service.stage().name()+(result==null?(lastOutcome==null?"":" / "+lastOutcome):" / "+result.reason());
     }
     public boolean menuTaskActive() { return menuTicket!=null && service.stage()!=PathService.Stage.IDLE; }
-    public void cancelMenuTask() { if (menuTaskActive()) service.cancel(menuTicket); }
+    public void cancelMenuTask() { if (menuTaskActive()) {relay=null;candidate=null;pendingInput=null;service.cancel(menuTicket);} }
 
-    private PathService.Ticket start(Object owner,String world,Point goal,double distance,
-                                     BooleanSupplier equipped,TransmissionEquipment weapon,BiConsumer<String,Map<String,Object>> events,
-                                     Consumer<Result> completion) {
+    private PathService.Ticket start(PathRequest input,RouteRequest request,String activation) {
         var c=Minecraft.getInstance();
-        var info=WorldInfoService.snapshot();
-        return start(new RouteRequest(owner,world,goal,distance,equipped,weapon,events,completion,
-                c.level,c.getConnection(),info.island(),info.instance()));
-    }
-
-    private PathService.Ticket start(RouteRequest request) {
-        var c=Minecraft.getInstance();
-        if (!c.isSameThread() || c.player==null || c.level==null || service.stage()!=PathService.Stage.IDLE || conflict())
+        if (!c.isSameThread() || c.player==null || c.level==null || conflict())
             throw new IllegalStateException("Input unavailable");
 
         PathSettings settings=Ultimate_GardenClient.getConfigManager().getPathSettings();
         boolean transmission=settings.transmission && (request.weapon()!=null || request.equipped().getAsBoolean());
         var path=MappingPaths.root(c.gameDirectory.toPath());
-        var options=new Options(settings.mode,transmission,true,request.distance(),settings.jumpDetection?measurements.jump():1,
-                settings.searchNodesPerSegment(),settings.weights);
-        var timing=new CorridorPlanner.Timing(settings.teleportCooldownMs(),settings.speedDetection?measurements.speed():4.3,settings.aim(PathSettings.Aim.SPEED),50);
-        var driver=new NativeDriver(c,settings,request.distance(),request.equipped(),request.weapon(),transmission,request.events(),request.map());
-        PhysicalGameInput.beginPath(c,driver);
+        var driver=new NativeDriver(c,settings,request.distance(),request.equipped(),request.weapon(),transmission,
+                request.events(),request.map(),request.rawInput(),input.source().name(),activation);
         PathService.Ticket ticket;
-        try {
-            ticket=service.start(request.owner(),point(c.player.position()),request.goal(),c.player.getYRot(),c.player.getXRot(),options,
-                ()->{try{return new MapTerrain(new MapRepository(path,request.map()));}catch(java.io.IOException e){throw new UncheckedIOException(e);}},
-                timing,driver,result->{
-                    running=null;
-                    if(sessionDriver==driver)sessionDriver=null;
-                    if (result.status()==Status.ARRIVED) relay=null;
-                    driver.finishInput(result);
-                    request.completion().accept(result);
-                });
-        } catch (RuntimeException | Error failure) {
-            PhysicalGameInput.endPath(driver);
-            driver.closeSession();
+        try{
+            ticket=service.launch(input,()->{
+                PhysicalGameInput.beginPath(c,driver);
+                positionReceipt.context(c.getConnection(),c.level);
+                sessionDriver=driver;
+                lastOutcome=null;
+                PathRouteESP.clear();
+                var options=new Options(settings.mode,transmission,true,request.distance(),
+                        settings.jumpDetection?driver.measurements.jump():1,settings.searchNodesPerSegment(),settings.weights);
+                var timing=new CorridorPlanner.Timing(settings.teleportCooldownMs(),
+                        settings.speedDetection?driver.measurements.speed():4.3,settings.aim(PathSettings.Aim.SPEED),50);
+                return new PathService.Launch(request.owner(),driver.position(),driver.yaw(),driver.pitch(),options,
+                        ()->{try{return new MapTerrain(new MapRepository(path,request.map()));}
+                             catch(java.io.IOException e){throw new UncheckedIOException(e);}},
+                        timing,driver,result->{
+                            if(sessionDriver!=driver)return;
+                            try{driver.finishInput(result);}
+                            finally{
+                                running=null;sessionDriver=null;menuTicket=null;
+                                if(active==driver)active=null;
+                                if(!result.reason().matches("PLAYER_GUI_(MENU|INVENTORY|CHAT)"))relay=null;
+                                lastOutcome=result.reason();
+                                service.discardFinishedResult();
+                            }
+                            request.completion().accept(result);
+                        });
+            });
+        }catch(RuntimeException|Error failure){
+            if(sessionDriver==driver){
+                service.contextChanged("START_FAILED");
+                if(sessionDriver==driver){
+                    PhysicalGameInput.endPath(driver);
+                    driver.closeSession();sessionDriver=null;
+                }
+            }
             throw failure;
         }
-        sessionDriver=driver;
         running=new Running(request,ticket);
         relay=null;
         return ticket;
@@ -368,13 +412,19 @@ public final class ClientPathFinding {
         private record DescentSample(CorridorRepair.Start start,long tick,long sequence) {}
         private DescentSample descentSample;
         private final double aimDraw;
+        private final MovementMeasurements measurements=new MovementMeasurements();
+        private PathService.Ticket ticket;
+        private long positionSequence,motionSequence;
+        private Point lastPositionUpdate;
+        private boolean firstAction,firstInput;
         private Double heightCorrection;
         private int correctionHops,plannedCastAfter,consecutiveClimbs;
         private boolean upwardTurnUsed;
         private long actionStartTick;
         private boolean normalWeighted;
-        private final PathFailureTrace faultTrace;
-        private JsonlWriter failureWriter;
+        private PathFailureTrace faultTrace;
+        private PathTaskLog taskLog;
+        private final String mapId,rawInput,inputSource,activation;
         private final LocalCandidateFallback fallback=new LocalCandidateFallback();
         private long packetTick;
         private int estimatedAimAfter;
@@ -422,12 +472,12 @@ public final class ClientPathFinding {
         private Point probe;
         private long probeSequence;
         private int probeTicks;
-        NativeDriver(Minecraft c,PathSettings settings,double range,BooleanSupplier equipped,TransmissionEquipment weapon,boolean transmission,BiConsumer<String,Map<String,Object>> events,String mapId) {
+        NativeDriver(Minecraft c,PathSettings settings,double range,BooleanSupplier equipped,TransmissionEquipment weapon,boolean transmission,BiConsumer<String,Map<String,Object>> events,String mapId,String rawInput,String inputSource,String activation) {
+            this.mapId=mapId;this.rawInput=rawInput;this.inputSource=inputSource;this.activation=activation;
             client=c;world=c.level;player=c.player;keyboard=new VirtualKeyboard(c);this.settings=settings;
             this.range=range;this.equipped=equipped;this.events=events;
             this.weapon=weapon;this.transmission=transmission;selectingWeapon=weapon!=null;
             aimDraw=Math.random();
-            faultTrace=!settings.pathfindingLog()?null:new PathFailureTrace(settings.mode.name(),mapId,this::writeFailure);
         }
         private volatile Map<String,Object> searchProgress=Map.of();
         private volatile int hudAttempt=-1;
@@ -442,7 +492,7 @@ public final class ClientPathFinding {
                         ()->Ultimate_GardenClient.getConfigManager().getESPConfig().pathCalculation());
         private final PathLatency latency=new PathLatency(com.kuangsanfeng.ultimategarden.client.platform.network.ClientRttConnection.pathService());
         private volatile int calculationAttempt=-1;
-        private volatile boolean logClosed;
+        private volatile boolean logClosed,finished;
         private volatile long calculationStarted;
         private volatile boolean calculationActive;
         private void sessionTick(){
@@ -458,12 +508,12 @@ public final class ClientPathFinding {
             if(latency.newResult()&&logging())trace("LATENCY_STATUS","END_CLIENT_TICK",
                     map("stage",latency.phase(),"source","NATIVE_PING_PONG","status",latency.status(),"milliseconds",latency.milliseconds()));
         }
-        private void closeSession(){latency.close();if(failureWriter!=null)failureWriter.close();}
+        private void closeSession(){finished=true;latency.close();}
         private boolean logging(){
             if(faultTrace==null)return false;
             if(!Ultimate_GardenClient.getConfigManager().getPathSettings().pathfindingLog()&&!logClosed){
                 logClosed=true;
-                if(failureWriter!=null)failureWriter.close();
+
             }
             return faultTrace!=null&&!logClosed;
         }
@@ -479,23 +529,54 @@ public final class ClientPathFinding {
             if(logging())faultTrace.export(reason);
         }
 
+        @Override public void requestRouted(PathRequest input,PathService.Ticket previous,PathService.Ticket next,Point originalGoal,String disposition){
+            milestone("PATH_REQUEST",map("source",input.source(),"operation",input.operation(),"coordinate",input.coordinate(),
+                    "coordinateRole",input.role(),"originalGoal",originalGoal,"previousTaskId",previous==null?null:previous.sequence(),
+                    "nextTaskId",next==null?null:next.sequence(),"previousRunId",previous==null?null:previous.runId(),
+                    "nextRunId",next==null?null:next.runId(),"disposition",disposition));
+        }
+
+        @Override public void sessionStarted(PathService.Ticket ticket,Point start,Point goal){
+            this.ticket=ticket;
+            if(!settings.pathfindingLog())return;
+            faultTrace=new PathFailureTrace(settings.mode.name(),mapId,ticket.runId(),this::writeFailure);
+            var now=java.time.LocalDateTime.now();
+            taskLog=PathTaskLog.openIfEnabled(settings.pathfindingLog(),client.gameDirectory.toPath(),now,mapId,goal,faultTrace.runId(),writer->{
+                if(writer.error!=null)Ultimate_Garden.LOGGER.warn("Path task journal {}",writer.error);
+            });
+            milestone("TASK_START",map("startedAt",now.toString(),"goal",goal,"normalizedTarget",TargetCoordinates.centered(goal),"rawInput",rawInput,"inputSource",inputSource,
+                    "actualStart",start,"ticket",ticket.sequence(),"evidenceSource","LIVE_CLIENT"));
+            milestone("TASK_INITIALIZED",map("state",forecast(),"walkingSpeed",measurements.speed(),
+                    "jumpHeight",measurements.jump(),"initialSpeedTried",measurements.initialSpeedTried,
+                    "initialJumpTried",measurements.initialJumpTried,"preparationNeeded",needsPreparation(),
+                    "confirmationSequence",positionSequence));
+            if(!activation.equals("GUI_RESUME"))
+                milestone("COORDINATE_SUBMITTED",map("goal",goal,"rawInput",rawInput,"inputSource",inputSource));
+            milestone("COORDINATE_ACCEPTED",map("goal",goal,"rawInput",rawInput,"inputSource",inputSource,
+                    "decision",activation.equals("GUI_RESUME")?"RESUME_SAVED_TARGET":"NEW_TARGET"));
+            if(activation.equals("HOTKEY_CONFIRM"))
+                milestone("HOTKEY",map("decision",activation,"received",true));
+        }
+        @Override public void planningRequested(PathService.Ticket ticket,int attempt,Point start,Point target){
+            if(logging())faultTrace.planAttempt(attempt);
+            milestone("PLANNING_REQUEST",map("ticket",ticket.sequence(),"actualStart",start,"goal",target,"attempt",attempt));
+        }
+        private void milestone(String event,Map<String,Object> data){
+            if(taskLog==null||!logging())return;
+            var row=faultTrace.add(event,"CLIENT",client.level==world?client.level.getGameTime():-1,positionSequence,data);
+            taskLog.record(row);
+        }
         private void writeFailure(Map<String,Object> packet){
-            if(failureWriter==null){
-                var root=client.gameDirectory.toPath().resolve("logs").resolve("path-finding");
-                failureWriter=new JsonlWriter(root,(String)packet.get("runId"),true,writer->{
-                    if(writer.error!=null)Ultimate_Garden.LOGGER.warn("Path failure journal {}",writer.error);
-                });
-            }
-            if(packet.get("reason") instanceof String reason&&(reason.startsWith("ARRIVED:")||reason.startsWith("CANCELLED:"))){
-                failureWriter.endBatch("failures.jsonl",packet);
-            }else if(!failureWriter.offer("failures.jsonl",packet))
+            if(taskLog!=null&&!taskLog.record(packet))
                 Ultimate_Garden.LOGGER.warn("Path failure window dropped {}",packet.get("runId"));
             if(events!=NO_EVENTS)events.accept("PATH_FAILURE_WINDOW",packet);
         }
 
         private void packetApplied(Point feet){
+            positionSequence++;
+            lastPositionUpdate=feet;
+            packetTick=client.level.getGameTime();
             if(logging()&&client.level==world){
-                packetTick=client.level.getGameTime();
                 trace("PACKET_APPLIED","POSITION_PACKET_TAIL",Map.of("state",forecast(),"packetFeet",feet));
             }
         }
@@ -503,6 +584,10 @@ public final class ClientPathFinding {
         public Point position(){return point(client.player.position());}
         public boolean usable(){return client.level==world && client.player==player && client.player.isAlive() && !conflict();}
         public void begin(Segment action) {
+            if(!firstAction){
+                firstAction=true;
+                milestone("FIRST_ACTION_HANDOFF",map("taskId",ticket.sequence(),"action",action,"state",forecast()));
+            }
             latency.beginExecution(System.nanoTime());
             step=action;active=this;failed=jumpPressed=seenAir=done=false;ticks=0;previous=position();predicted=null;
             failureReason=null;
@@ -525,7 +610,7 @@ public final class ClientPathFinding {
             }
             mustGround=action.movement()==Movement.FALL && sameVerticalColumn(action)
                     && new ClientTerrain(client.level).descent(action.to(),action.to()).knowledge()==Knowledge.CLEAR;
-            previousPositionSequence=positionSequence;
+            previousPositionSequence=motionSequence;
             PathRouteESP.next(action,choice,legIndex,previewIndex,routeProgress);
             var frame=PathRouteESP.snapshot();
             var fields=new LinkedHashMap<String,Object>();
@@ -548,7 +633,7 @@ public final class ClientPathFinding {
         private int rehearsalInputs(){return rehearsal==null?0:rehearsal.actionInputs().size();}
         public void planReady(Result result) {
             trace("EXECUTABLE_PLAN","PLANNING_COMPLETED",Map.of("expanded",result.explored(),"completeCandidatesAtLeast",1,
-                    "actions",result.segments().size(),"farthest",result.end(),"reason",result.reason()));
+                    "actions",result.segments().size(),"farthest",result.end(),"resolvedTarget",result.resolved(),"reason",result.reason()));
             events.accept("EXECUTABLE_PLAN",Map.of("steps",result.segments().size(),"cost",result.cost(),"expanded",result.explored(),"reason",result.reason()));
         }
         private Motion motion() {
@@ -652,25 +737,35 @@ public final class ClientPathFinding {
             if(choice==null) {
                 var terrain=new LivePathTerrain(client.level);
                 var initial=forecast();
-                if(!initial.motion().grounded() && settleWait<8 && corridor.isTerminalLanding(position(),terrain)){
+                var terminal=corridor.terminalDecision(initial,routeProgress,terrain,7,()->false);
+                if(terminal!=null){
+                    milestone("TERMINAL_SELECTION",map("actualState",initial,"goal",corridor.goal(),"ordinaryReason",terminal.ordinaryReason(),
+                            "ordinaryExpanded",terminal.expanded(),"decision",terminal.decision(),"choices",terminal.choices().size()));
+                    choice=terminal.choices().stream().filter(candidate->!sameCast(candidate,rejected)).findFirst().orElse(null);
+                    if(choice==null){
+                        lastFault=terminal.ordinaryReason()+":"+terminal.decision();
+                        if(logging())faultTrace.block(lastFault);
+                    }
+                }
+                if(terminal==null&&!initial.motion().grounded() && settleWait<8 && corridor.isTerminalLanding(position(),terrain)){
                     settleWait++;
                     return false;
                 }
-                if(settleWait>0 && settleWait<20 && !initial.motion().grounded()){
+                if(terminal==null&&settleWait>0 && settleWait<20 && !initial.motion().grounded()){
                     settleWait++;
                     return false;
                 }
                 var hint=previewIndex<rehearsal.choices().size()?rehearsal.choices().get(previewIndex):null;
-                if(hint!=null&&rejected==null && !corridor.terminalZone(position(),routeProgress))
+                if(terminal==null&&hint!=null&&rejected==null && !corridor.terminalZone(position(),routeProgress))
                     choice=corridor.retime(hint,initial,routeProgress,terrain);
-                if(choice==null || sameCast(choice,rejected)) {
+                if(terminal==null&&(choice==null || sameCast(choice,rejected))) {
                     choice=corridor.choices(initial,routeProgress,terrain,7,()->false).stream()
                             .filter(c->!sameCast(c,rejected))
                             .filter(c->!c.reason().equals("ADJUST_LAUNCH_POSITION")||
                                     repositioned.size()<4&&!repositioned.contains(c.last().to()))
                             .findFirst().orElse(null);
                 }
-                if(choice==null && hint!=null && rejected==null)
+                if(terminal==null&&choice==null && hint!=null && rejected==null)
                     choice=corridor.retime(hint,initial,routeProgress,terrain);
                 if(choice==null){
                     if(settleWait==0 && corridor.canSettle(initial.motion(),routeProgress,terrain)){
@@ -683,7 +778,7 @@ public final class ClientPathFinding {
                             "aimYaw",yaw(),"aimPitch",pitch(),"confirmedTravel",confirmedTravel,"previewIndex",previewIndex,
                             "repositioned",List.copyOf(repositioned)));
                     if(!initial.motion().grounded() && rejoinWait++<24)return false;
-                    if(!startDetour(corridor,initial))fail("NO_CONNECTED_LOCAL_ACTION");
+                    if(!startDetour(corridor,initial))fail(terminal==null?"NO_CONNECTED_LOCAL_ACTION":lastFault);
                     return false;
                 }
                 legIndex=0;
@@ -805,7 +900,7 @@ public final class ClientPathFinding {
             step=null;
             choice=rejected=null;
             detourPlanningOrigin=start.motion().feet();
-            detourPlanning=service.planRejoin(corridor,start,routeProgress,triedEntrances);
+            detourPlanning=service.planRejoin(PathRequest.rejoin(ticket,start.motion().feet()),corridor,start,routeProgress,triedEntrances);
             return true;
         }
 
@@ -970,12 +1065,12 @@ public final class ClientPathFinding {
             return selectingWeapon || (settings.speedDetection&&settings.initialSpeed&&!measurements.initialSpeedTried)
                     || (settings.jumpDetection&&settings.initialJump&&!measurements.initialJumpTried);
         }
-        @Override public SearchAudit planningAudit(int attempt) {
+        @Override public SearchAudit planningAudit(int attempt,BooleanSupplier valid) {
             boolean detailed=logging()||events!=NO_EVENTS;
             if(logging())faultTrace.planAttempt(attempt);
             hudAttempt=attempt;searchProgress=Map.of();activeBranches=null;calculationActive=false;display.coarse();
             return new SearchAudit((event, data) -> {
-                if(hudAttempt!=attempt)return;
+                if(finished||!valid.getAsBoolean()||hudAttempt!=attempt)return;
                 if(event.equals("ACTION_CALCULATION_START")){
                     if(!calculationActive){
                         calculationActive=true;
@@ -1034,11 +1129,11 @@ public final class ClientPathFinding {
                 case FIND_SPEED -> {
                     measurements.initialSpeedTried|=settings.speedDetection&&settings.initialSpeed;
                     if(settings.speedDetection&&settings.initialSpeed&&p.onGround()) probe=findProbe(feet,false);
-                    previous=feet;probeSequence=positionSequence;probeTicks=0;
+                    previous=feet;probeSequence=motionSequence;probeTicks=0;
                     prep=probe==null?Prep.FIND_JUMP:Prep.SPEED;
                 }
                 case SPEED -> {
-                    if (probeSequence==positionSequence && p.onGround() && !p.horizontalCollision) {
+                    if (probeSequence==motionSequence && p.onGround() && !p.horizontalCollision) {
                         measurements.initialWalk(previous,feet);
                         if(++probeTicks<35&&feet.distance(probe)>.4){previous=feet;walkTowards(feet,probe);return false;}
                         measurements.finishInitialWalk();
@@ -1048,11 +1143,11 @@ public final class ClientPathFinding {
                 case FIND_JUMP -> {
                     measurements.initialJumpTried|=settings.jumpDetection&&settings.initialJump;
                     probe=settings.jumpDetection&&settings.initialJump&&p.onGround()?findProbe(feet,true):null;
-                    probeSequence=positionSequence;probeTicks=0;
+                    probeSequence=motionSequence;probeTicks=0;
                     prep=probe==null?Prep.COMPLETE:Prep.WALK_TO_JUMP;
                 }
                 case WALK_TO_JUMP -> {
-                    if(probeSequence!=positionSequence || ++probeTicks>100 || !p.onGround()) {keyboard.releaseAll();prep=Prep.COMPLETE;}
+                    if(probeSequence!=motionSequence || ++probeTicks>100 || !p.onGround()) {keyboard.releaseAll();prep=Prep.COMPLETE;}
                     else if(feet.distance(probe)>.4)walkTowards(feet,probe);
                     else {
                         keyboard.releaseAll();
@@ -1069,7 +1164,7 @@ public final class ClientPathFinding {
                     keyboard.keyUp("SPACE");
                     measurements.observeJump(feet);
                     seenAir|=!p.onGround();
-                    if(probeSequence!=positionSequence || (p.verticalCollision&&!p.onGround()) || ++probeTicks>100) {
+                    if(probeSequence!=motionSequence || (p.verticalCollision&&!p.onGround()) || ++probeTicks>100) {
                         measurements.rejectJump();prep=Prep.COMPLETE;
                     } else if(seenAir&&p.onGround()) {measurements.finishJump();prep=Prep.COMPLETE;}
                 }
@@ -1175,6 +1270,7 @@ public final class ClientPathFinding {
         public String failureReason(){return failureReason==null?"INPUT_UNAVAILABLE":failureReason;}
         private void fail(String reason){
             failed=true;failureReason=reason;lastFault=reason;
+            if(logging())faultTrace.block(reason);
             if(logging()&&client.level==world){
                 trace("DRIVER_FAILURE","END_CLIENT_TICK",Map.of("reason",reason,"state",forecast()));
                 exportFailure(reason);
@@ -1186,7 +1282,12 @@ public final class ClientPathFinding {
                 if(step!=null&&step.movement()==Movement.TRANSMISSION)castGate("CLIENT_INPUT_UNAVAILABLE",null,null,null);
                 keyboard.releaseAll();return false;
             }
-            if(++ticks>200){fail(gate.pending()?"POSITION_CONFIRMATION_TIMEOUT":"ACTION_TIMEOUT");return false;}
+            if(++ticks>200){
+                fail(gate.pending()?"POSITION_CONFIRMATION_TIMEOUT":
+                        positionReceipt.retired()&&"EARLIER_CAST_CONFIRMATION_PENDING".equals(castStatus)?
+                                "PREVIOUS_CAST_CONFIRMATION_UNRESOLVED":"ACTION_TIMEOUT");
+                return false;
+            }
             if (gate.pending()) {
                 if (!confirmPosition()){
                     if(logging()&&step!=null&&step.movement()==Movement.TRANSMISSION&&positionSequence==confirmationSequence)
@@ -1302,7 +1403,7 @@ public final class ClientPathFinding {
                 }
             }
             if(!tryDispatch(new ClientTerrain(client.level,logging()||display.calculating()),feet,yaw,pitch,distance,step.to(),false)){
-                recoverCast("CAST_RECHECK_FAILED");
+                recoverCast("TERMINAL_CAST_NO_CONTINUATION".equals(castStatus)?castStatus:"CAST_RECHECK_FAILED");
                 return;
             }
             lastActualCast=new Segment(Movement.TRANSMISSION,feet,actualLanding,yaw,pitch,0,0,distance);
@@ -1369,6 +1470,11 @@ public final class ClientPathFinding {
             String geometryBlocker=!inCorridor?"OUTSIDE_CONNECTED_CORRIDOR":predicted.equals(feet)?"ZERO_MOVEMENT":
                     segment.knowledge()!=Knowledge.CLEAR?"CAST_RAY_"+segment.knowledge():
                     arrival.knowledge()!=Knowledge.CLEAR?"QUANTIZED_ARRIVAL_"+arrival.knowledge():"NONE";
+            if(geometryBlocker.equals("NONE")&&choice!=null&&choice.reason().equals("TERMINAL_TRANSMISSION")){
+                var live=new LivePathTerrain(client.level);
+                if(!rehearsal.corridor().terminalLandingConnects(Motion.confirmed(predicted,live),yaw,pitch,live))
+                    geometryBlocker="TERMINAL_CAST_NO_CONTINUATION";
+            }
             boolean legal=geometryBlocker.equals("NONE");
             var details=new LinkedHashMap<String,Object>();
             details.put("planningY",choice==null?step.from().y():rehearsal.corridor().reference(choice.reference()).from().y());
@@ -1403,8 +1509,17 @@ public final class ClientPathFinding {
                 var hit=segmentHit!=null?segmentHit:arrivalHit;
                 display.reject(hit==null?predicted:new Point(hit.x()+.5,hit.y()+.5,hit.z()+.5));
             }
-            if (!legal) {if (!burst)events.accept("CAST_RECHECK_FAILED",details);return false;}
+            if (!legal) {
+                castStatus=geometryBlocker;
+                if(logging())faultTrace.block(geometryBlocker);
+                if (!burst)events.accept("CAST_RECHECK_FAILED",details);
+                return false;
+            }
             confirmationSequence=positionSequence;
+            if(positionReceipt.pending()){
+                castGate("EARLIER_CAST_CONFIRMATION_PENDING",true,true,true);
+                return true;
+            }
             if(!mouse.click(client)){
                 trace("INPUT_NOT_SENT","END_CLIENT_TICK",Map.of("reason","NATIVE_USE_INPUT_BUSY"));
                 exportFailure("NATIVE_USE_INPUT_BUSY");
@@ -1419,6 +1534,8 @@ public final class ClientPathFinding {
                 if(actionWasLate)exportFailure("LATE_INPUT_SENT");
                 faultTrace.fallbackOutcome("FALLBACK_INPUT_SENT");
             }
+            markFirstInput("TRANSMISSION");
+            positionReceipt.dispatch(this,predicted);
             dispatchTime=System.nanoTime();
             pendingDistance=distance;downwardCast=burst;
             long interval=gate.dispatch(dispatchTime);
@@ -1459,11 +1576,12 @@ public final class ClientPathFinding {
                 }
                 return;
             }
+            if(choice!=null&&choice.reason().equals("TERMINAL_ORDINARY"))return;
             if (!transmission || !settings.transmission || !feet.sameColumn(to)) return;
             if (!equipped.getAsBoolean() || p.isShiftKeyDown() || client.options.keyShift.isDown()) return;
             double retainedYaw=aimActive?aimYaw:yaw();
-            if(descentSample==null||descentSample.sequence()!=positionSequence)
-                descentSample=new DescentSample(forecast(),client.level.getGameTime(),positionSequence);
+            if(descentSample==null||descentSample.sequence()!=motionSequence)
+                descentSample=new DescentSample(forecast(),client.level.getGameTime(),motionSequence);
             boolean aligned=align(retainedYaw,90);
             if(normalWeighted){
                 var start=descentSample.start();
@@ -1484,8 +1602,8 @@ public final class ClientPathFinding {
             var feet=position();
             var to=step.to();
             var p=client.player;
-            boolean corrected=previousPositionSequence!=positionSequence;
-            previousPositionSequence=positionSequence;
+            boolean corrected=previousPositionSequence!=motionSequence;
+            previousPositionSequence=motionSequence;
             if(settings.speedDetection&&step.movement()==Movement.WALK&&keyboard.hasHeldKeys()&&p.onGround()&&!p.horizontalCollision&&!corrected)
                 measurements.walk(previous,feet,settings.speedSampleDistance());
             previous=feet;
@@ -1496,6 +1614,7 @@ public final class ClientPathFinding {
             if(!p.onGround())seenAir=true;
             if (step.movement()==Movement.FALL && sameVerticalColumn(step)) {
                 descend(to);
+                if(!gate.pending())markFirstInput("PASSIVE_FALL");
                 if (gate.pending()) return;
                 feet=position();
             }
@@ -1512,39 +1631,40 @@ public final class ClientPathFinding {
             if(!align(direction[0],0) && ViewAngles.error(yaw(),pitch(),direction[0],0)>5){keyboard.releaseAll();return;}
             logLandingTurn(yaw(),pitch());
             keyboard.keyDown("W");
+            markFirstInput(step.movement().name());
             if (step.movement()==Movement.JUMP&&!jumpPressed&&p.onGround()) {
                 keyboard.keyDown("SPACE");jumpPressed=true;
                 if(settings.jumpDetection)measurements.beginJump(feet);
             } else keyboard.keyUp("SPACE");
         }
+        private void markFirstInput(String dispatch){
+            if(firstInput)return;
+            firstInput=true;
+            milestone("FIRST_ACTION_DISPATCH",map("taskId",ticket.sequence(),"dispatch",dispatch,"state",forecast(),"action",step));
+        }
         public void release() {
+            positionReceipt.retire(this);
+            if(sessionDriver!=this)return;
             keyboard.releaseAll();mouse.cancel(client);gate.confirm();
             aimClock.reset();correction.clear();aimActive=false;aimReady=false;downwardCast=false;
             if(active==this)active=null;
         }
         private void finishInput(Result result) {
-            try {
-            if(logging()){
-                trace("TASK_END","CLIENT_TASK_COMPLETION",Map.of("status",result.status().name(),"reason",result.reason(),
-                        "end",result.end(),"expanded",result.explored(),"planningSummary",lastPlanningSummary,"evidenceSource","LIVE_CLIENT",
-                        "planningFrontierEvidence",lastPlanningSummary.isEmpty()?"NOT_AVAILABLE_WITHOUT_SEARCH_AUDIT":"STAGE_LOGS"));
-                exportFailure(result.status().name()+":"+result.reason());
-                if(failureWriter!=null)failureWriter.close();
-            }
-            } finally {
-                closeSession();
-                finishInputOwnership(result);
-            }
-        }
-        private void finishInputOwnership(Result result){
+            closeSession();
             boolean wasBlocked=PhysicalGameInput.endPath(this);
             PathRouteESP.clear();
-            if (wasBlocked) {
-                var fields=Map.<String,Object>of("actualFeet",result.end(),"reason",result.reason(),
-                        "focusBlocked",PhysicalGameInput.focusReleased());
-                Ultimate_Garden.LOGGER.info("Path INPUT_BLOCK_ENDED {}",fields);
-                events.accept("INPUT_BLOCK_ENDED",fields);
+            step=null;choice=null;rehearsal=null;overlay=null;continuation=null;detour=null;detourPlanning=null;
+            if(taskLog!=null){
+                if(logging())exportFailure(result.status().name()+":"+result.reason());
+                var row=faultTrace.add("TASK_END","CLIENT_TASK_COMPLETION",client.level==world?client.level.getGameTime():-1,positionSequence,
+                        map("status",result.status(),"reason",result.reason(),"firstBlocker",
+                                faultTrace.firstBlocker()!=null?faultTrace.firstBlocker():result.status()==Status.ARRIVED?null:result.reason(),
+                                "lastActualFeet",result.end(),"expanded",result.explored(),"planningSummary",lastPlanningSummary,
+                                "inputRequestReleased",wasBlocked,"routeEspCleared",PathRouteESP.snapshot()==null,
+                                "retiredPositionPending",positionReceipt.retired(),"evidenceSource","LIVE_CLIENT"));
+                taskLog.finish(row);
             }
+            if(wasBlocked)events.accept("INPUT_BLOCK_ENDED",Map.of("actualFeet",result.end(),"reason",result.reason()));
         }
         private void logLandingTurn(double yaw,double pitch) {
             if (!landingNeedsTurn) return;

@@ -745,6 +745,8 @@ public class GardenMenuAdapter extends net.minecraft.client.gui.screens.Screen {
         toggle(key+"initial_jump",()->settings.initialJump,()->{settings.initialJump=!settings.initialJump;save.run();},()->editable.getAsBoolean()&&settings.jumpDetection,CollapsibleSection.NESTED_INDENT);
         detection.finishContent(cursor);cursor+=CollapsibleSection.SECTION_GAP;currentSection=parent;
         info(()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.status());
+        button(key+"resume",false,()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.resumePausedRoute(),
+                ()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.canResumePausedRoute());
         button(key+"cancel",false,()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.cancelMenuTask(),
                 ()->com.kuangsanfeng.ultimategarden.client.function.path_finding.execution.ClientPathFinding.INSTANCE.menuTaskActive());
     }

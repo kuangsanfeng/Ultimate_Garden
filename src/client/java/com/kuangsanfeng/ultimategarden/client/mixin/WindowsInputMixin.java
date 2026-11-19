@@ -60,6 +60,9 @@ public class WindowsInputMixin {
         }
         var client = net.minecraft.client.Minecraft.getInstance();
         if (window != client.getWindow().handle() || PlayerGuiInput.isVirtualDispatch()) return;
+        if(com.kuangsanfeng.ultimategarden.client.runtime.hotkey.MacroKeyBindings.dispatchPathKey(event,action)){
+            ci.cancel();return;
+        }
         if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS && client.screen == null) {
             com.kuangsanfeng.ultimategarden.client.platform.gui.PlayerGuiInput.Kind kind = null;
             if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
